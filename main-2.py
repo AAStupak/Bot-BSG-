@@ -40,7 +40,7 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, json, random, re, base64, hashlib, secrets
+import os, sys, json, random, re, base64, hashlib, secrets
 from html import escape as html_escape
 from datetime import datetime
 from typing import Dict, Optional, List, Tuple, Any, Set
@@ -4795,8 +4795,40 @@ async def admin_notice_close(c: types.CallbackQuery):
     await c.answer("Сообщение закрыто.")
 
 
+def _colorize_terminal(text: str, color: str) -> str:
+    """Return text wrapped in ANSI color codes if the terminal supports it."""
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\033[{color}m{text}\033[0m"
+
+
+def print_startup_banner():
+    """Print a vibrant startup banner for the SAARC Telegram bot."""
+    launch_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        f"🤖 {BOT_NAME} v{BOT_VERSION}",
+        f"🛠 Revision: {BOT_REVISION}",
+        "🏢 Company: SAARC",
+        f"⏱ Launch time: {launch_time}",
+        "🚀 Telegram bot is warming up — have a wonderful session!",
+    ]
+    width = max(len(line) for line in lines) + 4
+    border = "═" * (width - 2)
+    left = _colorize_terminal("║", "95")
+    right = _colorize_terminal("║", "95")
+    print(_colorize_terminal(f"╔{border}╗", "95"))
+    for line in lines:
+        padded = line.ljust(width - 4)
+        print(f"{left} {_colorize_terminal(padded, '96')} {right}")
+    print(_colorize_terminal(f"╚{border}╝", "95"))
+    ready_line = f"{BOT_NAME} v{BOT_VERSION} | {BOT_REVISION} | ready for SAARC 🚀"
+    print(_colorize_terminal(ready_line, "92"))
+
+
 # ========================== BOOT ==========================
 if __name__ == "__main__":
-    ensure_dirs(); sync_state()
-    print(f"{BOT_NAME} v{BOT_VERSION} | {BOT_REVISION} | ready")
+    ensure_dirs()
+    sync_state()
+    print_startup_banner()
     executor.start_polling(dp, skip_updates=True)
+
