@@ -537,11 +537,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📘 <b>Интерфейс «Новая почта»</b>\\n━━━━━━━━━━━━━━━━━━\\n• «🔍 Искать по ТТН» — мгновенно получить статус накладной и сохранить её в истории.\\n• «🕓 История поисков» — вернуться к последним проверкам.\\n• «⭐ Отмеченные» — быстрый доступ к сохранённым накладным и заметкам.\\n• «🏢 Посылки от фирмы» — отследить отправления, закреплённые за вами.\\n• «📝 Заметки» — все комментарии, которые вы оставили для ТТН.\\n\\nПосле каждой проверки вы можете добавить заметку, отметить накладную или поделиться данными с коллегами.",
     },
     "NP_PROMPT_TTN": {
-        "uk": "✉️ Введіть номер ТТН і надішліть повідомленням. Щоб скасувати, поверніться в головне меню.",
-        "en": "✉️ Enter the TTN number and send it as a message. To cancel, return to the main menu.",
-        "de": "✉️ Geben Sie die TTN ein und senden Sie sie als Nachricht. Zum Abbrechen kehren Sie ins Hauptmenü zurück.",
-        "pl": "✉️ Wpisz numer TTN i wyślij go w wiadomości. Aby anulować, wróć do menu głównego.",
-        "ru": "✉️ Введите номер ТТН и отправьте сообщением. Чтобы отменить, вернитесь в главное меню.",
+        "uk": "✉️ Введіть номер ТТН і надішліть повідомленням. Натисніть «❌ Скасувати», щоб повернутися до меню.",
+        "en": "✉️ Enter the TTN number and send it as a message. Use “❌ Cancel” to return to the menu.",
+        "de": "✉️ Geben Sie die TTN ein und senden Sie sie als Nachricht. Verwenden Sie „❌ Abbrechen“, um zum Menü zurückzukehren.",
+        "pl": "✉️ Wpisz numer TTN i wyślij go w wiadomości. Użyj „❌ Anuluj”, aby wrócić do menu.",
+        "ru": "✉️ Введите номер ТТН и отправьте сообщением. Нажмите «❌ Отменить», чтобы вернуться в меню.",
     },
     "NP_SEARCH_PROGRESS": {
         "uk": "⏳ Отримую статус накладної, зачекайте кілька секунд…",
@@ -614,11 +614,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📝 <b>Заметки для ТТН {ttn}</b>",
     },
     "NP_NOTE_PROMPT": {
-        "uk": "📝 Введіть текст нотатки для ТТН {ttn}. Щоб скасувати, надішліть «відміна».",
-        "en": "📝 Send the note text for TTN {ttn}. To cancel, send “cancel”.",
-        "de": "📝 Geben Sie den Notiztext für TTN {ttn} ein. Zum Abbrechen senden Sie „abbrechen“.",
-        "pl": "📝 Wyślij treść notatki dla TTN {ttn}. Aby anulować, wpisz „anuluj”.",
-        "ru": "📝 Отправьте текст заметки для ТТН {ttn}. Чтобы отменить, напишите «отмена».",
+        "uk": "📝 Введіть текст нотатки для ТТН {ttn}. Натисніть «❌ Скасувати» або надішліть «відміна», щоб перервати.",
+        "en": "📝 Send the note text for TTN {ttn}. Use “❌ Cancel” or send “cancel” to abort.",
+        "de": "📝 Geben Sie den Notiztext für TTN {ttn} ein. Nutzen Sie „❌ Abbrechen“ oder senden Sie „abbrechen“, um abzubrechen.",
+        "pl": "📝 Wyślij treść notatki dla TTN {ttn}. Użyj „❌ Anuluj” lub wpisz „anuluj”, aby przerwać.",
+        "ru": "📝 Введите текст заметки для ТТН {ttn}. Нажмите «❌ Отменить» или отправьте «отмена», чтобы прервать.",
     },
     "NP_NOTE_CANCELLED": {
         "uk": "ℹ️ Додавання нотатки скасовано.",
@@ -649,18 +649,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✅ Накладная удалена из отмеченных.",
     },
     "NP_ASSIGN_PROMPT_TTN": {
-        "uk": "📬 Введіть номер ТТН, яку треба закріпити за співробітником.",
-        "en": "📬 Send the TTN number you want to assign to an employee.",
-        "de": "📬 Geben Sie die TTN ein, die einem Mitarbeiter zugewiesen werden soll.",
-        "pl": "📬 Podaj numer TTN, który chcesz przypisać pracownikowi.",
-        "ru": "📬 Отправьте номер ТТН, который нужно закрепить за сотрудником.",
+        "uk": "📬 Введіть номер ТТН, яку треба закріпити за співробітником. Натисніть «❌ Скасувати», щоб повернутися до меню.",
+        "en": "📬 Send the TTN number you want to assign to an employee. Use “❌ Cancel” to go back to the menu.",
+        "de": "📬 Geben Sie die TTN ein, die einem Mitarbeiter zugewiesen werden soll. Verwenden Sie „❌ Abbrechen“, um zum Menü zurückzukehren.",
+        "pl": "📬 Podaj numer TTN, który chcesz przypisać pracownikowi. Użyj „❌ Anuluj”, aby wrócić do menu.",
+        "ru": "📬 Отправьте номер ТТН, который нужно закрепить за сотрудником. Нажмите «❌ Отменить», чтобы вернуться в меню.",
     },
     "NP_ASSIGN_PROMPT_USER": {
-        "uk": "👤 Вкажіть BSU-код працівника (наприклад, BSU-1234), ID або перешліть його повідомлення. Для скасування напишіть «відміна».",
-        "en": "👤 Provide the employee's BSU code (for example BSU-1234), Telegram ID or forward any of their messages. Send “cancel” to abort.",
-        "de": "👤 Geben Sie den BSU-Code des Mitarbeiters (z. B. BSU-1234), die Telegram-ID an oder leiten Sie eine Nachricht weiter. Zum Abbrechen senden Sie „abbrechen“.",
-        "pl": "👤 Podaj kod BSU pracownika (np. BSU-1234), identyfikator Telegram lub prześlij jego wiadomość. Aby anulować, wpisz „anuluj”.",
-        "ru": "👤 Укажите BSU-код сотрудника (например, BSU-1234), ID Telegram или перешлите его сообщение. Чтобы отменить, отправьте «отмена».",
+        "uk": "👤 Вкажіть BSU-код працівника (наприклад, BSU-1234), ID або перешліть його повідомлення. Натисніть «❌ Скасувати» або напишіть «відміна», щоб перервати.",
+        "en": "👤 Provide the employee's BSU code (for example BSU-1234), Telegram ID or forward any of their messages. Use “❌ Cancel” or send “cancel” to abort.",
+        "de": "👤 Geben Sie den BSU-Code des Mitarbeiters (z. B. BSU-1234), die Telegram-ID an oder leiten Sie eine Nachricht weiter. Nutzen Sie „❌ Abbrechen“ oder senden Sie „abbrechen“, um abzubrechen.",
+        "pl": "👤 Podaj kod BSU pracownika (np. BSU-1234), identyfikator Telegram lub prześlij jego wiadomość. Użyj „❌ Anuluj” lub wpisz „anuluj”, aby przerwać.",
+        "ru": "👤 Укажите BSU-код сотрудника (например, BSU-1234), ID Telegram или перешлите его сообщение. Нажмите «❌ Отменить» или отправьте «отмена», чтобы прервать.",
     },
     "NP_ASSIGN_USER_NOT_FOUND": {
         "uk": "❗ Користувача не знайдено. Перевірте дані та спробуйте ще раз.",
@@ -670,11 +670,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Пользователь не найден. Проверьте данные и попробуйте снова.",
     },
     "NP_ASSIGN_PROMPT_NOTE": {
-        "uk": "📝 Додайте повідомлення для отримувача або надішліть «-», щоб пропустити.",
-        "en": "📝 Add a message for the recipient or send “-” to skip.",
-        "de": "📝 Fügen Sie eine Nachricht für den Empfänger hinzu oder senden Sie „-“, um zu überspringen.",
-        "pl": "📝 Dodaj wiadomość dla odbiorcy lub wyślij „-”, aby pominąć.",
-        "ru": "📝 Добавьте сообщение для получателя или отправьте «-», чтобы пропустить.",
+        "uk": "📝 Додайте повідомлення для отримувача або надішліть «-», щоб пропустити. Натисніть «❌ Скасувати», щоб перервати.",
+        "en": "📝 Add a message for the recipient or send “-” to skip. Use “❌ Cancel” to abort.",
+        "de": "📝 Fügen Sie eine Nachricht für den Empfänger hinzu oder senden Sie „-“, um zu überspringen. Nutzen Sie „❌ Abbrechen“, um abzubrechen.",
+        "pl": "📝 Dodaj wiadomość dla odbiorcy lub wyślij „-”, aby pominąć. Użyj „❌ Anuluj”, aby przerwać.",
+        "ru": "📝 Добавьте сообщение для получателя или отправьте «-», чтобы пропустить. Нажмите «❌ Отменить», чтобы прервать.",
     },
     "NP_ASSIGN_CANCELLED": {
         "uk": "ℹ️ Закріплення накладної скасовано.",
@@ -682,6 +682,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "ℹ️ Zuweisung abgebrochen.",
         "pl": "ℹ️ Przypisanie anulowane.",
         "ru": "ℹ️ Назначение накладной отменено.",
+    },
+    "NP_CANCELLED_TOAST": {
+        "uk": "Дію скасовано.",
+        "en": "Action cancelled.",
+        "de": "Aktion abgebrochen.",
+        "pl": "Działanie anulowano.",
+        "ru": "Действие отменено.",
     },
     "NP_ASSIGN_DONE": {
         "uk": "✅ Накладну {ttn} закріплено за {user}. Співробітника поінформовано.",
@@ -2089,6 +2096,14 @@ NP_MARK_RECEIVED_LABEL = {
     "ru": "✅ Посылка получена",
 }
 
+NP_CANCEL_BUTTON_LABEL = {
+    "uk": "❌ Скасувати",
+    "en": "❌ Cancel",
+    "de": "❌ Abbrechen",
+    "pl": "❌ Anuluj",
+    "ru": "❌ Отменить",
+}
+
 NP_CANCEL_WORDS = {"отмена", "cancel", "скасувати", "відміна", "anuluj", "abbrechen", "stop"}
 
 
@@ -2572,6 +2587,13 @@ def kb_novaposhta(uid: int) -> InlineKeyboardMarkup:
     if uid in admins:
         kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_ASSIGN_SEND"), callback_data="np_assign_start"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def kb_np_cancel(uid: int) -> InlineKeyboardMarkup:
+    lang = resolve_lang(uid)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_CANCEL_BUTTON_LABEL), callback_data="np_cancel"))
     return kb
 
 
@@ -3116,7 +3138,7 @@ async def become_admin(m: types.Message):
     await anchor_show_root(uid)
 
 
-@dp.message_handler(content_types=ContentType.ANY, state="*")
+@dp.message_handler(content_types=ContentType.ANY, state=None)
 async def fallback_message(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     text = m.text or ""
@@ -3195,7 +3217,7 @@ async def np_search_start(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     await flow_clear(uid)
     await state.set_state(NovaPoshtaFSM.waiting_ttn.state)
-    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_PROMPT_TTN"))
+    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
     flow_track(uid, prompt)
     await c.answer()
 
@@ -3235,7 +3257,7 @@ async def np_receive_ttn(m: types.Message, state: FSMContext):
             warn_text = tr(uid, "NP_SEARCH_NOT_FOUND", ttn=h(ttn))
         warn = await bot.send_message(m.chat.id, warn_text)
         flow_track(uid, warn)
-        prompt = await bot.send_message(m.chat.id, tr(uid, "NP_PROMPT_TTN"))
+        prompt = await bot.send_message(m.chat.id, tr(uid, "NP_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
         flow_track(uid, prompt)
         return
 
@@ -3285,7 +3307,7 @@ async def np_note_prompt(c: types.CallbackQuery, state: FSMContext):
     ttn = c.data.split(":", 1)[1]
     await state.set_state(NovaPoshtaFSM.waiting_note.state)
     await state.update_data(note_ttn=ttn, note_message=(c.message.chat.id, c.message.message_id))
-    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_NOTE_PROMPT", ttn=h(ttn)))
+    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_NOTE_PROMPT", ttn=h(ttn)), reply_markup=kb_np_cancel(uid))
     flow_track(uid, prompt)
     await c.answer()
 
@@ -3553,7 +3575,7 @@ async def np_assign_start_cb(c: types.CallbackQuery, state: FSMContext):
         return
     await flow_clear(uid)
     await state.set_state(NovaPoshtaFSM.waiting_assign_ttn.state)
-    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_ASSIGN_PROMPT_TTN"))
+    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_ASSIGN_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
     flow_track(uid, prompt)
     await c.answer()
 
@@ -3575,7 +3597,7 @@ async def np_assign_quick_cb(c: types.CallbackQuery, state: FSMContext):
     await flow_clear(uid)
     await state.set_state(NovaPoshtaFSM.waiting_assign_user.state)
     await state.update_data(assign_ttn=ttn, assign_payload=payload)
-    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_ASSIGN_PROMPT_USER"))
+    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_ASSIGN_PROMPT_USER"), reply_markup=kb_np_cancel(uid))
     flow_track(uid, prompt)
     await c.answer()
 
@@ -3605,14 +3627,14 @@ async def np_assign_receive_ttn(m: types.Message, state: FSMContext):
     if not text_body:
         warn = await bot.send_message(m.chat.id, tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"))
         flow_track(uid, warn)
-        prompt = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_PROMPT_TTN"))
+        prompt = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
         flow_track(uid, prompt)
         return
     await state.set_state(NovaPoshtaFSM.waiting_assign_user.state)
     await state.update_data(assign_ttn=ttn, assign_payload=payload)
     preview = await bot.send_message(m.chat.id, text_body, reply_markup=kb)
     flow_track(uid, preview)
-    prompt = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_PROMPT_USER"))
+    prompt = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_PROMPT_USER"), reply_markup=kb_np_cancel(uid))
     flow_track(uid, prompt)
 
 
@@ -3643,7 +3665,7 @@ async def np_assign_receive_user(m: types.Message, state: FSMContext):
     bsu = profile.get("bsu", "—")
     summary = await bot.send_message(m.chat.id, f"👤 <b>{h(fullname)}</b> — BSU {h(bsu)}")
     flow_track(uid, summary)
-    prompt = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_PROMPT_NOTE"))
+    prompt = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_PROMPT_NOTE"), reply_markup=kb_np_cancel(uid))
     flow_track(uid, prompt)
     await state.set_state(NovaPoshtaFSM.waiting_assign_note.state)
 
@@ -3704,6 +3726,21 @@ async def np_close_message(c: types.CallbackQuery):
     except Exception:
         pass
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_cancel")
+async def np_cancel_flow(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    current = await state.get_state()
+    if current and current.startswith("NovaPoshtaFSM"):
+        await state.finish()
+    await flow_clear(uid)
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+    await c.answer(tr(uid, "NP_CANCELLED_TOAST"))
 
 # ========================== CHECKS ==========================
 @dp.callback_query_handler(lambda c: c.data == "menu_checks")
