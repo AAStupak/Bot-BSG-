@@ -268,6 +268,18 @@ def list_notes(uid: int, ttn: Optional[str] = None) -> Dict[str, List[Dict[str, 
     return {key: list(value) for key, value in notes.items() if value}
 
 
+def remove_notes(uid: int, ttn: str) -> bool:
+    """Remove all notes saved for the given TTN.
+
+    Returns ``True`` if any entries were removed."""
+
+    user = _user_bucket(uid)
+    removed = bool(user["notes"].pop(ttn, None))
+    if removed:
+        _save_state()
+    return removed
+
+
 def assign_parcel(admin_uid: int, target_uid: int, ttn: str,
                   status_payload: Optional[Dict[str, Any]], note: Optional[str] = None) -> Dict[str, Any]:
     state = _load_state()
@@ -361,6 +373,7 @@ __all__ = [
     "has_bookmark",
     "add_note",
     "list_notes",
+    "remove_notes",
     "assign_parcel",
     "list_assignments",
     "list_admin_assignments",
