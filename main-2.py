@@ -836,6 +836,10 @@ class PhotoFSM(StatesGroup):
     collecting = State()
 
 
+class SosFSM(StatesGroup):
+    waiting_location = State()
+
+
 class NovaPoshtaFSM(StatesGroup):
     waiting_ttn = State()
     waiting_note = State()
@@ -2866,14 +2870,87 @@ def kb_photos(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
-def kb_photo_session_controls() -> InlineKeyboardMarkup:
+def kb_photo_session_controls(has_uploads: bool) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.row(
-        InlineKeyboardButton("✅ Завершить загрузку", callback_data="photo_finish"),
-        InlineKeyboardButton("❌ Отменить", callback_data="photo_cancel"),
-    )
-    kb.add(InlineKeyboardButton("❌ Закрыть сообщение", callback_data="broadcast_close"))
+    if has_uploads:
+        kb.row(
+            InlineKeyboardButton("🗂 Посмотреть загруженное", callback_data="photo_session_preview"),
+            InlineKeyboardButton("✅ Завершить загрузку", callback_data="photo_finish"),
+        )
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="photo_cancel"))
     return kb
+
+
+def kb_photo_view_actions() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="photo_view_close"))
+    kb.add(InlineKeyboardButton("📂 Меню фото", callback_data="photo_view_menu"))
+    kb.add(InlineKeyboardButton("🏠 На главную", callback_data="photo_view_root"))
+    return kb
+
+
+def _format_photo_session_entry(idx: int, entry: dict) -> str:
+    original = entry.get("original") or entry.get("file") or "—"
+    uploaded_at = entry.get("uploaded_at")
+    if isinstance(uploaded_at, str):
+        try:
+            dt = datetime.fromisoformat(uploaded_at)
+            uploaded_at = dt.strftime("%d.%m.%Y %H:%M")
+        except ValueError:
+            uploaded_at = uploaded_at.replace("T", " ")
+    return f"{idx}. {h(original)} — {h(uploaded_at or '—')}"
+
+
+def _build_photo_session_text(info: dict, uploaded: List[dict], last_entry: Optional[dict] = None) -> str:
+    name = h(info.get("name", "—"))
+    code = h(info.get("code") or "—")
+    lines = [
+        "📤 <b>Загрузка фотографий объекта</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📂 Проект: <b>{name}</b> ({code})",
+        "",
+        "Отправляйте одно или несколько изображений: можно прикреплять фото напрямую или документом без сжатия.",
+        "Каждый файл сохраняется в хронологию вместе с вашим именем и временем загрузки.",
+        "",
+    ]
+    if uploaded:
+        lines.append(f"📸 Уже загружено: <b>{len(uploaded)}</b>")
+        lines.append("Список файлов:")
+        lines.extend(_format_photo_session_entry(idx + 1, entry) for idx, entry in enumerate(uploaded))
+        if last_entry:
+            marker = last_entry.get("original") or last_entry.get("file")
+            if marker:
+                lines.append("")
+                lines.append(f"🆕 Последнее добавление: <b>{h(marker)}</b>")
+        lines.append("")
+        lines.append("Используйте кнопку «🗂 Посмотреть загруженное», чтобы пересмотреть файлы без повторной загрузки.")
+    else:
+        lines.append("Пока нет загруженных файлов. Отправьте первое фото, чтобы начать список.")
+    lines.append("")
+    lines.append("Продолжайте отправлять фото или используйте кнопки ниже для завершения или отмены сессии.")
+    return "\n".join(lines)
+
+
+async def _photo_refresh_session_message(chat_id: int, uid: int, state: FSMContext, info: dict,
+                                         uploaded: List[dict], last_entry: Optional[dict] = None):
+    data = await state.get_data()
+    target = data.get("photo_session_message")
+    text = _build_photo_session_text(info, uploaded, last_entry)
+    kb = kb_photo_session_controls(bool(uploaded))
+    if isinstance(target, (list, tuple)) and len(target) == 2:
+        tgt_chat, tgt_id = target
+        try:
+            await bot.edit_message_text(text, tgt_chat, tgt_id, reply_markup=kb)
+            return
+        except MessageNotModified:
+            return
+        except MessageCantBeEdited:
+            pass
+        except Exception:
+            pass
+    msg = await bot.send_message(chat_id, text, reply_markup=kb)
+    flow_track(uid, msg)
+    await state.update_data(photo_session_message=(msg.chat.id, msg.message_id))
 
 
 def kb_finance_root(user_has_pending_confirm: bool=False) -> InlineKeyboardMarkup:
@@ -5204,18 +5281,8 @@ async def photo_upload(c: types.CallbackQuery, state: FSMContext):
     info = load_project_info(project)
     await flow_clear(uid)
     await state.finish()
-    await state.update_data(photo_project=project, uploaded=[])
-    intro = (
-        "📤 <b>Загрузка фотографий объекта</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📂 Проект: <b>{h(info.get('name', '—'))}</b> ({h(info.get('code') or '—')})\n\n"
-        "Отправляйте одно или несколько изображений: можно прикреплять фото напрямую или через режим «Документ» без сжатия.\n"
-        "Каждый файл будет сохранён в хронологию вместе с вашим именем и временем загрузки.\n"
-        "Своё фото можно позже удалить через просмотр архива, а любой участник может запросить оригинал одним нажатием.\n\n"
-        "Когда закончите — нажмите «✅ Завершить загрузку». Чтобы выйти без добавления новых файлов, используйте «❌ Отменить»."
-    )
-    msg = await bot.send_message(c.message.chat.id, intro, reply_markup=kb_photo_session_controls())
-    flow_track(uid, msg)
+    await state.update_data(photo_project=project, uploaded=[], photo_session_message=None)
+    await _photo_refresh_session_message(c.message.chat.id, uid, state, info, [])
     await PhotoFSM.collecting.set()
     await c.answer()
 
@@ -5317,44 +5384,15 @@ async def photo_collect_media(m: types.Message, state: FSMContext):
     uploaded = list(data.get("uploaded") or [])
     uploaded.append(entry)
     await state.update_data(uploaded=uploaded)
-
-    meta_lines: List[str] = []
-    captured = metadata.get("captured_at") if isinstance(metadata, dict) else None
-    if captured:
-        meta_lines.append(f"📸 Дата съёмки: {h(captured)}")
-    gps = metadata.get("gps") if isinstance(metadata, dict) else None
-    if isinstance(gps, dict) and gps.get("lat") is not None and gps.get("lon") is not None:
-        meta_lines.append(f"🌐 Координаты: {gps['lat']:.6f}, {gps['lon']:.6f}")
-    address = metadata.get("address") if isinstance(metadata, dict) else None
-    if address:
-        meta_lines.append(f"🏙 Локация (EXIF): {h(address)}")
-    camera = metadata.get("camera") if isinstance(metadata, dict) else None
-    if camera:
-        meta_lines.append(f"📷 Камера: {h(camera)}")
-
-    detail_block = "\n".join(meta_lines)
-    if detail_block:
-        detail_block = f"\n{detail_block}"
-
-    caption = (
-        "✅ Фото сохранено\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📂 Проект: <b>{h(info.get('name', '—'))}</b> ({h(project_code)})\n"
-        f"📛 Оригинал: {h(original_name)}\n"
-        f"📂 Файл архива: {h(filename)}\n"
-        f"👤 Автор: {h(prof.get('fullname', '—'))} (ID {uid}, {h(prof.get('bsu', '—'))})\n"
-        f"🕒 Загружено: {now.strftime('%Y-%m-%d %H:%M')}"
-        f"{detail_block}\n\n"
-        "Продолжайте отправлять фото или завершите загрузку кнопкой ниже."
-    )
-    msg = await bot.send_message(m.chat.id, caption, reply_markup=kb_photo_session_controls())
-    flow_track(uid, msg)
+    await _photo_refresh_session_message(m.chat.id, uid, state, info, uploaded, entry)
     await update_all_anchors()
 
 
 @dp.message_handler(state=PhotoFSM.collecting, content_types=ContentType.TEXT)
 async def photo_collect_text(m: types.Message, state: FSMContext):
     uid = m.from_user.id
+    data = await state.get_data()
+    uploaded = data.get("uploaded") or []
     try:
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
@@ -5362,9 +5400,66 @@ async def photo_collect_text(m: types.Message, state: FSMContext):
     hint = await bot.send_message(
         m.chat.id,
         "ℹ️ Отправьте фотографию или изображение документом. Когда закончите, нажмите «✅ Завершить загрузку».",
-        reply_markup=kb_photo_session_controls()
+        reply_markup=kb_photo_session_controls(bool(uploaded))
     )
     flow_track(uid, hint)
+
+
+@dp.callback_query_handler(lambda c: c.data == "photo_session_preview", state=PhotoFSM.collecting)
+async def photo_session_preview(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    uploaded = data.get("uploaded") or []
+    if not uploaded:
+        return await c.answer("Пока нет загруженных файлов", show_alert=True)
+    project = data.get("photo_project")
+    if not project:
+        return await c.answer("Проект не найден", show_alert=True)
+    await c.answer("Отправляю файлы…")
+    header = await bot.send_message(
+        c.message.chat.id,
+        f"🗂 <b>Загруженные в этой сессии</b>\nВсего файлов: <b>{len(uploaded)}</b>.",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+    )
+    flow_track(uid, header)
+    base_dir = proj_photos_dir(project)
+    for entry in uploaded:
+        stored = entry.get("file") or ""
+        original = entry.get("original") or stored
+        if not stored:
+            warn = await bot.send_message(
+                c.message.chat.id,
+                f"⚠️ Не удалось определить файл для {h(original)}.",
+                reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+            )
+            flow_track(uid, warn)
+            continue
+        path = os.path.join(base_dir, stored)
+        if not os.path.exists(path):
+            warn = await bot.send_message(
+                c.message.chat.id,
+                f"⚠️ Файл {h(stored)} не найден на диске.",
+                reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+            )
+            flow_track(uid, warn)
+            continue
+        caption = f"📁 {h(original)}"
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+        try:
+            ext = os.path.splitext(stored)[1].lower()
+            file_input = InputFile(path)
+            if _should_send_as_photo(ext):
+                msg = await bot.send_photo(c.message.chat.id, file_input, caption=caption, reply_markup=kb)
+            else:
+                msg = await bot.send_document(c.message.chat.id, file_input, caption=caption, reply_markup=kb)
+            flow_track(uid, msg)
+        except Exception:
+            warn = await bot.send_message(
+                c.message.chat.id,
+                f"⚠️ Не удалось отправить {h(original)}.",
+                reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+            )
+            flow_track(uid, warn)
 
 
 @dp.callback_query_handler(lambda c: c.data == "photo_finish", state=PhotoFSM.collecting)
@@ -5448,7 +5543,29 @@ async def photo_view(c: types.CallbackQuery):
         fallback_text = caption + "\n\n⚠️ Не удалось отобразить файл в Telegram, но запись остаётся в архиве."
         warn = await bot.send_message(c.message.chat.id, fallback_text, reply_markup=kb)
         flow_track(uid, warn)
+    footer = (
+        "📁 <b>Просмотр архива завершён</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "Выберите дальнейшее действие с помощью кнопок ниже."
+    )
+    tail = await bot.send_message(c.message.chat.id, footer, reply_markup=kb_photo_view_actions())
+    flow_track(uid, tail)
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data in {"photo_view_close", "photo_view_root", "photo_view_menu"})
+async def photo_view_controls(c: types.CallbackQuery):
+    uid = c.from_user.id
+    action = c.data
+    if action == "photo_view_menu":
+        await menu_photos(c)
+        return
+    await flow_clear(uid)
+    if action == "photo_view_root":
+        await anchor_show_root(uid)
+        await c.answer("Главное меню открыто")
+    else:
+        await c.answer("Просмотр закрыт")
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("photo_original:"))
@@ -5475,7 +5592,8 @@ async def photo_send_original(c: types.CallbackQuery):
         msg = await bot.send_document(
             c.message.chat.id,
             InputFile(path, filename=original_name),
-            caption=f"📤 Оригинал: {h(original_name)}"
+            caption=f"📤 Оригинал: {h(original_name)}",
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
         )
         flow_track(uid, msg)
         await c.answer("Оригинал отправлен")
@@ -6366,6 +6484,7 @@ async def adm_req_paid(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_sos")
 async def sos_start(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    await state.finish()
     await flow_clear(uid)
     text = ("⚠️ Вы нажали кнопку <b>SOS</b>.\n\n"
             "Пожалуйста, подтвердите, что нажатие не случайно:")
@@ -6374,7 +6493,6 @@ async def sos_start(c: types.CallbackQuery, state: FSMContext):
     kb.add(InlineKeyboardButton("❌ Отменить", callback_data="sos_cancel"))
     msg = await bot.send_message(c.message.chat.id, text, reply_markup=kb)
     flow_track(uid, msg)
-    await state.update_data(sos_stage="confirm")
     await c.answer()
 
 
@@ -6388,27 +6506,66 @@ async def sos_cancel(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "sos_confirm")
 async def sos_confirm(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    await flow_clear(uid)
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton("📍 Отправить местоположение", request_location=True))
-    msg = await bot.send_message(c.message.chat.id,
-                                 "📍 Отправьте вашу геолокацию кнопкой ниже.",
-                                 reply_markup=kb)
+    kb.row(
+        KeyboardButton("📍 Отправить местоположение", request_location=True),
+        KeyboardButton("❌ Отменить")
+    )
+    msg = await bot.send_message(
+        c.message.chat.id,
+        "📍 Отправьте вашу геолокацию кнопкой ниже или отмените действие.",
+        reply_markup=kb
+    )
     flow_track(uid, msg)
-    await state.update_data(sos_stage="location")
+    await SosFSM.waiting_location.set()
     await c.answer()
 
 
-@dp.message_handler(content_types=ContentType.LOCATION, state="*")
+@dp.message_handler(state=SosFSM.waiting_location, content_types=ContentType.TEXT)
+async def sos_location_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    normalized = text.replace("❌", "").replace("📍", "").strip().lower()
+    if normalized in {"отменить", "cancel"} or normalized in NP_CANCEL_WORDS:
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        try:
+            remove = await bot.send_message(m.chat.id, "⌨️", reply_markup=ReplyKeyboardRemove())
+            await bot.delete_message(remove.chat.id, remove.message_id)
+        except Exception:
+            pass
+        await flow_clear(uid)
+        await state.finish()
+        await anchor_show_root(uid)
+        return
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    warn = await bot.send_message(
+        m.chat.id,
+        "📍 Используйте кнопку отправки геопозиции или «❌ Отменить», чтобы вернуться в меню."
+    )
+    flow_track(uid, warn)
+
+
+@dp.message_handler(content_types=ContentType.LOCATION, state=SosFSM.waiting_location)
 async def sos_location(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    data = await state.get_data()
-    if data.get("sos_stage") != "location":
-        return
     lat, lon = m.location.latitude, m.location.longitude
     prof = load_user(uid) or {"user_id": uid}
 
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
+
+    try:
+        placeholder = await bot.send_message(m.chat.id, "⌨️", reply_markup=ReplyKeyboardRemove())
+        await bot.delete_message(m.chat.id, placeholder.message_id)
+    except Exception:
+        pass
 
     sender_kb = InlineKeyboardMarkup().add(
         InlineKeyboardButton("❌ Закрыть уведомление", callback_data="sos_sender_close")
