@@ -40,9 +40,9 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, sys, json, random, re, base64, hashlib, secrets
+import os, sys, json, random, re, base64, hashlib, secrets, textwrap
 from html import escape as html_escape
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional, List, Tuple, Any, Set
 
 from openpyxl import Workbook, load_workbook
@@ -58,23 +58,7 @@ from aiogram.types import (
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from nova_poshta import (
-    fetch_tracking as np_fetch_tracking,
-    remember_search as np_remember_search,
-    get_history as np_get_history,
-    get_cached_status as np_get_cached_status,
-    toggle_bookmark as np_toggle_bookmark,
-    list_bookmarks as np_list_bookmarks,
-    has_bookmark as np_has_bookmark,
-    add_note as np_add_note,
-    list_notes as np_list_notes,
-    remove_notes as np_remove_notes,
-    assign_parcel as np_assign_parcel,
-    list_assignments as np_list_assignments,
-    mark_assignment_received as np_mark_assignment_received,
-    get_assignment as np_get_assignment,
-    refresh_assignment_status as np_refresh_assignment_status,
-)
+import requests
 
 
 # ========================== CONFIG ==========================
@@ -251,11 +235,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📥 Полученные посылки",
     },
     "BTN_NP_ASSIGN_SEND": {
-        "uk": "📬 Закріпити ТТН",
-        "en": "📬 Assign TTN",
-        "de": "📬 TTN zuweisen",
-        "pl": "📬 Przypisz TTN",
-        "ru": "📬 Назначить накладную",
+        "uk": "📬 Закріпити ТТН за користувачем",
+        "en": "📬 Assign TTN to user",
+        "de": "📬 TTN einem Nutzer zuordnen",
+        "pl": "📬 Przypisz TTN użytkownikowi",
+        "ru": "📬 Закрепить ТТН за пользователем",
     },
     "BTN_BACK_ROOT": {
         "uk": "⬅️ На головну",
@@ -531,25 +515,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "\nУ вас ещё нет сохранённых чеков. Добавьте первый через кнопку «📷 Добавить чек».",
     },
     "NP_MENU_TITLE": {
-        "uk": "📮 <b>Нова пошта</b>\\n━━━━━━━━━━━━━━━━━━\\nОбирайте дію, щоб знайти накладну, переглянути історію, збережені записи або посилки від компанії.",
-        "en": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nPick an action to search TTNs, open history, review saved entries or manage company parcels.",
-        "de": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nWählen Sie eine Aktion, um TTN zu suchen, den Verlauf, gespeicherte Einträge oder Firmensendungen zu öffnen.",
-        "pl": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz działanie, aby wyszukać TTN, przejrzeć historię, zapisane wpisy lub paczki od firmy.",
-        "ru": "📮 <b>Новая почта</b>\\n━━━━━━━━━━━━━━━━━━\\nВыберите действие, чтобы искать ТТН, открыть историю, сохранения или фирменные посылки.",
+        "uk": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nЄдине меню для пошуку та супроводу накладних. Скористайтесь кнопками нижче, щоб знайти відправлення, переглянути історію, нотатки чи посилки від компанії.",
+        "en": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nYour central hub for parcel tracking. Use the buttons below to look up TTNs, reopen history, manage notes, and review company deliveries.",
+        "de": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nZentrale Schaltstelle für Sendungsnummern. Verwenden Sie die Schaltflächen unten, um TTN zu suchen, den Verlauf zu öffnen, Notizen zu pflegen und Firmensendungen einzusehen.",
+        "pl": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nPanel do pracy z przesyłkami. Przyciski poniżej umożliwiają wyszukiwanie TTN, podgląd historii, notatek oraz paczek od firmy.",
+        "ru": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nЦентральное меню для работы с накладными. Используйте кнопки ниже, чтобы искать ТТН, открывать историю, заметки и фирменные отправления.",
     },
     "NP_INTERFACE_TEXT": {
-        "uk": "📘 <b>Панель «Нова пошта»</b>\n━━━━━━━━━━━━━━━━━━\n• «🔍 Пошук за ТТН» — миттєво знайти статус і зберегти його в історії.\n• «🕓 Історія пошуку» — повернутися до останніх запитів.\n• «⭐ Обрані ТТН» — тримайте під рукою найважливіші накладні.\n• «💾 Збережені ТТН» — власні коментарі до номерів.\n• «🏢 Посилки від компанії» — відправлення, які закріпив адміністратор.\n• «📥 Отримані посилки» — усе, що вже підтверджено як доставлене.\n\nУ будь-який момент натисніть «❌ Скасувати», щоб повернутися до цього меню.",
-        "en": "📘 <b>Nova Poshta workspace</b>\n━━━━━━━━━━━━━━━━━━\n• “🔍 Search by TTN” — fetch the latest status and keep it in history.\n• “🕓 Search history” — revisit the last lookups.\n• “⭐ Bookmarked TTNs” — pin the most important numbers.\n• “💾 Saved TTNs” — store personal comments for quick context.\n• “🏢 Company parcels” — shipments assigned to you by admins.\n• “📥 Received parcels” — everything already confirmed as delivered.\n\nTap “❌ Cancel” at any time to return to this panel.",
-        "de": "📘 <b>Nova-Poshta-Übersicht</b>\n━━━━━━━━━━━━━━━━━━\n• „🔍 Suche per TTN“ – aktuellen Status abrufen und speichern.\n• „🕓 Suchverlauf“ – letzte Abfragen erneut öffnen.\n• „⭐ Markierte TTN“ – wichtige Nummern anheften.\n• „💾 Gespeicherte TTN“ – eigene Kommentare für schnellen Kontext.\n• „🏢 Firmensendungen“ – Zuordnungen durch Administratoren.\n• „📥 Erhaltene Sendungen“ – bereits bestätigte Lieferungen.\n\nÜber „❌ Abbrechen“ gelangen Sie jederzeit zurück.",
-        "pl": "📘 <b>Panel Nova Poshta</b>\n━━━━━━━━━━━━━━━━━━\n• „🔍 Szukaj po TTN” – pobierz aktualny status i zachowaj go w historii.\n• „🕓 Historia wyszukiwań” – wróć до ostatnich zapytań.\n• „⭐ Oznaczone TTN” – przypnij найважливіші numery.\n• „💾 Zapisane TTN” – własne komentarze для szybkiego конtekstu.\n• „🏢 Paczki od firmy” – wysyłки przypisane przez administratora.\n• „📥 Odebrane paczki” – wszystko potwierdzone jako dostarczone.\n\nPrzycisk «❌ Anuluj» завжди повертає до tego меню.",
-        "ru": "📘 <b>Панель «Новая почта»</b>\n━━━━━━━━━━━━━━━━━━\n• «🔍 Поиск по ТТН» — получить актуальный статус и сохранить его в истории.\н• «🕓 История поисков» — открыть последние запросы.\н• «⭐ Отмеченные ТТН» — закрепите важные номера.\н• «💾 Сохранённые ТТН» — ваши комментарии и пометки.\н• «🏢 Посылки от компании» — отправления, назначенные администратором.\н• «📥 Полученные посылки» — всё, что уже подтверждено как доставленное.\н\нНажмите «❌ Отменить», чтобы вернуться к этому меню.",
+        "uk": "📘 <b>Як працювати з розділом</b>\n━━━━━━━━━━━━━━━━━━\n• «🔍 Пошук ТТН» — введіть номер і одразу отримайте квитанцію з оновленим статусом.\n• «🕓 Історія» — швидкий доступ до останніх переглядів.\n• «⭐ Відзначені» — зберігайте важливі накладні під рукою.\n• «💾 Нотатки» — власні помітки до кожної ТТН.\n• «🏢 Посилки від компанії» — накладні, які передав адміністратор.\n• «📥 Отримані» — підтверджені відправлення, які вже закриті.\n\nСкористайтесь «❌ Скасувати», щоб повернутися в це меню.",
+        "en": "📘 <b>How to use this section</b>\n━━━━━━━━━━━━━━━━━━\n• “🔍 Search by TTN” — enter a number and get the refreshed receipt.\n• “🕓 History” — reopen your latest lookups with one tap.\n• “⭐ Bookmarked” — keep priority shipments within reach.\n• “💾 Notes” — personal remarks for each TTN.\n• “🏢 Company parcels” — numbers forwarded by the team.\n• “📥 Received” — deliveries already confirmed.\n\nTap “❌ Cancel” any time to return here.",
+        "de": "📘 <b>So nutzen Sie den Bereich</b>\n━━━━━━━━━━━━━━━━━━\n• „🔍 TTN suchen“ – Nummer eingeben und aktualisierten Beleg erhalten.\n• „🕓 Verlauf“ – letzte Abfragen sofort erneut öffnen.\n• „⭐ Markiert“ – wichtige Sendungen griffbereit halten.\n• „💾 Notizen“ – persönliche Hinweise zu jeder TTN.\n• „🏢 Firmensendungen“ – vom Team zugewiesene Nummern.\n• „📥 Erhalten“ – bereits bestätigte Lieferungen.\n\nMit „❌ Abbrechen“ kehren Sie jederzeit zurück.",
+        "pl": "📘 <b>Jak korzystać z panelu</b>\n━━━━━━━━━━━━━━━━━━\n• „🔍 Szukaj TTN” – wpisz numer i otrzymaj odświeżony podgląd.\n• „🕓 Historia” – szybki powrót до ostatnich wyszukiwań.\n• „⭐ Oznaczone” – найważniejsze przesyłки под ręką.\n• „💾 Notatki” – власne комментарze до TTN.\n• „🏢 Paczki od firmy” – numery przekazane przez administrację.\n• „📥 Odebrane” – przesyłki już потwierдzone.\n\nPrzycisk „❌ Anuluj” zawsze wraca до tego меню.",
+        "ru": "📘 <b>Как пользоваться разделом</b>\n━━━━━━━━━━━━━━━━━━\n• «🔍 Поиск ТТН» — введите номер и сразу получите обновлённый чек.\n• «🕓 История» — быстрый доступ к последним запросам.\n• «⭐ Отмеченные» — держите важные отправления под рукой.\n• «💾 Заметки» — личные комментарии к каждой накладной.\n• «🏢 Посылки от компании» — номера, которые передал администратор.\n• «📥 Полученные» — уже подтверждённые доставки.\n\nНажмите «❌ Отменить», чтобы вернуться в это меню.",
     },
     "NP_PROMPT_TTN": {
-        "uk": "✉️ Введіть номер ТТН і надішліть повідомленням. Натисніть «❌ Скасувати», щоб повернутися до меню.",
-        "en": "✉️ Enter the TTN number and send it as a message. Use “❌ Cancel” to return to the menu.",
-        "de": "✉️ Geben Sie die TTN ein und senden Sie sie als Nachricht. Verwenden Sie „❌ Abbrechen“, um zum Menü zurückzukehren.",
-        "pl": "✉️ Wpisz numer TTN i wyślij go w wiadomości. Użyj „❌ Anuluj”, aby wrócić do menu.",
-        "ru": "✉️ Введите номер ТТН и отправьте сообщением. Нажмите «❌ Отменить», чтобы вернуться в меню.",
+        "uk": "✉️ Надішліть номер накладної одним повідомленням (допускаються цифри та літери). Кнопка «❌ Скасувати» повертає до меню.",
+        "en": "✉️ Send the TTN as a single message (digits and letters only). Use “❌ Cancel” to return to the menu.",
+        "de": "✉️ Senden Sie die TTN als einzelne Nachricht (Ziffern/Buchstaben). Mit „❌ Abbrechen“ geht es zurück ins Menü.",
+        "pl": "✉️ Wyślij numer TTN w jednej wiadomości (cyfry i litery). „❌ Anuluj” wraca do menu.",
+        "ru": "✉️ Отправьте номер ТТН одним сообщением (цифры и буквы). «❌ Отменить» вернёт в меню.",
     },
     "NP_SEARCH_PROGRESS": {
         "uk": "⏳ Отримую статус накладної, зачекайте кілька секунд…",
@@ -580,11 +564,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🕓 История пуста. Выполните поиск, чтобы увидеть последние ТТН.",
     },
     "NP_HISTORY_HEADER": {
-        "uk": "🕓 <b>Історія пошуку</b>\\n━━━━━━━━━━━━━━━━━━\\nОберіть накладну знизу, щоб переглянути деталі.",
-        "en": "🕓 <b>Search history</b>\\n━━━━━━━━━━━━━━━━━━\\nChoose a TTN below to open the detailed card.",
-        "de": "🕓 <b>Suchverlauf</b>\\n━━━━━━━━━━━━━━━━━━\\nWählen Sie unten eine TTN, um die Details anzuzeigen.",
-        "pl": "🕓 <b>Historia wyszukiwań</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz TTN poniżej, aby zobaczyć szczegóły.",
-        "ru": "🕓 <b>История поисков</b>\\n━━━━━━━━━━━━━━━━━━\\nВыберите накладную ниже, чтобы открыть подробности.",
+        "uk": "🕓 <b>Історія пошуку</b>\\n━━━━━━━━━━━━━━━━━━\\nНатисніть номер нижче, щоб відкрити квитанцію та побачити актуальний статус.",
+        "en": "🕓 <b>Search history</b>\\n━━━━━━━━━━━━━━━━━━\\nTap a TTN below to reopen its receipt with the latest status.",
+        "de": "🕓 <b>Suchverlauf</b>\\n━━━━━━━━━━━━━━━━━━\\nTippen Sie auf eine TTN, um den Beleg mit aktuellem Status zu öffnen.",
+        "pl": "🕓 <b>Historia wyszukiwań</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz TTN, aby otworzyć podgląd ze świeżym statusem.",
+        "ru": "🕓 <b>История поисков</b>\\n━━━━━━━━━━━━━━━━━━\\nНажмите на ТТН ниже, чтобы открыть чек с актуальным статусом.",
     },
     "NP_BOOKMARKS_EMPTY": {
         "uk": "⭐ Ви ще не позначали накладні. Додайте вподобану ТТН під час пошуку.",
@@ -594,11 +578,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "⭐ У вас ещё нет отмеченных ТТН. Добавьте накладную в избранное во время просмотра результата.",
     },
     "NP_BOOKMARKS_HEADER": {
-        "uk": "⭐ <b>Відзначені накладні</b>\\n━━━━━━━━━━━━━━━━━━\\nОберіть ТТН, щоб переглянути актуальний статус та коментарі.",
-        "en": "⭐ <b>Bookmarked TTNs</b>\\n━━━━━━━━━━━━━━━━━━\\nSelect a TTN to view the latest status and comments.",
-        "de": "⭐ <b>Markierte TTN</b>\\n━━━━━━━━━━━━━━━━━━\\nWählen Sie eine TTN, um aktuellen Status und Kommentare zu sehen.",
-        "pl": "⭐ <b>Oznaczone TTN</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz TTN, aby zobaczyć bieżący status i komentarze.",
-        "ru": "⭐ <b>Отмеченные накладные</b>\\n━━━━━━━━━━━━━━━━━━\\nВыберите ТТН, чтобы посмотреть актуальный статус и комментарии.",
+        "uk": "⭐ <b>Відзначені накладні</b>\n━━━━━━━━━━━━━━━━━━\nОберіть ТТН, щоб миттєво відкрити її квитанцію та нотатки.",
+        "en": "⭐ <b>Bookmarked TTNs</b>\n━━━━━━━━━━━━━━━━━━\nSelect a TTN to instantly open its receipt and notes.",
+        "de": "⭐ <b>Markierte TTN</b>\n━━━━━━━━━━━━━━━━━━\nWählen Sie eine TTN, um Beleg und Notizen sofort zu öffnen.",
+        "pl": "⭐ <b>Oznaczone TTN</b>\n━━━━━━━━━━━━━━━━━━\nWybierz TTN, aby szybko zobaczyć podgląd i notatki.",
+        "ru": "⭐ <b>Отмеченные накладные</b>\n━━━━━━━━━━━━━━━━━━\nВыберите ТТН, чтобы сразу открыть чек и заметки."
     },
     "NP_NOTES_EMPTY": {
         "uk": "💾 Збережень ще немає. Додайте коментар із картки ТТН.",
@@ -608,25 +592,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "💾 Пока нет сохранённых ТТН. Добавьте комментарий из карточки накладной.",
     },
     "NP_NOTES_HEADER": {
-        "uk": "💾 <b>Збережені ТТН</b>\\n━━━━━━━━━━━━━━━━━━\\nОберіть номер, щоб переглянути останній запис.",
-        "en": "💾 <b>Saved TTNs</b>\\n━━━━━━━━━━━━━━━━━━\\nChoose a number to review the latest entry.",
-        "de": "💾 <b>Gespeicherte TTN</b>\\n━━━━━━━━━━━━━━━━━━\\nWählen Sie eine Nummer, um den letzten Eintrag zu sehen.",
-        "pl": "💾 <b>Zapisane TTN</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz numer, aby zobaczyć ostatni wpis.",
-        "ru": "💾 <b>Сохранённые ТТН</b>\\n━━━━━━━━━━━━━━━━━━\\nВыберите номер, чтобы открыть последнюю запись.",
+        "uk": "💾 <b>Збережені ТТН</b>\\n━━━━━━━━━━━━━━━━━━\\nОберіть номер, щоб побачити нотатки та оновлену квитанцію.",
+        "en": "💾 <b>Saved TTNs</b>\\n━━━━━━━━━━━━━━━━━━\\nPick a number to view notes and the refreshed receipt.",
+        "de": "💾 <b>Gespeicherte TTN</b>\\n━━━━━━━━━━━━━━━━━━\\nWählen Sie eine Nummer, um Notizen und den Beleg aufzurufen.",
+        "pl": "💾 <b>Zapisane TTN</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz numer, aby zobaczyć notatki i odświeżony podgląd.",
+        "ru": "💾 <b>Сохранённые ТТН</b>\\n━━━━━━━━━━━━━━━━━━\\nВыберите номер, чтобы открыть заметки и обновлённый чек.",
     },
     "NP_NOTES_FOR_TTN": {
-        "uk": "💾 <b>Збереження для ТТН {ttn}</b>",
-        "en": "💾 <b>Saved entry for TTN {ttn}</b>",
-        "de": "💾 <b>Gespeichert für TTN {ttn}</b>",
-        "pl": "💾 <b>Zapis TTN {ttn}</b>",
-        "ru": "💾 <b>Сохранение для ТТН {ttn}</b>",
+        "uk": "💾 <b>Нотатки до ТТН {ttn}</b>",
+        "en": "💾 <b>Notes for TTN {ttn}</b>",
+        "de": "💾 <b>Notizen zu TTN {ttn}</b>",
+        "pl": "💾 <b>Notatki dla TTN {ttn}</b>",
+        "ru": "💾 <b>Заметки для ТТН {ttn}</b>",
     },
     "NP_NOTE_PROMPT": {
-        "uk": "💬 Надішліть коментар для ТТН {ttn}. Натисніть «❌ Скасувати» або напишіть «відміна», щоб перервати.",
-        "en": "💬 Send a comment for TTN {ttn}. Use “❌ Cancel” or send “cancel” to abort.",
-        "de": "💬 Senden Sie einen Kommentar zur TTN {ttn}. Nutzen Sie „❌ Abbrechen“ oder senden Sie „abbrechen“, um abzubrechen.",
-        "pl": "💬 Wyślij komentarz do TTN {ttn}. Użyj „❌ Anuluj” lub wpisz „anuluj”, aby przerwać.",
-        "ru": "💬 Отправьте комментарий для ТТН {ttn}. Нажмите «❌ Отменить» или напишите «отмена», чтобы прервать.",
+        "uk": "💬 Напишіть коментар для ТТН {ttn} та надішліть повідомленням. Щоб скасувати, скористайтесь «❌ Скасувати» або напишіть «відміна».",
+        "en": "💬 Type a comment for TTN {ttn} and send it as a message. Use “❌ Cancel” or type “cancel” to abort.",
+        "de": "💬 Schreiben Sie eine Notiz für TTN {ttn} und senden Sie sie als Nachricht. Mit „❌ Abbrechen“ oder dem Wort „abbrechen“ beenden.",
+        "pl": "💬 Napisz komentarz do TTN {ttn} i wyślij wiadomość. Użyj „❌ Anuluj” lub wpisz „anuluj”, aby przerwać.",
+        "ru": "💬 Напишите комментарий для ТТН {ttn} и отправьте сообщением. Можно отменить через «❌ Отменить» или слово «отмена».",
     },
     "NP_NOTE_CANCELLED": {
         "uk": "ℹ️ Додавання коментаря скасовано.",
@@ -664,18 +648,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✅ Накладная удалена из отмеченных.",
     },
     "NP_ASSIGN_PROMPT_TTN": {
-        "uk": "📬 Введіть номер ТТН, яку треба закріпити за співробітником. Натисніть «❌ Скасувати», щоб повернутися до меню.",
-        "en": "📬 Send the TTN number you want to assign to an employee. Use “❌ Cancel” to go back to the menu.",
-        "de": "📬 Geben Sie die TTN ein, die einem Mitarbeiter zugewiesen werden soll. Verwenden Sie „❌ Abbrechen“, um zum Menü zurückzukehren.",
-        "pl": "📬 Podaj numer TTN, który chcesz przypisać pracownikowi. Użyj „❌ Anuluj”, aby wrócić do menu.",
-        "ru": "📬 Отправьте номер ТТН, который нужно закрепить за сотрудником. Нажмите «❌ Отменить», чтобы вернуться в меню.",
+        "uk": "📬 Введіть номер ТТН, яку потрібно закріпити за користувачем. «❌ Скасувати» повертає до меню.",
+        "en": "📬 Enter the TTN you want to assign to a user. Press “❌ Cancel” to return.",
+        "de": "📬 Geben Sie die TTN ein, die einem Nutzer zugeordnet werden soll. Mit „❌ Abbrechen“ zurück zum Menü.",
+        "pl": "📬 Podaj numer TTN, który chcesz przypisać użytkownikowi. „❌ Anuluj” wraca do menu.",
+        "ru": "📬 Введите номер ТТН, который нужно закрепить за пользователем. «❌ Отменить» вернёт в меню.",
     },
     "NP_ASSIGN_PROMPT_USER": {
-        "uk": "👤 Оберіть працівника зі списку нижче або вкажіть BSU-код/ID і перешліть його повідомлення. Натисніть «❌ Скасувати» чи напишіть «відміна», щоб перервати.",
-        "en": "👤 Pick an employee from the list below or provide their BSU code/ID and forward any message. Use “❌ Cancel” or send “cancel” to abort.",
-        "de": "👤 Wählen Sie eine Person aus der Liste oder geben Sie BSU-Code/ID an bzw. leiten Sie eine Nachricht weiter. Nutzen Sie „❌ Abbrechen“ oder senden Sie „abbrechen“, um abzubrechen.",
-        "pl": "👤 Wybierz pracownika z listy lub podaj kod BSU/ID i prześlij jego wiadomość. Użyj „❌ Anuluj” lub wpisz „anuluj”, aby przerwać.",
-        "ru": "👤 Выберите сотрудника из списка или укажите BSU-код/ID и перешлите сообщение. Нажмите «❌ Отменить» или отправьте «отмена», чтобы прервать.",
+        "uk": "👤 Оберіть отримувача зі списку нижче або введіть його BSU/ID. «❌ Скасувати» зупиняє операцію.",
+        "en": "👤 Pick the recipient from the list below or type their BSU/ID. Use “❌ Cancel” to stop.",
+        "de": "👤 Wählen Sie den Empfänger über die Liste oder geben Sie BSU/ID ein. Mit „❌ Abbrechen“ beenden.",
+        "pl": "👤 Wybierz odbiorcę z listy poniżej lub wpisz jego BSU/ID. „❌ Anuluj” przerywa operację.",
+        "ru": "👤 Выберите получателя кнопкой ниже или введите его BSU/ID. «❌ Отменить» прекращает операцию.",
     },
     "NP_ASSIGN_USER_NOT_FOUND": {
         "uk": "❗ Користувача не знайдено. Перевірте дані та спробуйте ще раз.",
@@ -685,18 +669,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Пользователь не найден. Проверьте данные и попробуйте снова.",
     },
     "NP_ASSIGN_PROMPT_NOTE": {
-        "uk": "📝 Додайте повідомлення для отримувача або надішліть «-», щоб пропустити. Натисніть «❌ Скасувати», щоб перервати.",
-        "en": "📝 Add a message for the recipient or send “-” to skip. Use “❌ Cancel” to abort.",
-        "de": "📝 Fügen Sie eine Nachricht für den Empfänger hinzu oder senden Sie „-“, um zu überspringen. Nutzen Sie „❌ Abbrechen“, um abzubrechen.",
-        "pl": "📝 Dodaj wiadomość dla odbiorcy lub wyślij „-”, aby pominąć. Użyj „❌ Anuluj”, aby przerwać.",
-        "ru": "📝 Добавьте сообщение для получателя или отправьте «-», чтобы пропустить. Нажмите «❌ Отменить», чтобы прервать.",
+        "uk": "📝 Додайте коротке повідомлення або натисніть «⏭ Пропустити». «❌ Скасувати» зупиняє передачу.",
+        "en": "📝 Add a short note or tap “⏭ Skip”. “❌ Cancel” stops the handover.",
+        "de": "📝 Fügen Sie eine kurze Notiz hinzu oder tippen Sie auf „⏭ Überspringen“. „❌ Abbrechen“ beendet den Vorgang.",
+        "pl": "📝 Dodaj krótki komentarz albo wybierz „⏭ Pomiń”. „❌ Anuluj” kończy operację.",
+        "ru": "📝 Добавьте короткий комментарий или нажмите «⏭ Пропустить». «❌ Отменить» прекращает передачу.",
+    },
+    "NP_ASSIGN_SKIP_TOAST": {
+        "uk": "Коментар не додано.",
+        "en": "No note attached.",
+        "de": "Keine Notiz hinzugefügt.",
+        "pl": "Notatki nie dodano.",
+        "ru": "Комментарий не добавлен.",
     },
     "NP_ASSIGN_CANCELLED": {
-        "uk": "ℹ️ Закріплення накладної скасовано.",
-        "en": "ℹ️ Assignment cancelled.",
-        "de": "ℹ️ Zuweisung abgebrochen.",
-        "pl": "ℹ️ Przypisanie anulowane.",
-        "ru": "ℹ️ Назначение накладной отменено.",
+        "uk": "ℹ️ Передача ТТН скасована.",
+        "en": "ℹ️ TTN forwarding cancelled.",
+        "de": "ℹ️ Weitergabe der TTN wurde abgebrochen.",
+        "pl": "ℹ️ Przekazanie TTN zostało przerwane.",
+        "ru": "ℹ️ Передача ТТН отменена.",
     },
     "NP_CANCELLED_TOAST": {
         "uk": "Дію скасовано.",
@@ -706,32 +697,32 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Действие отменено.",
     },
     "NP_ASSIGN_DONE": {
-        "uk": "✅ Накладну {ttn} закріплено за {user}. Співробітника поінформовано.",
-        "en": "✅ TTN {ttn} was assigned to {user}. The employee has been notified.",
-        "de": "✅ Die TTN {ttn} wurde {user} zugewiesen. Der Mitarbeiter wurde benachrichtigt.",
-        "pl": "✅ TTN {ttn} przypisano do {user}. Pracownik został poinformowany.",
-        "ru": "✅ Накладная {ttn} закреплена за {user}. Сотрудник уведомлён.",
+        "uk": "✅ ТТН {ttn} закріплено за користувачем {user}. Повідомлення вже надіслано.",
+        "en": "✅ TTN {ttn} assigned to {user}. They have been notified.",
+        "de": "✅ TTN {ttn} wurde {user} zugeordnet. Der Nutzer wurde informiert.",
+        "pl": "✅ TTN {ttn} przypisano użytkownikowi {user}. Powiadomienie wysłano.",
+        "ru": "✅ ТТН {ttn} закреплена за пользователем {user}. Уведомление отправлено.",
     },
     "NP_ASSIGN_NOTIFY_USER": {
-        "uk": "📦 Адміністратор {admin} закріпив за вами накладну <b>{ttn}</b>.",
-        "en": "📦 Administrator {admin} assigned the TTN <b>{ttn}</b> to you.",
-        "de": "📦 Administrator {admin} hat Ihnen die TTN <b>{ttn}</b> zugewiesen.",
-        "pl": "📦 Administrator {admin} przypisał Ci TTN <b>{ttn}</b>.",
-        "ru": "📦 Администратор {admin} закрепил за вами накладную <b>{ttn}</b>.",
+        "uk": "📦 Адміністратор {admin} передав вам накладну <b>{ttn}</b>. Відкрийте картку нижче, щоб переглянути статус і підтвердити отримання.",
+        "en": "📦 Administrator {admin} forwarded TTN <b>{ttn}</b> to you. Open the card below to review the status and confirm delivery.",
+        "de": "📦 Administrator {admin} hat Ihnen die TTN <b>{ttn}</b> übergeben. Öffnen Sie die Karte unten, um Status und Empfang zu prüfen.",
+        "pl": "📦 Administrator {admin} przekazał Ci TTN <b>{ttn}</b>. Otwórz kartę poniżej, aby sprawdzić status i potwierdzić odbiór.",
+        "ru": "📦 Администратор {admin} передал вам ТТН <b>{ttn}</b>. Откройте карточку ниже, чтобы проверить статус и подтвердить получение.",
     },
     "NP_ASSIGNED_EMPTY": {
-        "uk": "🏢 Закріплених посилок немає. Адміністратор надішле повідомлення, коли з'явиться нова ТТН.",
-        "en": "🏢 No company parcels assigned to you yet. You will be notified when an admin assigns a TTN.",
-        "de": "🏢 Es wurden Ihnen noch keine Firmensendungen zugewiesen. Sie werden benachrichtigt, sobald eine TTN zugewiesen wird.",
-        "pl": "🏢 Nie przypisano jeszcze żadnych przesyłek firmowych. Otrzymasz powiadomienie, gdy admin przypisze TTN.",
-        "ru": "🏢 Пока нет закреплённых посылок. Вы получите уведомление, когда администратор назначит ТТН.",
+        "uk": "🏢 Нових посилок поки немає. Як тільки адміністратор передасть ТТН, ви отримаєте сповіщення.",
+        "en": "🏢 No company parcels right now. You'll be notified as soon as an administrator forwards a TTN.",
+        "de": "🏢 Zurzeit keine Firmensendungen. Sie erhalten eine Nachricht, sobald ein Administrator eine TTN weiterleitet.",
+        "pl": "🏢 Obecnie brak przesyłek firmowych. Dostaniesz powiadomienie, gdy administrator przekaże TTN.",
+        "ru": "🏢 Новых посылок пока нет. Мы сообщим, как только администратор передаст ТТН.",
     },
     "NP_ASSIGNED_HEADER": {
-        "uk": "🏢 <b>Посилки від компанії</b>\\n━━━━━━━━━━━━━━━━━━\\nОберіть накладну, щоб переглянути статус та підтвердити отримання.",
-        "en": "🏢 <b>Company parcels</b>\\n━━━━━━━━━━━━━━━━━━\\nChoose a TTN to view its status and confirm receipt.",
-        "de": "🏢 <b>Firmensendungen</b>\\n━━━━━━━━━━━━━━━━━━\\nWählen Sie eine TTN, um Status und Empfang zu bestätigen.",
-        "pl": "🏢 <b>Paczki od firmy</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz TTN, aby zobaczyć status i potwierdzić odbiór.",
-        "ru": "🏢 <b>Посылки от фирмы</b>\\n━━━━━━━━━━━━━━━━━━\\nВыберите накладную, чтобы посмотреть статус и подтвердить получение.",
+        "uk": "🏢 <b>Посилки від компанії</b>\\n━━━━━━━━━━━━━━━━━━\\nОберіть накладну, щоб переглянути статус, залишити нотатку або підтвердити отримання.",
+        "en": "🏢 <b>Company parcels</b>\\n━━━━━━━━━━━━━━━━━━\\nPick a TTN to review its status, add notes, or confirm delivery.",
+        "de": "🏢 <b>Firmensendungen</b>\\n━━━━━━━━━━━━━━━━━━\\nWählen Sie eine TTN, um Status, Notizen oder den Empfang zu bestätigen.",
+        "pl": "🏢 <b>Paczki od firmy</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz TTN, aby sprawdzić status, dodać notatkę lub potwierdzić odbiór.",
+        "ru": "🏢 <b>Посылки от фирмы</b>\\n━━━━━━━━━━━━━━━━━━\\nВыберите накладную, чтобы посмотреть статус, добавить заметку или подтвердить получение.",
     },
     "NP_ASSIGNED_DETAIL_TITLE": {
         "uk": "🏢 <b>Посилка від компанії</b>",
@@ -762,18 +753,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✅ Спасибо! Администраторы уведомлены.",
     },
     "NP_RECEIVED_EMPTY": {
-        "uk": "📥 Ще немає підтверджених посилок. Позначайте отримання в розділі закріплених посилок.",
-        "en": "📥 No parcels confirmed yet. Mark deliveries from the assigned list when you receive them.",
-        "de": "📥 Noch keine bestätigten Sendungen. Markieren Sie Empfang in der Liste der zugewiesenen Sendungen.",
-        "pl": "📥 Brak potwierdzonych paczek. Zaznacz odbiór na liście przypisanych przesyłek.",
-        "ru": "📥 Пока нет подтверждённых посылок. Отмечайте получение в разделе закреплённых отправлений.",
+        "uk": "📥 Поки що немає підтверджених посилок. Після отримання скористайтеся кнопкою «Посилка отримана» в картці накладної.",
+        "en": "📥 No confirmed parcels yet. Use “Parcel received” on the TTN card once the delivery is in your hands.",
+        "de": "📥 Noch keine bestätigten Sendungen. Verwenden Sie „Sendung erhalten“, sobald die Lieferung bei Ihnen ist.",
+        "pl": "📥 Brak potwierdzonych paczek. Po odebraniu użyj przycisku „Przesyłka odebrana” na karcie TTN.",
+        "ru": "📥 Подтверждённых посылок пока нет. После получения нажмите «Посылка получена» в карточке накладной.",
     },
     "NP_RECEIVED_HEADER": {
-        "uk": "📥 <b>Отримані посилки</b>\\n━━━━━━━━━━━━━━━━━━\\nОбрані нижче накладні вже підтверджені як доставлені.",
-        "en": "📥 <b>Received parcels</b>\\n━━━━━━━━━━━━━━━━━━\\nThe TTNs below have already been confirmed as delivered.",
-        "de": "📥 <b>Erhaltene Sendungen</b>\\n━━━━━━━━━━━━━━━━━━\\nDiese TTN wurden bereits als zugestellt bestätigt.",
-        "pl": "📥 <b>Odebrane paczki</b>\\n━━━━━━━━━━━━━━━━━━\\nPoniższe TTN zostały potwierdzone jako dostarczone.",
-        "ru": "📥 <b>Полученные посылки</b>\\n━━━━━━━━━━━━━━━━━━\\nПеречисленные ниже ТТН уже подтверждены как доставленные.",
+        "uk": "📥 <b>Отримані посилки</b>\\n━━━━━━━━━━━━━━━━━━\\nПерегляньте статуси, нотатки та історію для підтверджених накладних.",
+        "en": "📥 <b>Received parcels</b>\\n━━━━━━━━━━━━━━━━━━\\nReview statuses, notes, and history for confirmed TTNs.",
+        "de": "📥 <b>Erhaltene Sendungen</b>\\n━━━━━━━━━━━━━━━━━━\\nPrüfen Sie Status, Notizen und Historie bestätigter TTN.",
+        "pl": "📥 <b>Odebrane paczki</b>\\n━━━━━━━━━━━━━━━━━━\\nSprawdź status, notatki i historię potwierdzonych TTN.",
+        "ru": "📥 <b>Полученные посылки</b>\\n━━━━━━━━━━━━━━━━━━\\nПросматривайте статусы, заметки и историю подтверждённых ТТН.",
     },
     "NP_ADMIN_DELIVERY_ALERT": {
         "uk": "📦 <b>Посилка отримана</b>\\nTTN: <b>{ttn}</b>\\nОтримувач: {user}\\nПідтверджено: {time}",
@@ -1959,74 +1950,104 @@ def format_day_month(value: Optional[str]) -> str:
 
 NP_FIELD_LABELS = {
     "uk": {
+        "ttn": "Номер ТТН",
         "status": "Статус",
-        "delivery_date": "Дата доставки",
-        "recipient_city": "Місто отримувача",
-        "recipient_warehouse": "Відділення отримувача",
-        "sender_city": "Місто відправника",
-        "sender_warehouse": "Відділення відправника",
+        "last_update": "Оновлено",
+        "delivery_date": "Планова доставка",
+        "estimated_date": "Орієнтовно",
+        "recipient": "Отримувач",
+        "recipient_city": "Місто отримання",
+        "recipient_warehouse": "Відділення отримання",
+        "sender": "Відправник",
+        "sender_city": "Місто відправлення",
+        "sender_warehouse": "Відділення відправлення",
+        "service_type": "Послуга",
         "weight": "Вага",
-        "cost": "Оціночна вартість",
-        "estimated_date": "Орієнтовна доставка",
-        "last_update": "Останнє оновлення",
-        "service_type": "Тип доставки",
-        "recipient": "Одержувач",
+        "cost": "Оцінена вартість",
+        "section_summary": "Зведення",
+        "section_recipient": "Отримувач",
+        "section_sender": "Відправник",
+        "section_parcel": "Відправлення",
     },
     "en": {
+        "ttn": "TTN number",
         "status": "Status",
-        "delivery_date": "Delivery date",
-        "recipient_city": "Recipient city",
-        "recipient_warehouse": "Recipient warehouse",
-        "sender_city": "Sender city",
-        "sender_warehouse": "Sender warehouse",
-        "weight": "Weight",
-        "cost": "Declared cost",
-        "estimated_date": "Estimated delivery",
-        "last_update": "Last update",
-        "service_type": "Service type",
+        "last_update": "Updated",
+        "delivery_date": "Planned delivery",
+        "estimated_date": "Estimated",
         "recipient": "Recipient",
+        "recipient_city": "Destination city",
+        "recipient_warehouse": "Destination branch",
+        "sender": "Sender",
+        "sender_city": "Origin city",
+        "sender_warehouse": "Origin branch",
+        "service_type": "Service",
+        "weight": "Weight",
+        "cost": "Declared value",
+        "section_summary": "Summary",
+        "section_recipient": "Recipient",
+        "section_sender": "Sender",
+        "section_parcel": "Parcel",
     },
     "de": {
+        "ttn": "TTN-Nummer",
         "status": "Status",
-        "delivery_date": "Lieferdatum",
-        "recipient_city": "Empfängerstadt",
-        "recipient_warehouse": "Empfängerfiliale",
+        "last_update": "Aktualisiert",
+        "delivery_date": "Geplante Zustellung",
+        "estimated_date": "Voraussichtlich",
+        "recipient": "Empfänger",
+        "recipient_city": "Zielstadt",
+        "recipient_warehouse": "Ziel-Filiale",
+        "sender": "Absender",
         "sender_city": "Absenderstadt",
-        "sender_warehouse": "Absenderfiliale",
+        "sender_warehouse": "Absender-Filiale",
+        "service_type": "Service",
         "weight": "Gewicht",
         "cost": "Deklarierter Wert",
-        "estimated_date": "Voraussichtliche Lieferung",
-        "last_update": "Letzte Aktualisierung",
-        "service_type": "Versandart",
-        "recipient": "Empfänger",
+        "section_summary": "Übersicht",
+        "section_recipient": "Empfänger",
+        "section_sender": "Absender",
+        "section_parcel": "Sendung",
     },
     "pl": {
+        "ttn": "Numer TTN",
         "status": "Status",
-        "delivery_date": "Data doręczenia",
-        "recipient_city": "Miasto odbiorcy",
-        "recipient_warehouse": "Oddział odbiorcy",
-        "sender_city": "Miasto nadawcy",
-        "sender_warehouse": "Oddział nadawcy",
-        "weight": "Waga",
-        "cost": "Wartość zadeklarowana",
-        "estimated_date": "Przewidywana dostawa",
-        "last_update": "Ostatnia aktualizacja",
-        "service_type": "Typ dostawy",
+        "last_update": "Aktualizacja",
+        "delivery_date": "Planowana dostawa",
+        "estimated_date": "Szacunkowo",
         "recipient": "Odbiorca",
+        "recipient_city": "Miasto odbioru",
+        "recipient_warehouse": "Oddział odbioru",
+        "sender": "Nadawca",
+        "sender_city": "Miasto nadania",
+        "sender_warehouse": "Oddział nadania",
+        "service_type": "Usługa",
+        "weight": "Waga",
+        "cost": "Deklarowana wartość",
+        "section_summary": "Podsumowanie",
+        "section_recipient": "Odbiorca",
+        "section_sender": "Nadawca",
+        "section_parcel": "Przesyłka",
     },
     "ru": {
+        "ttn": "Номер ТТН",
         "status": "Статус",
-        "delivery_date": "Дата доставки",
-        "recipient_city": "Город получателя",
-        "recipient_warehouse": "Отделение получателя",
-        "sender_city": "Город отправителя",
-        "sender_warehouse": "Отделение отправителя",
+        "last_update": "Обновлено",
+        "delivery_date": "Плановая доставка",
+        "estimated_date": "Ориентировочно",
+        "recipient": "Получатель",
+        "recipient_city": "Город получения",
+        "recipient_warehouse": "Отделение получения",
+        "sender": "Отправитель",
+        "sender_city": "Город отправления",
+        "sender_warehouse": "Отделение отправления",
+        "service_type": "Сервис",
         "weight": "Вес",
         "cost": "Оценочная стоимость",
-        "estimated_date": "Ожидаемая доставка",
-        "last_update": "Последнее обновление",
-        "service_type": "Тип доставки",
-        "recipient": "Получатель",
+        "section_summary": "Сводка",
+        "section_recipient": "Получатель",
+        "section_sender": "Отправитель",
+        "section_parcel": "Посылка",
     },
 }
 
@@ -2047,12 +2068,14 @@ NP_COST_SUFFIX = {
 }
 
 NP_FIELD_ICONS = {
+    "ttn": "🔖",
     "status": "🗒",
     "delivery_date": "📅",
     "recipient_city": "📍",
     "recipient_warehouse": "🏤",
     "sender_city": "🚚",
     "sender_warehouse": "🏢",
+    "sender": "🏢",
     "weight": "⚖️",
     "cost": "💰",
     "estimated_date": "⏳",
@@ -2061,43 +2084,50 @@ NP_FIELD_ICONS = {
     "recipient": "👤",
 }
 
+NP_SECTION_ICONS = {
+    "section_summary": "📌",
+    "section_recipient": "🎯",
+    "section_sender": "🚚",
+    "section_parcel": "📦",
+}
+
 NP_TTN_TITLE = {
-    "uk": "📦 <b>Накладна №{ttn}</b>",
-    "en": "📦 <b>Waybill #{ttn}</b>",
-    "de": "📦 <b>Sendung Nr. {ttn}</b>",
-    "pl": "📦 <b>List przewozowy #{ttn}</b>",
-    "ru": "📦 <b>Накладная №{ttn}</b>",
+    "uk": "🧾 <b>Nova Poshta — квитанція</b>\n🔖 TTN: <code>{ttn}</code>",
+    "en": "🧾 <b>Nova Poshta — receipt</b>\n🔖 TTN: <code>{ttn}</code>",
+    "de": "🧾 <b>Nova Poshta — Beleg</b>\n🔖 TTN: <code>{ttn}</code>",
+    "pl": "🧾 <b>Nova Poshta — potwierdzenie</b>\n🔖 TTN: <code>{ttn}</code>",
+    "ru": "🧾 <b>Nova Poshta — квитанция</b>\n🔖 ТТН: <code>{ttn}</code>",
 }
 
 NP_NOTE_COUNT_LINE = {
-    "uk": "💾 Збережено: {count}",
-    "en": "💾 Saved entries: {count}",
-    "de": "💾 Gespeichert: {count}",
-    "pl": "💾 Zapisów: {count}",
-    "ru": "💾 Сохранений: {count}",
+    "uk": "💾 Особисті нотатки: {count}",
+    "en": "💾 Personal notes: {count}",
+    "de": "💾 Eigene Notizen: {count}",
+    "pl": "💾 Własne notatki: {count}",
+    "ru": "💾 Личные заметки: {count}",
 }
 
 NP_ASSIGN_INFO_LINE = {
-    "uk": "🏢 Закріпив: {name} • {time}",
-    "en": "🏢 Assigned by {name} • {time}",
-    "de": "🏢 Zugewiesen von {name} • {time}",
-    "pl": "🏢 Przypisał: {name} • {time}",
-    "ru": "🏢 Назначил: {name} • {time}",
+    "uk": "🏢 Передав адміністратор: {name} • {time}",
+    "en": "🏢 Assigned by admin {name} • {time}",
+    "de": "🏢 Zugewiesen durch Admin {name} • {time}",
+    "pl": "🏢 Przypisane przez admina {name} • {time}",
+    "ru": "🏢 Передал администратор: {name} • {time}",
 }
 
 NP_ASSIGN_DELIVERED_LINE = {
-    "uk": "✅ Отримано: {time}",
-    "en": "✅ Received: {time}",
-    "de": "✅ Empfangen: {time}",
-    "pl": "✅ Odebrano: {time}",
-    "ru": "✅ Получено: {time}",
+    "uk": "✅ Отримання підтверджено: {time}",
+    "en": "✅ Delivery confirmed: {time}",
+    "de": "✅ Empfang bestätigt: {time}",
+    "pl": "✅ Odbiór potwierdzony: {time}",
+    "ru": "✅ Получение подтверждено: {time}",
 }
 
 NP_ADMIN_NOTE_PREFIX = {
     "uk": "💬 Коментар адміністратора: {note}",
-    "en": "💬 Admin comment: {note}",
-    "de": "💬 Administratorhinweis: {note}",
-    "pl": "💬 Komentarz administratora: {note}",
+    "en": "💬 Admin note: {note}",
+    "de": "💬 Hinweis des Admins: {note}",
+    "pl": "💬 Notatka administratora: {note}",
     "ru": "💬 Комментарий администратора: {note}",
 }
 
@@ -2157,6 +2187,14 @@ NP_CANCEL_BUTTON_LABEL = {
     "ru": "❌ Отменить",
 }
 
+NP_ASSIGN_SKIP_BUTTON_LABEL = {
+    "uk": "⏭ Пропустити",
+    "en": "⏭ Skip",
+    "de": "⏭ Überspringen",
+    "pl": "⏭ Pomiń",
+    "ru": "⏭ Пропустить",
+}
+
 NP_REMOVE_SAVED_BUTTON = {
     "uk": "🗑 Видалити збереження",
     "en": "🗑 Remove saved",
@@ -2202,86 +2240,237 @@ def format_np_short_entry(payload: Optional[dict]) -> str:
     return status or city
 
 
+def _np_extract_value(payload: Optional[dict], *keys: str) -> str:
+    if not payload:
+        return ""
+    for key in keys:
+        if key is None:
+            continue
+        raw = payload.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, (int, float)):
+            value = f"{raw}"
+        else:
+            value = str(raw)
+        value = value.strip()
+        if value:
+            return value
+    return ""
+
+
+def _np_render_receipt_block(entries: List[Tuple[str, ...]]) -> str:
+    items: List[Dict[str, Any]] = []
+    for entry in entries:
+        if not entry:
+            continue
+        kind = entry[0]
+        if kind == "sep":
+            if items and items[-1]["type"] != "sep":
+                items.append({"type": "sep"})
+            continue
+        if kind == "section":
+            title = str(entry[1]).strip()
+            if title:
+                items.append({"type": "section", "text": title})
+            continue
+        label = str(entry[1]).strip()
+        value = ""
+        if len(entry) > 2 and entry[2] is not None:
+            value = str(entry[2]).strip()
+        if not value and kind == "kv_opt":
+            continue
+        if not value:
+            value = "—"
+        items.append({"type": "kv", "label": label or "—", "value": value})
+
+    while items and items[-1]["type"] == "sep":
+        items.pop()
+
+    kv_items = [item for item in items if item["type"] == "kv"]
+    label_width = max((len(item["label"]) for item in kv_items), default=0)
+    label_width = max(10, min(24, label_width)) if kv_items else 12
+    inner_width = max(42, label_width + 20)
+    value_width = max(14, inner_width - label_width - 7)
+
+    def _fit(text: str, limit: int) -> str:
+        if len(text) <= limit:
+            return text
+        return text[: max(1, limit - 1)] + "…"
+
+    lines: List[str] = ["╔" + "═" * inner_width + "╗"]
+    for item in items or [{"type": "kv", "label": "", "value": "—"}]:
+        if item["type"] == "sep":
+            lines.append("╟" + "─" * inner_width + "╢")
+            continue
+        if item["type"] == "section":
+            title = _fit(item["text"], inner_width - 3)
+            lines.append("║" + ("◇ " + title).ljust(inner_width) + "║")
+            continue
+        label = _fit(item["label"], label_width)
+        label_block = label.ljust(label_width)
+        wrapped = textwrap.wrap(
+            item["value"],
+            width=value_width,
+            break_long_words=True,
+            replace_whitespace=False,
+            drop_whitespace=False,
+        ) or [item["value"]]
+        first_value = wrapped[0]
+        line_prefix = f"{label_block} "
+        filler_count = max(2, inner_width - len(line_prefix) - len(first_value) - 1)
+        filler = "·" * filler_count
+        body = f"{line_prefix}{filler} {first_value}"
+        lines.append("║" + body.ljust(inner_width) + "║")
+        pad = " " * (label_width + 2)
+        for extra in wrapped[1:]:
+            continuation = f"{pad}{extra}"
+            lines.append("║" + continuation.ljust(inner_width) + "║")
+    lines.append("╚" + "═" * inner_width + "╝")
+    return "\n".join(lines)
+
+
 def format_np_status(uid: int, ttn: str, payload: Optional[dict], note_count: int = 0,
                      assignment: Optional[dict] = None) -> str:
     lang = resolve_lang(uid)
     labels = NP_FIELD_LABELS.get(lang) or NP_FIELD_LABELS[DEFAULT_LANG]
-    title = _np_pick(lang, NP_TTN_TITLE).format(ttn=h(ttn))
-    lines: List[str] = [title, "━━━━━━━━━━━━━━━━━━", ""]
+    header = _np_pick(lang, NP_TTN_TITLE).format(ttn=h(ttn))
 
-    def safe(value: Any) -> str:
-        if value is None:
-            return "—"
-        if isinstance(value, str):
-            value = value.strip()
-            if not value:
-                return "—"
-        return h(value)
+    def field_label(key: str) -> str:
+        base = labels.get(key, key)
+        icon = NP_FIELD_ICONS.get(key)
+        if icon and not base.startswith(icon):
+            base = f"{icon} {base}"
+        return base
 
-    status_text = ""
-    if payload:
-        status_text = payload.get("Status") or payload.get("StatusCode") or payload.get("StatusDescription") or ""
-    icon = NP_FIELD_ICONS.get("status", "•")
-    lines.append(f"{icon} <b>{labels['status']}</b>")
-    lines.append(f"   {safe(status_text)}")
-    lines.append("")
+    def section_title(key: str) -> str:
+        base = labels.get(key, key)
+        icon = NP_SECTION_ICONS.get(key)
+        if icon and not base.startswith(icon):
+            base = f"{icon} {base}"
+        return base
 
-    def add_line(label_key: str, *payload_keys: str, formatter=None):
-        value = ""
-        if payload:
-            for key in payload_keys:
-                raw = payload.get(key)
-                if raw not in (None, "", " "):
-                    value = raw
-                    break
-        if formatter and value not in (None, "", " "):
-            try:
-                value = formatter(value)
-            except Exception:
-                value = value
-        label = labels[label_key]
-        icon = NP_FIELD_ICONS.get(label_key, "•")
-        lines.append(f"{icon} <b>{label}</b>")
-        lines.append(f"   {safe(value)}")
-        lines.append("")
+    summary_rows: List[Tuple[str, ...]] = [
+        ("section", section_title("section_summary")),
+        ("kv", field_label("ttn"), str(ttn)),
+        ("kv", field_label("status"), _np_extract_value(payload, "Status", "StatusDescription", "StatusCode") or "—"),
+    ]
 
-    add_line("delivery_date", "ScheduledDeliveryDate")
-    add_line("estimated_date", "EstimatedDeliveryDate")
-    add_line("recipient", "RecipientFullName", "RecipientDescription", "RecipientName")
-    add_line("recipient_city", "CityRecipient")
-    add_line("recipient_warehouse", "WarehouseRecipient")
-    add_line("sender_city", "CitySender")
-    add_line("sender_warehouse", "WarehouseSender")
-    add_line("service_type", "ServiceType")
-    add_line("weight", "DocumentWeight", "FactualWeight", formatter=lambda v: _np_format_weight(lang, v))
-    add_line("cost", "DocumentCost", "EstimatedDeliveryCost", formatter=lambda v: _np_format_cost(lang, v))
-    add_line("last_update", "LastUpdatedDate")
+    last_update = _np_extract_value(payload, "LastUpdatedDate")
+    if last_update:
+        summary_rows.append(("kv_opt", field_label("last_update"), last_update))
+    delivery_date = _np_extract_value(payload, "ScheduledDeliveryDate")
+    if delivery_date:
+        summary_rows.append(("kv_opt", field_label("delivery_date"), delivery_date))
+    estimated_date = _np_extract_value(payload, "EstimatedDeliveryDate")
+    if estimated_date:
+        summary_rows.append(("kv_opt", field_label("estimated_date"), estimated_date))
 
-    if lines and lines[-1] == "":
-        lines.pop()
+    recipient_section: List[Tuple[str, ...]] = []
+    recipient_name = _np_extract_value(payload, "RecipientFullName", "RecipientDescription", "RecipientName")
+    if recipient_name:
+        recipient_section.append(("kv", field_label("recipient"), recipient_name))
+    recipient_city = _np_extract_value(payload, "CityRecipient")
+    if recipient_city:
+        recipient_section.append(("kv_opt", field_label("recipient_city"), recipient_city))
+    recipient_branch = _np_extract_value(payload, "WarehouseRecipient")
+    if recipient_branch:
+        recipient_section.append(("kv_opt", field_label("recipient_warehouse"), recipient_branch))
 
+    sender_section: List[Tuple[str, ...]] = []
+    sender_name = _np_extract_value(payload, "SenderFullNameEW", "SenderFullName", "SenderName")
+    if sender_name:
+        sender_section.append(("kv", field_label("sender"), sender_name))
+    sender_city = _np_extract_value(payload, "CitySender")
+    if sender_city:
+        sender_section.append(("kv_opt", field_label("sender_city"), sender_city))
+    sender_branch = _np_extract_value(payload, "WarehouseSender")
+    if sender_branch:
+        sender_section.append(("kv_opt", field_label("sender_warehouse"), sender_branch))
+
+    parcel_section: List[Tuple[str, ...]] = []
+    service_type = _np_extract_value(payload, "ServiceType")
+    if service_type:
+        parcel_section.append(("kv_opt", field_label("service_type"), service_type))
+    weight_raw = _np_extract_value(payload, "DocumentWeight", "FactualWeight")
+    if weight_raw:
+        parcel_section.append(("kv", field_label("weight"), _np_format_weight(lang, weight_raw)))
+    cost_raw = _np_extract_value(payload, "DocumentCost", "EstimatedDeliveryCost")
+    if cost_raw:
+        parcel_section.append(("kv", field_label("cost"), _np_format_cost(lang, cost_raw)))
+
+    receipt_entries: List[Tuple[str, ...]] = list(summary_rows)
+
+    def push_section(title_key: str, rows: List[Tuple[str, ...]]):
+        if not rows:
+            return
+        if receipt_entries:
+            receipt_entries.append(("sep",))
+        receipt_entries.append(("section", section_title(title_key)))
+        receipt_entries.extend(rows)
+
+    push_section("section_recipient", recipient_section)
+    push_section("section_sender", sender_section)
+    push_section("section_parcel", parcel_section)
+
+    block_plain = _np_render_receipt_block(receipt_entries)
+    block_html = f"<pre>{html_escape(block_plain)}</pre>"
+
+    parts: List[str] = [header, block_html]
+
+    footer_lines: List[str] = []
     if note_count:
-        lines.append("")
-        lines.append(_np_pick(lang, NP_NOTE_COUNT_LINE).format(count=note_count))
+        footer_lines.append(_np_pick(lang, NP_NOTE_COUNT_LINE).format(count=note_count))
 
+    assignment_lines: List[str] = []
     if assignment:
         admin_id = assignment.get("assigned_by")
         admin_name = None
         if admin_id:
             prof = load_user(admin_id) or {}
             admin_name = prof.get("fullname") or prof.get("tg", {}).get("first_name")
-        admin_name = admin_name or f"ID {admin_id}" if admin_id else "—"
+        admin_display = admin_name or (f"ID {admin_id}" if admin_id else "—")
         assigned_time = format_datetime_short(assignment.get("created_at")) or assignment.get("created_at") or "—"
-        lines.append("")
-        lines.append(_np_pick(lang, NP_ASSIGN_INFO_LINE).format(name=h(admin_name), time=h(assigned_time)))
-        if assignment.get("note"):
-            note_text = h(assignment.get("note"))
-            lines.append(_np_pick(lang, NP_ADMIN_NOTE_PREFIX).format(note=note_text))
-        if assignment.get("delivered_at"):
-            delivered_time = format_datetime_short(assignment.get("delivered_at")) or assignment.get("delivered_at") or "—"
-            lines.append(_np_pick(lang, NP_ASSIGN_DELIVERED_LINE).format(time=h(delivered_time)))
+        assignment_lines.append(
+            _np_pick(lang, NP_ASSIGN_INFO_LINE).format(name=h(admin_display), time=h(assigned_time))
+        )
+        note_text = assignment.get("note")
+        if note_text:
+            assignment_lines.append(_np_pick(lang, NP_ADMIN_NOTE_PREFIX).format(note=h(note_text)))
+        delivered_at = assignment.get("delivered_at")
+        if delivered_at:
+            delivered_time = format_datetime_short(delivered_at) or delivered_at or "—"
+            assignment_lines.append(
+                _np_pick(lang, NP_ASSIGN_DELIVERED_LINE).format(time=h(delivered_time))
+            )
 
-    return "\n".join(lines)
+    if assignment_lines:
+        if footer_lines:
+            footer_lines.append("")
+        footer_lines.extend(assignment_lines)
+
+    if footer_lines:
+        parts.append("\n".join(footer_lines))
+
+    return "\n\n".join(part for part in parts if part)
+
+
+async def np_send_card(uid: int, chat_id: int, text: str,
+                       kb: Optional[InlineKeyboardMarkup] = None) -> types.Message:
+    runtime = users_runtime.setdefault(uid, {})
+    previous = runtime.get("np_last_card")
+    if isinstance(previous, (list, tuple)) and len(previous) == 2:
+        prev_chat, prev_mid = previous
+        try:
+            await bot.delete_message(prev_chat, prev_mid)
+        except Exception:
+            pass
+        flow_items = runtime.get("flow_msgs", [])
+        runtime["flow_msgs"] = [item for item in flow_items if not (item[0] == prev_chat and item[1] == prev_mid)]
+    msg = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+    flow_track(uid, msg)
+    runtime["np_last_card"] = (msg.chat.id, msg.message_id)
+    return msg
 
 
 def np_prepare_view(uid: int, ttn: str, payload: Optional[dict] = None,
@@ -2671,6 +2860,14 @@ def kb_np_cancel(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
+def kb_np_assign_note(uid: int) -> InlineKeyboardMarkup:
+    lang = resolve_lang(uid)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_ASSIGN_SKIP_BUTTON_LABEL), callback_data="np_assign_skip"))
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_CANCEL_BUTTON_LABEL), callback_data="np_cancel"))
+    return kb
+
+
 def kb_np_result(uid: int, ttn: str, *, bookmarked: bool,
                  allow_assign: bool = False,
                  note_count: int = 0,
@@ -2878,10 +3075,20 @@ def flow_track(uid: int, msg: types.Message):
 
 
 async def flow_clear(uid: int):
-    for chat_id, mid in users_runtime.get(uid, {}).get("flow_msgs", []):
-        try: await bot.delete_message(chat_id, mid)
-        except Exception: pass
-    users_runtime.setdefault(uid, {})["flow_msgs"] = []
+    runtime = users_runtime.setdefault(uid, {})
+    for chat_id, mid in list(runtime.get("flow_msgs", [])):
+        try:
+            await bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+    runtime["flow_msgs"] = []
+    last_card = runtime.pop("np_last_card", None)
+    if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
+        chat_id, mid = last_card
+        try:
+            await bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
 
 
 async def clear_then_anchor(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -3260,6 +3467,304 @@ async def back_root(c: types.CallbackQuery):
     await c.answer()
 
 
+# ========================== NOVA POSHTA STORAGE ==========================
+
+NP_API_URL = "https://api.novaposhta.ua/v2.0/json/"
+NOVA_POSHTA_API_KEY = "2b7d39d126d56e60cfc61d00cd0b452c"
+NP_DATA_FILE = os.path.join("data", "nova_poshta.json")
+
+_np_state_cache: Optional[Dict[str, Any]] = None
+
+
+def _np_utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _np_ensure_storage() -> None:
+    os.makedirs(os.path.dirname(NP_DATA_FILE), exist_ok=True)
+
+
+def _np_blank_state() -> Dict[str, Any]:
+    return {"users": {}, "assignments": {}}
+
+
+def _np_load_state() -> Dict[str, Any]:
+    global _np_state_cache
+    if _np_state_cache is not None:
+        return _np_state_cache
+    _np_ensure_storage()
+    if not os.path.exists(NP_DATA_FILE):
+        _np_state_cache = _np_blank_state()
+        _np_save_state()
+        return _np_state_cache
+    try:
+        with open(NP_DATA_FILE, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid payload")
+        payload.setdefault("users", {})
+        payload.setdefault("assignments", {})
+        _np_state_cache = payload
+    except Exception:
+        _np_state_cache = _np_blank_state()
+        _np_save_state()
+    return _np_state_cache
+
+
+def _np_save_state() -> None:
+    if _np_state_cache is None:
+        return
+    _np_ensure_storage()
+    tmp_file = f"{NP_DATA_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(_np_state_cache, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, NP_DATA_FILE)
+
+
+def _np_user_bucket(uid: int) -> Dict[str, Any]:
+    state = _np_load_state()
+    user = state["users"].setdefault(str(uid), {})
+    user.setdefault("history", [])
+    user.setdefault("bookmarks", {})
+    user.setdefault("notes", {})
+    user.setdefault("assigned", {})
+    return user
+
+
+def np_fetch_tracking(ttn: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    number = (ttn or "").strip()
+    if not number:
+        return False, None, "Пустой номер ТТН"
+    if not re.fullmatch(r"[0-9A-Za-z-]{5,40}", number):
+        return False, None, "Некорректный формат ТТН"
+
+    payload = {
+        "apiKey": NOVA_POSHTA_API_KEY,
+        "modelName": "TrackingDocument",
+        "calledMethod": "getStatusDocuments",
+        "methodProperties": {
+            "Documents": [{"DocumentNumber": number}],
+        },
+    }
+    try:
+        response = requests.post(NP_API_URL, json=payload, timeout=15)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return False, None, f"Ошибка запроса: {exc}"
+
+    try:
+        data = response.json()
+    except ValueError:
+        return False, None, "Не удалось разобрать ответ API"
+
+    docs = data.get("data") or []
+    if docs:
+        doc = docs[0]
+        if isinstance(doc, dict):
+            doc = dict(doc)
+            doc.setdefault("Number", number)
+            doc.setdefault("DocumentNumber", number)
+            return True, doc, ""
+
+    errors = data.get("errors") or data.get("message") or data.get("error")
+    if isinstance(errors, list):
+        msg = "; ".join(str(e) for e in errors if e)
+    else:
+        msg = str(errors or "Номер не найден")
+    if not msg:
+        msg = "Номер не найден"
+    return False, None, msg
+
+
+def np_remember_search(uid: int, ttn: str, status_payload: Optional[Dict[str, Any]]) -> None:
+    user = _np_user_bucket(uid)
+    status_payload = status_payload or {}
+    history = [entry for entry in user["history"] if entry.get("ttn") != ttn]
+    history.insert(0, {
+        "ttn": ttn,
+        "timestamp": _np_utcnow(),
+        "status_payload": status_payload,
+    })
+    user["history"] = history[:25]
+    _np_save_state()
+
+
+def np_get_history(uid: int) -> List[Dict[str, Any]]:
+    user = _np_user_bucket(uid)
+    return list(user["history"])
+
+
+def np_get_cached_status(uid: int, ttn: str) -> Optional[Dict[str, Any]]:
+    user = _np_user_bucket(uid)
+    for entry in user["history"]:
+        if entry.get("ttn") == ttn:
+            return entry.get("status_payload")
+    bookmark = user["bookmarks"].get(ttn)
+    if isinstance(bookmark, dict):
+        return bookmark.get("status_payload")
+    assignment = _np_load_state()["assignments"].get(ttn)
+    if isinstance(assignment, dict) and (
+        assignment.get("assigned_to") == uid or assignment.get("assigned_by") == uid
+    ):
+        return assignment.get("status_payload")
+    return None
+
+
+def _np_set_bookmark(uid: int, ttn: str, status_payload: Optional[Dict[str, Any]]) -> None:
+    user = _np_user_bucket(uid)
+    user["bookmarks"][ttn] = {
+        "added_at": _np_utcnow(),
+        "status_payload": status_payload or {},
+    }
+    _np_save_state()
+
+
+def np_remove_bookmark(uid: int, ttn: str) -> None:
+    user = _np_user_bucket(uid)
+    user["bookmarks"].pop(ttn, None)
+    _np_save_state()
+
+
+def np_toggle_bookmark(uid: int, ttn: str, status_payload: Optional[Dict[str, Any]] = None) -> bool:
+    user = _np_user_bucket(uid)
+    if ttn in user["bookmarks"]:
+        np_remove_bookmark(uid, ttn)
+        return False
+    if status_payload is None:
+        status_payload = np_get_cached_status(uid, ttn) or {}
+    _np_set_bookmark(uid, ttn, status_payload)
+    return True
+
+
+def np_list_bookmarks(uid: int) -> List[Tuple[str, Dict[str, Any]]]:
+    user = _np_user_bucket(uid)
+    items = []
+    for ttn, payload in user["bookmarks"].items():
+        entry = dict(payload)
+        entry["ttn"] = ttn
+        items.append((ttn, entry))
+    items.sort(key=lambda x: x[1].get("added_at", ""), reverse=True)
+    return items
+
+
+def np_has_bookmark(uid: int, ttn: str) -> bool:
+    return ttn in _np_user_bucket(uid)["bookmarks"]
+
+
+def np_add_note(uid: int, ttn: str, text: str) -> Dict[str, Any]:
+    user = _np_user_bucket(uid)
+    bucket = user["notes"].setdefault(ttn, [])
+    note = {
+        "note_id": secrets.token_hex(6),
+        "ttn": ttn,
+        "text": text,
+        "timestamp": _np_utcnow(),
+    }
+    bucket.insert(0, note)
+    user["notes"][ttn] = bucket[:20]
+    _np_save_state()
+    return note
+
+
+def np_list_notes(uid: int, ttn: Optional[str] = None) -> Dict[str, List[Dict[str, Any]]]:
+    user = _np_user_bucket(uid)
+    notes = user["notes"]
+    if ttn is not None:
+        return {ttn: list(notes.get(ttn, []))}
+    return {key: list(value) for key, value in notes.items() if value}
+
+
+def np_remove_notes(uid: int, ttn: str) -> bool:
+    user = _np_user_bucket(uid)
+    removed = bool(user["notes"].pop(ttn, None))
+    if removed:
+        _np_save_state()
+    return removed
+
+
+def np_assign_parcel(admin_uid: int, target_uid: int, ttn: str,
+                     status_payload: Optional[Dict[str, Any]], note: Optional[str] = None) -> Dict[str, Any]:
+    state = _np_load_state()
+    now = _np_utcnow()
+    assignment = state["assignments"].get(ttn, {})
+    assignment.update({
+        "ttn": ttn,
+        "assigned_to": target_uid,
+        "assigned_by": admin_uid,
+        "note": note or "",
+        "created_at": assignment.get("created_at") or now,
+        "updated_at": now,
+        "status_payload": status_payload or assignment.get("status_payload") or {},
+        "delivered_at": assignment.get("delivered_at"),
+        "delivery_note": assignment.get("delivery_note", ""),
+    })
+    state["assignments"][ttn] = assignment
+    user = _np_user_bucket(target_uid)
+    user["assigned"][ttn] = {
+        "assigned_at": assignment.get("created_at") or now,
+        "assigned_by": admin_uid,
+    }
+    _np_save_state()
+    return dict(assignment)
+
+
+def np_get_assignment(ttn: str) -> Optional[Dict[str, Any]]:
+    state = _np_load_state()
+    assignment = state["assignments"].get(ttn)
+    if assignment:
+        return dict(assignment)
+    return None
+
+
+def np_list_assignments(uid: int) -> List[Dict[str, Any]]:
+    state = _np_load_state()
+    result: List[Dict[str, Any]] = []
+    for ttn, assignment in state["assignments"].items():
+        if assignment.get("assigned_to") == uid:
+            entry = dict(assignment)
+            entry["ttn"] = ttn
+            result.append(entry)
+    result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return result
+
+
+def np_list_admin_assignments(admin_uid: int) -> List[Dict[str, Any]]:
+    state = _np_load_state()
+    result: List[Dict[str, Any]] = []
+    for ttn, assignment in state["assignments"].items():
+        if assignment.get("assigned_by") == admin_uid:
+            entry = dict(assignment)
+            entry["ttn"] = ttn
+            result.append(entry)
+    result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return result
+
+
+def np_mark_assignment_received(uid: int, ttn: str, delivery_note: str = "") -> Optional[Dict[str, Any]]:
+    state = _np_load_state()
+    assignment = state["assignments"].get(ttn)
+    if not assignment or assignment.get("assigned_to") != uid:
+        return None
+    assignment["delivered_at"] = _np_utcnow()
+    assignment["delivery_note"] = delivery_note or ""
+    assignment["updated_at"] = assignment["delivered_at"]
+    user = _np_user_bucket(uid)
+    bucket = user["assigned"].setdefault(ttn, {})
+    bucket["delivered_at"] = assignment["delivered_at"]
+    _np_save_state()
+    return dict(assignment)
+
+
+def np_refresh_assignment_status(ttn: str, status_payload: Optional[Dict[str, Any]]) -> None:
+    state = _np_load_state()
+    assignment = state["assignments"].get(ttn)
+    if not assignment:
+        return
+    assignment["status_payload"] = status_payload or {}
+    assignment["updated_at"] = _np_utcnow()
+    _np_save_state()
+
+
 # ========================== NOVA POSHTA ==========================
 
 def _np_clean_ttn(raw: str) -> str:
@@ -3337,7 +3842,7 @@ async def np_receive_ttn(m: types.Message, state: FSMContext):
         return
 
     await state.finish()
-    await bot.send_message(m.chat.id, text_body, reply_markup=kb)
+    await np_send_card(uid, m.chat.id, text_body, kb)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("np_refresh:"))
@@ -3464,7 +3969,7 @@ async def np_history_show_cb(c: types.CallbackQuery):
     if not text_body:
         await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
         return
-    await bot.send_message(c.message.chat.id, text_body, reply_markup=kb)
+    await np_send_card(uid, c.message.chat.id, text_body, kb)
     await c.answer()
 
 
@@ -3504,7 +4009,7 @@ async def np_bookmark_show_cb(c: types.CallbackQuery):
     if not text_body:
         await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
         return
-    await bot.send_message(c.message.chat.id, text_body, reply_markup=kb)
+    await np_send_card(uid, c.message.chat.id, text_body, kb)
     await c.answer()
 
 
@@ -3558,7 +4063,7 @@ async def np_notes_show_cb(c: types.CallbackQuery):
     else:
         lines.append(tr(uid, "NP_NOTES_EMPTY"))
     body = f"{text_body}\n\n" + "\n".join(lines)
-    await bot.send_message(c.message.chat.id, body, reply_markup=kb_np_saved_detail(uid, ttn))
+    await np_send_card(uid, c.message.chat.id, body, kb_np_saved_detail(uid, ttn))
     await c.answer()
 
 
@@ -3651,7 +4156,7 @@ async def np_assigned_detail_cb(c: types.CallbackQuery):
     if not text_body:
         await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
         return
-    await bot.send_message(c.message.chat.id, text_body, reply_markup=kb)
+    await np_send_card(uid, c.message.chat.id, text_body, kb)
     await c.answer()
 
 
@@ -3773,9 +4278,47 @@ async def np_assign_user_selected(uid: int, profile: dict, state: FSMContext, ch
     bsu = profile.get("bsu", "—")
     summary = await bot.send_message(chat_id, f"👤 <b>{h(fullname)}</b> — BSU {h(bsu)}")
     flow_track(uid, summary)
-    prompt = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_PROMPT_NOTE"), reply_markup=kb_np_cancel(uid))
+    prompt = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_PROMPT_NOTE"), reply_markup=kb_np_assign_note(uid))
     flow_track(uid, prompt)
     await state.set_state(NovaPoshtaFSM.waiting_assign_note.state)
+
+
+async def np_assign_finalize(uid: int, state: FSMContext, chat_id: int, note_text: str) -> None:
+    data = await state.get_data()
+    ttn = data.get("assign_ttn")
+    payload = data.get("assign_payload")
+    target_id = data.get("assign_user_id")
+    note_text = (note_text or "").strip()
+
+    await np_assign_clear_picker(state)
+    await state.finish()
+    await flow_clear(uid)
+
+    if not target_id or not ttn or not payload:
+        warn = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_CANCELLED"))
+        flow_track(uid, warn)
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+        return
+
+    target_profile = load_user(target_id) or {"user_id": target_id}
+    assignment = np_assign_parcel(uid, target_id, ttn, payload, note=note_text)
+    admin_profile = load_user(uid) or {"user_id": uid}
+    admin_name = admin_profile.get("fullname") or (admin_profile.get("tg") or {}).get("first_name") or f"ID {uid}"
+    target_name = target_profile.get("fullname") or (target_profile.get("tg") or {}).get("first_name") or f"User {target_id}"
+
+    confirm = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_DONE", ttn=h(ttn), user=h(target_name)))
+    flow_track(uid, confirm)
+    await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+
+    target_chat = users_runtime.get(target_id, {}).get("tg", {}).get("chat_id") or (target_profile.get("tg") or {}).get("chat_id")
+    if target_chat:
+        target_text, target_kb, _, _, _, _ = np_prepare_view(target_id, ttn, payload=payload)
+        notify_prefix = tr(target_id, "NP_ASSIGN_NOTIFY_USER", admin=h(admin_name), ttn=h(ttn))
+        body = f"{notify_prefix}\n\n{target_text}" if target_text else notify_prefix
+        try:
+            await bot.send_message(target_chat, body, reply_markup=target_kb)
+        except Exception:
+            pass
 
 
 @dp.callback_query_handler(lambda c: c.data == "np_assign_start")
@@ -3922,16 +4465,14 @@ async def np_assign_receive_note(m: types.Message, state: FSMContext):
     if uid not in admins:
         await state.finish()
         return
-    data = await state.get_data()
-    ttn = data.get("assign_ttn")
-    payload = data.get("assign_payload")
-    target_id = data.get("assign_user_id")
     note_text = (m.text or "").strip()
     if note_text.lower() in NP_CANCEL_WORDS:
+        await np_assign_clear_picker(state)
         await state.finish()
         await flow_clear(uid)
         notice = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_CANCELLED"))
         flow_track(uid, notice)
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
         return
     if note_text == "-":
         note_text = ""
@@ -3939,30 +4480,21 @@ async def np_assign_receive_note(m: types.Message, state: FSMContext):
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    await state.finish()
-    await flow_clear(uid)
-    if not target_id or not ttn or not payload:
-        warn = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_CANCELLED"))
-        flow_track(uid, warn)
-        return
-    target_profile = load_user(target_id) or {"user_id": target_id}
-    assignment = np_assign_parcel(uid, target_id, ttn, payload, note=note_text)
-    admin_profile = load_user(uid) or {"user_id": uid}
-    admin_name = admin_profile.get("fullname") or (admin_profile.get("tg") or {}).get("first_name") or f"ID {uid}"
-    target_name = target_profile.get("fullname") or (target_profile.get("tg") or {}).get("first_name") or f"User {target_id}"
-    confirm = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_DONE", ttn=h(ttn), user=h(target_name)))
-    flow_track(uid, confirm)
-    await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+    await np_assign_finalize(uid, state, m.chat.id, note_text)
 
-    target_chat = users_runtime.get(target_id, {}).get("tg", {}).get("chat_id") or (target_profile.get("tg") or {}).get("chat_id")
-    if target_chat:
-        target_text, target_kb, _, _, _, _ = np_prepare_view(target_id, ttn, payload=payload)
-        notify_prefix = tr(target_id, "NP_ASSIGN_NOTIFY_USER", admin=h(admin_name), ttn=h(ttn))
-        body = f"{notify_prefix}\n\n{target_text}" if target_text else notify_prefix
-        try:
-            await bot.send_message(target_chat, body, reply_markup=target_kb)
-        except Exception:
-            pass
+
+@dp.callback_query_handler(lambda c: c.data == "np_assign_skip")
+async def np_assign_skip_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        await c.answer("⛔", show_alert=True)
+        return
+    current = await state.get_state()
+    if current != NovaPoshtaFSM.waiting_assign_note.state:
+        await c.answer()
+        return
+    await np_assign_finalize(uid, state, c.message.chat.id, "")
+    await c.answer(tr(uid, "NP_ASSIGN_SKIP_TOAST"))
 
 
 @dp.callback_query_handler(lambda c: c.data == "np_close")
