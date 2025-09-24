@@ -4334,7 +4334,7 @@ async def np_assign_start_cb(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_quick:"))
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_quick:"), state="*")
 async def np_assign_quick_cb(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins:
@@ -4355,7 +4355,7 @@ async def np_assign_quick_cb(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_page:"))
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_page:"), state="*")
 async def np_assign_page_cb(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins:
@@ -4374,7 +4374,7 @@ async def np_assign_page_cb(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_pick:"))
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_pick:"), state="*")
 async def np_assign_pick_cb(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins:
@@ -4492,7 +4492,7 @@ async def np_assign_receive_note(m: types.Message, state: FSMContext):
     await np_assign_finalize(uid, state, m.chat.id, note_text)
 
 
-@dp.callback_query_handler(lambda c: c.data == "np_assign_skip")
+@dp.callback_query_handler(lambda c: c.data == "np_assign_skip", state="*")
 async def np_assign_skip_cb(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins:
@@ -4506,7 +4506,7 @@ async def np_assign_skip_cb(c: types.CallbackQuery, state: FSMContext):
     await c.answer(tr(uid, "NP_ASSIGN_SKIP_TOAST"))
 
 
-@dp.callback_query_handler(lambda c: c.data == "np_close")
+@dp.callback_query_handler(lambda c: c.data == "np_close", state="*")
 async def np_close_message(c: types.CallbackQuery):
     try:
         await bot.delete_message(c.message.chat.id, c.message.message_id)
@@ -4515,7 +4515,7 @@ async def np_close_message(c: types.CallbackQuery):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data == "np_cancel")
+@dp.callback_query_handler(lambda c: c.data == "np_cancel", state="*")
 async def np_cancel_flow(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     current = await state.get_state()
