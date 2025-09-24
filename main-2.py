@@ -50,6 +50,7 @@ from openpyxl.utils import get_column_letter
 from PIL import Image, ExifTags
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
+from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     InputFile, ContentType, ReplyKeyboardRemove,
@@ -123,11 +124,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Активный объект пока не выбран.\nПопросите администратора включить проект, чтобы открыть рабочие разделы.\n\n📋 <b>Меню действий</b>\nИспользуйте кнопки ниже, чтобы изучить доступные возможности.",
     },
     "ANCHOR_PROJECT": {
-        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
-        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
-        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
-        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
-        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
+        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
+        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
+        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
+        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+    },
+    "ANCHOR_PROJECT_BSG_SUMMARY": {
+        "uk": "🏢 Посилки BSG: усього — <b>{total}</b> • забрати — <b>{pending}</b> • отримано — <b>{delivered}</b>",
+        "en": "🏢 BSG parcels: total — <b>{total}</b> • to collect — <b>{pending}</b> • received — <b>{delivered}</b>",
+        "de": "🏢 BSG-Sendungen: gesamt — <b>{total}</b> • abzuholen — <b>{pending}</b> • erhalten — <b>{delivered}</b>",
+        "pl": "🏢 Przesyłki BSG: łącznie — <b>{total}</b> • do odebrania — <b>{pending}</b> • odebrano — <b>{delivered}</b>",
+        "ru": "🏢 Посылки BSG: всего — <b>{total}</b> • забрать — <b>{pending}</b> • получено — <b>{delivered}</b>",
     },
     "BTN_CHECKS": {
         "uk": "🧾 Чеки",
@@ -548,6 +556,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "⚠️ Daten konnten nicht abgerufen werden: {error}",
         "pl": "⚠️ Nie udało się pobrać danych: {error}",
         "ru": "⚠️ Не удалось получить данные: {error}",
+    },
+    "NP_REFRESH_NOT_POSSIBLE": {
+        "uk": "⚠️ Неможливо оновити повідомлення. Спробуйте пізніше.",
+        "en": "⚠️ Unable to refresh this message. Please try again later.",
+        "de": "⚠️ Nachricht kann nicht aktualisiert werden. Bitte später erneut versuchen.",
+        "pl": "⚠️ Nie można odświeżyć tej wiadomości. Spróbuj ponownie później.",
+        "ru": "⚠️ Не удалось обновить сообщение. Попробуйте позже.",
     },
     "NP_HISTORY_EMPTY": {
         "uk": "🕓 Історія порожня. Виконайте пошук, щоб побачити останні ТТН.",
@@ -2780,6 +2795,17 @@ def project_status_text(uid: int) -> str:
         return tr(uid, "ANCHOR_NO_PROJECT", bot=h(BOT_NAME))
     info = load_project_info(active_project["name"])
     photo_total = project_photo_count(active_project["name"])
+    assignments = np_list_assignments(uid)
+    total_assigned = len(assignments)
+    pending_assigned = sum(1 for item in assignments if not item.get("delivered_at"))
+    delivered_count = max(0, total_assigned - pending_assigned)
+    bsg_section = tr(
+        uid,
+        "ANCHOR_PROJECT_BSG_SUMMARY",
+        total=total_assigned,
+        pending=pending_assigned,
+        delivered=delivered_count,
+    )
     name = h(info.get("name", "—")) or "—"
     region = h(info.get("region") or "—")
     location = h(info.get("location", "—")) or "—"
@@ -2797,6 +2823,7 @@ def project_status_text(uid: int) -> str:
         photos=photo_total,
         start=start,
         end=end,
+        bsg_section=bsg_section,
     )
 
 
@@ -2983,7 +3010,20 @@ def kb_preview() -> InlineKeyboardMarkup:
     return kb
 
 
-def kb_choose_paid(ask_later: bool=True, allow_cancel: bool=False) -> InlineKeyboardMarkup:
+def kb_receipt_cancel() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
+    return kb
+
+
+def kb_desc_prompt() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("Пропустить", callback_data="desc_skip"))
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
+    return kb
+
+
+def kb_choose_paid(ask_later: bool=True, allow_cancel: bool=False, flow_cancel: bool=False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.row(
         InlineKeyboardButton("✅ Оплачено", callback_data="paid_yes"),
@@ -2993,6 +3033,8 @@ def kb_choose_paid(ask_later: bool=True, allow_cancel: bool=False) -> InlineKeyb
         kb.add(InlineKeyboardButton("⏭ Указать позже", callback_data="paid_later"))
     if allow_cancel:
         kb.add(InlineKeyboardButton("❌ Отменить изменение", callback_data="edit_cancel"))
+    if flow_cancel:
+        kb.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
     return kb
 
 
@@ -3246,9 +3288,13 @@ def kb_language_picker(prefix: str = "lang_select") -> InlineKeyboardMarkup:
 
 
 async def launch_intro(uid: int, chat_id: int, registered: bool):
+    runtime = users_runtime.setdefault(uid, {})
+    previous_intro = runtime.get("intro_flow", {}).get("message")
+    if previous_intro and isinstance(previous_intro, (list, tuple)) and len(previous_intro) == 2:
+        await _delete_message_safe(previous_intro[0], previous_intro[1])
     text_key = "INTRO_GREETING_REGISTERED" if registered else "INTRO_GREETING_NEW"
     msg = await bot.send_message(chat_id, tr(uid, text_key), reply_markup=kb_next_step(uid, "intro_next:1"))
-    users_runtime.setdefault(uid, {})["intro_flow"] = {
+    runtime["intro_flow"] = {
         "registered": registered,
         "chat_id": chat_id,
         "message": (msg.chat.id, msg.message_id),
@@ -3274,6 +3320,10 @@ async def start_cmd(m: types.Message, state: FSMContext):
         "last_name": m.from_user.last_name,
         "last_seen": datetime.now().isoformat(),
     }
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
     prof = ensure_user(uid, runtime["tg"])
     registered = bool(prof.get("fullname") and prof.get("phone"))
 
@@ -3853,9 +3903,21 @@ async def np_refresh_detail(c: types.CallbackQuery):
         await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
         return
     try:
-        await bot.edit_message_text(text_body, c.message.chat.id, c.message.message_id, reply_markup=kb)
+        await bot.edit_message_text(
+            text_body,
+            c.message.chat.id,
+            c.message.message_id,
+            reply_markup=kb,
+            disable_web_page_preview=True,
+        )
+    except MessageNotModified:
+        pass
+    except MessageCantBeEdited:
+        await c.answer(tr(uid, "NP_REFRESH_NOT_POSSIBLE"), show_alert=True)
+        return
     except Exception:
-        await bot.send_message(c.message.chat.id, text_body, reply_markup=kb)
+        await c.answer(tr(uid, "NP_REFRESH_NOT_POSSIBLE"), show_alert=True)
+        return
     await c.answer()
 
 
@@ -4109,6 +4171,11 @@ async def np_assigned_received_cb(c: types.CallbackQuery):
     user_name = user_profile.get("fullname") or (user_profile.get("tg") or {}).get("first_name") or f"User {uid}"
     delivered_at = assignment.get("delivered_at")
 
+    await anchor_show_root(uid)
+    assigned_by = assignment.get("assigned_by")
+    if assigned_by and assigned_by != uid:
+        await anchor_show_root(assigned_by)
+
     user_lang = resolve_lang(uid)
     user_receipt = np_render_delivery_receipt(user_lang, ttn, user_name, delivered_at)
     user_kb = InlineKeyboardMarkup().add(
@@ -4249,6 +4316,7 @@ async def np_assign_finalize(uid: int, state: FSMContext, chat_id: int, note_tex
 
     target_profile = load_user(target_id) or {"user_id": target_id}
     assignment = np_assign_parcel(uid, target_id, ttn, payload, note=note_text)
+    await anchor_show_root(target_id)
     admin_profile = load_user(uid) or {"user_id": uid}
     admin_name = admin_profile.get("fullname") or (admin_profile.get("tg") or {}).get("first_name") or f"ID {uid}"
     target_name = target_profile.get("fullname") or (target_profile.get("tg") or {}).get("first_name") or f"User {target_id}"
@@ -4798,7 +4866,7 @@ async def check_add(c: types.CallbackQuery, state: FSMContext):
             "Пришлите один чёткий снимок чека. После загрузки мы попросим указать сумму, описание и статус оплаты.\n\n"
             "Если передумали — нажмите «Отменить»."
         ),
-        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
+        reply_markup=kb_receipt_cancel()
     )
     flow_track(uid, tip)
     await state.update_data(tmp_img=None, amount=None, photo_set=False, replace_photo=False, desc="", paid=None)
@@ -4880,18 +4948,29 @@ async def rcp_photo(m: types.Message, state: FSMContext):
     if data.get("amount") is None:
         ask = await bot.send_message(
             m.chat.id,
-            "💰 <b>Шаг 2 из 4.</b> Укажите сумму чека в гривнах (пример: 123.45). Используйте точку в качестве разделителя копеек."
+            "💰 <b>Шаг 2 из 4.</b> Укажите сумму чека в гривнах (пример: 123.45). Используйте точку в качестве разделителя копеек.",
+            reply_markup=kb_receipt_cancel(),
         )
         flow_track(uid, ask)
         await remember_step_prompt(state, ask)
         await ReceiptFSM.waiting_amount.set()
     else:
-        tip = await bot.send_message(m.chat.id,
+        tip = await bot.send_message(
+            m.chat.id,
             "📝 Хотите добавить описание к чеку? Отправьте текст или нажмите «Пропустить».",
-            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("Пропустить", callback_data="desc_skip")))
+            reply_markup=kb_desc_prompt(),
+        )
         flow_track(uid, tip)
         await remember_step_prompt(state, tip)
         await ReceiptFSM.waiting_description.set()
+
+
+@dp.message_handler(lambda m: m.content_type != ContentType.PHOTO, state=ReceiptFSM.waiting_photo, content_types=ContentType.ANY)
+async def rcp_photo_reject(m: types.Message, state: FSMContext):
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
 
 
 @dp.message_handler(state=ReceiptFSM.waiting_amount, content_types=ContentType.TEXT)
@@ -4928,7 +5007,7 @@ async def rcp_amount(m: types.Message, state: FSMContext):
     tip = await bot.send_message(
         m.chat.id,
         "📝 <b>Шаг 3 из 4.</b> Добавьте краткое описание (например, цель покупки) или нажмите «Пропустить».",
-        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("Пропустить", callback_data="desc_skip"))
+        reply_markup=kb_desc_prompt(),
     )
     flow_track(uid, tip)
     await remember_step_prompt(state, tip)
@@ -4939,7 +5018,7 @@ async def rcp_amount(m: types.Message, state: FSMContext):
 async def desc_skip(c: types.CallbackQuery, state: FSMContext):
     await clear_step_prompt(state)
     await state.update_data(desc="")
-    kb = kb_choose_paid(ask_later=True)
+    kb = kb_choose_paid(ask_later=True, flow_cancel=True)
     msg = await bot.send_message(
         c.message.chat.id,
         "🔖 <b>Шаг 4 из 4.</b> Укажите статус оплаты для этого чека.",
@@ -4966,7 +5045,7 @@ async def rcp_desc(m: types.Message, state: FSMContext):
         await send_receipt_preview(uid, m.chat.id, state)
         await ReceiptFSM.preview.set()
         return
-    kb = kb_choose_paid(ask_later=True)
+    kb = kb_choose_paid(ask_later=True, flow_cancel=True)
     msg = await bot.send_message(
         m.chat.id,
         "🔖 <b>Шаг 4 из 4.</b> Выберите статус оплаты для этого чека.",
