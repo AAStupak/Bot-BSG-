@@ -40,7 +40,7 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, sys, json, random, re, base64, hashlib, secrets, asyncio
+import os, sys, json, random, re, base64, hashlib, secrets, asyncio, io
 from html import escape as html_escape
 from datetime import datetime, timezone
 from typing import Dict, Optional, List, Tuple, Any, Set, Union
@@ -312,6 +312,76 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "🟢 {region} — ruhig",
         "pl": "🟢 {region} — spokojnie",
         "ru": "🟢 {region} — спокойно",
+    },
+    "ALERTS_MENU_ZONE_STATUS_ACTIVE": {
+        "uk": "• Статус: тривога з {time}",
+        "en": "• Status: alert since {time}",
+        "de": "• Status: Alarm seit {time}",
+        "pl": "• Status: alarm od {time}",
+        "ru": "• Статус: тревога с {time}",
+    },
+    "ALERTS_MENU_ZONE_STATUS_RECENT": {
+        "uk": "• Статус: відбій о {time}",
+        "en": "• Status: cleared at {time}",
+        "de": "• Status: Entwarnung um {time}",
+        "pl": "• Status: odwołano o {time}",
+        "ru": "• Статус: отбой в {time}",
+    },
+    "ALERTS_MENU_ZONE_STATUS_CALM": {
+        "uk": "• Статус: спокійно",
+        "en": "• Status: calm",
+        "de": "• Status: ruhig",
+        "pl": "• Status: spokojnie",
+        "ru": "• Статус: спокойно",
+    },
+    "ALERTS_MENU_ZONE_SOURCE_PROJECT": {
+        "uk": "• Джерело: зона проєкту",
+        "en": "• Source: project zone",
+        "de": "• Quelle: Projektzone",
+        "pl": "• Źródło: strefa projektu",
+        "ru": "• Источник: зона проекта",
+    },
+    "ALERTS_MENU_ZONE_SOURCE_USER": {
+        "uk": "• Джерело: власний вибір",
+        "en": "• Source: added manually",
+        "de": "• Quelle: eigene Auswahl",
+        "pl": "• Źródło: własny wybór",
+        "ru": "• Источник: выбрано вручную",
+    },
+    "ALERTS_MENU_ZONE_CITIES": {
+        "uk": "• Населені пункти: {items}",
+        "en": "• Settlements: {items}",
+        "de": "• Orte: {items}",
+        "pl": "• Miejscowości: {items}",
+        "ru": "• Населённые пункты: {items}",
+    },
+    "ALERTS_REGION_BUTTON_LOCKED": {
+        "uk": "{name} • зона проєкту",
+        "en": "{name} • project zone",
+        "de": "{name} • Projektzone",
+        "pl": "{name} • strefa projektu",
+        "ru": "{name} • зона проекта",
+    },
+    "ALERTS_REGION_BUTTON_SELECTED": {
+        "uk": "{name} • область додана",
+        "en": "{name} • region added",
+        "de": "{name} • Region hinzugefügt",
+        "pl": "{name} • region dodany",
+        "ru": "{name} • область добавлена",
+    },
+    "ALERTS_REGION_BUTTON_PARTIAL": {
+        "uk": "{name} • вибрані міста",
+        "en": "{name} • selected cities",
+        "de": "{name} • ausgewählte Städte",
+        "pl": "{name} • wybrane miasta",
+        "ru": "{name} • выбранные города",
+    },
+    "ALERTS_REGION_BUTTON_ADD": {
+        "uk": "{name} • додати",
+        "en": "{name} • add",
+        "de": "{name} • hinzufügen",
+        "pl": "{name} • dodać",
+        "ru": "{name} • добавить",
     },
     "ALERTS_MENU_ACTIONS_TITLE": {
         "uk": "⚙️ <b>Подальші дії</b>",
@@ -3559,14 +3629,49 @@ def inline_kb_signature(kb: Optional[InlineKeyboardMarkup]) -> Any:
 
 
 # ========================== ANCHOR ==========================
-async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: Optional[InlineKeyboardMarkup] = None):
-    if text is None: text = project_status_text(uid)
-    if kb is None: kb = kb_root(uid)
-    text = str(text); kb_sign = inline_kb_signature(kb)
+async def anchor_upsert(
+    uid: int,
+    chat_id: int,
+    text: Optional[str] = None,
+    kb: Optional[InlineKeyboardMarkup] = None,
+    photo: Optional[str] = None,
+):
+    if text is None:
+        text = project_status_text(uid)
+    if kb is None:
+        kb = kb_root(uid)
+    text = str(text)
+    kb_sign = inline_kb_signature(kb)
 
     ur = users_runtime.setdefault(uid, {})
     last_text = ur.get("last_anchor_text"); last_kb = ur.get("last_anchor_kb")
     anchor = ur.get("anchor")
+    anchor_is_photo = ur.get("anchor_is_photo", False)
+
+    if photo and not os.path.exists(photo):
+        photo = None
+
+    if photo:
+        if anchor:
+            try:
+                await bot.delete_message(chat_id, anchor)
+            except Exception:
+                pass
+        with open(photo, "rb") as fh:
+            msg = await bot.send_photo(chat_id, InputFile(fh, filename=os.path.basename(photo)), caption=text, reply_markup=kb)
+        ur["anchor"] = msg.message_id
+        ur["last_anchor_text"] = text
+        ur["last_anchor_kb"] = kb_sign
+        ur["anchor_is_photo"] = True
+        return
+
+    if anchor and anchor_is_photo:
+        try:
+            await bot.delete_message(chat_id, anchor)
+        except Exception:
+            pass
+        anchor = None
+        ur["anchor"] = None
 
     if anchor and last_text == text and last_kb == kb_sign:
         return
@@ -3574,7 +3679,9 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
     if anchor:
         try:
             await bot.edit_message_text(text, chat_id, anchor, reply_markup=kb)
-            ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+            ur["last_anchor_text"] = text
+            ur["last_anchor_kb"] = kb_sign
+            ur["anchor_is_photo"] = False
             return
         except MessageNotModified:
             return
@@ -3586,7 +3693,9 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
 
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     ur["anchor"] = msg.message_id
-    ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+    ur["last_anchor_text"] = text
+    ur["last_anchor_kb"] = kb_sign
+    ur["anchor_is_photo"] = False
 
 
 async def anchor_show_root(uid: int):
@@ -3596,7 +3705,14 @@ async def anchor_show_root(uid: int):
 
 async def anchor_show_text(uid: int, text: str, kb: InlineKeyboardMarkup):
     chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-    if chat: await anchor_upsert(uid, chat, text, kb)
+    if chat:
+        await anchor_upsert(uid, chat, text, kb)
+
+
+async def anchor_show_photo(uid: int, text: str, kb: InlineKeyboardMarkup, photo: str):
+    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if chat:
+        await anchor_upsert(uid, chat, text, kb, photo=photo)
 
 
 async def update_all_anchors():
@@ -4006,20 +4122,14 @@ async def menu_about(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_alerts")
 async def menu_alerts(c: types.CallbackQuery):
     uid = c.from_user.id
-    await clear_then_anchor(uid, alerts_menu_text(uid), kb_alerts(uid))
-    chat_id = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-    if chat_id:
-        snapshot = alerts_render_snapshot(resolve_lang(uid), alerts_user_regions(uid))
-        if snapshot and os.path.exists(snapshot):
-            try:
-                msg = await bot.send_photo(
-                    chat_id,
-                    InputFile(snapshot),
-                    caption=alerts_snapshot_caption(uid),
-                )
-                flow_track(uid, msg)
-            except Exception:
-                pass
+    await flow_clear(uid)
+    caption = alerts_menu_text(uid)
+    kb = kb_alerts(uid)
+    snapshot = alerts_render_snapshot(resolve_lang(uid), alerts_user_regions(uid))
+    if snapshot and os.path.exists(snapshot):
+        await anchor_show_photo(uid, caption, kb, snapshot)
+    else:
+        await anchor_show_text(uid, caption, kb)
     await c.answer()
 
 
@@ -4576,9 +4686,11 @@ def _alerts_user_entry(uid: int) -> Dict[str, Any]:
     store = _alerts_load_users()
     key = str(uid)
     created = key not in store
-    entry = store.setdefault(key, {"regions": [], "last_seen": {}})
+    entry = store.setdefault(key, {"regions": [], "settlements": {}, "last_seen": {}})
     if not isinstance(entry.get("regions"), list):
         entry["regions"] = []
+    if not isinstance(entry.get("settlements"), dict):
+        entry["settlements"] = {}
     if not isinstance(entry.get("last_seen"), dict):
         entry["last_seen"] = {}
     if created:
@@ -5141,7 +5253,7 @@ def alerts_summarize_event(event: Dict[str, Any], lang: str) -> str:
 def alerts_profile_block(profile: dict) -> dict:
     uid = profile.get("user_id")
     if not uid:
-        return {"regions": [], "last_seen": {}}
+        return {"regions": [], "settlements": {}, "last_seen": {}}
     entry = _alerts_user_entry(uid)
     legacy = profile.get("alerts")
     migrated = False
@@ -5167,6 +5279,39 @@ def alerts_profile_block(profile: dict) -> dict:
     return entry
 
 
+def alerts_user_custom_regions(uid: int) -> List[str]:
+    profile = load_user(uid) or {"user_id": uid}
+    alerts = alerts_profile_block(profile)
+    items: List[str] = []
+    for region in alerts.get("regions", []):
+        canonical = alerts_canonical_region(region) or str(region)
+        if canonical and canonical not in items:
+            items.append(canonical)
+    return items
+
+
+def alerts_user_settlements(uid: int) -> Dict[str, List[str]]:
+    profile = load_user(uid) or {"user_id": uid}
+    alerts = alerts_profile_block(profile)
+    settlements: Dict[str, List[str]] = {}
+    raw_map = alerts.get("settlements") or {}
+    if isinstance(raw_map, dict):
+        for region_key, cities in raw_map.items():
+            canonical = alerts_canonical_region(region_key) or str(region_key)
+            if not canonical:
+                continue
+            bucket: List[str] = []
+            if isinstance(cities, list):
+                for city in cities:
+                    if isinstance(city, str) and city.strip():
+                        cleaned = city.strip()
+                        if cleaned not in bucket:
+                            bucket.append(cleaned)
+            if bucket:
+                settlements[canonical] = bucket
+    return settlements
+
+
 def alerts_user_regions(uid: int) -> List[str]:
     regions: List[str] = []
     if active_project.get("name"):
@@ -5177,13 +5322,11 @@ def alerts_user_regions(uid: int) -> List[str]:
             regions.append(canonical)
         elif project_region:
             regions.append(project_region)
-    profile = load_user(uid) or {"user_id": uid}
-    alerts = alerts_profile_block(profile)
-    for region in alerts.get("regions", []):
-        canonical = alerts_canonical_region(region)
-        if canonical and canonical not in regions:
-            regions.append(canonical)
-        elif region not in regions:
+    for region in alerts_user_custom_regions(uid):
+        if region not in regions:
+            regions.append(region)
+    for region in alerts_user_settlements(uid).keys():
+        if region not in regions:
             regions.append(region)
     return regions
 
@@ -5286,33 +5429,67 @@ def alerts_menu_text(uid: int) -> str:
     else:
         lines.append(tr(uid, "ALERTS_MENU_UPDATED_UNKNOWN"))
     lines.append("")
-    lines.append(tr(uid, "ALERTS_MENU_STATUS_TITLE"))
-    overview_lines = alerts_regions_overview_lines(uid, include_header=False)
-    lines.extend(overview_lines)
+    summary_line = alerts_active_summary_line(uid)
+    if summary_line:
+        lines.append(summary_line)
     lines.append("")
     lines.append(tr(uid, "ALERTS_MENU_SELECTED_TITLE"))
-    regions = alerts_user_regions(uid)
-    if regions:
-        seen: Set[str] = set()
-        for region in regions:
-            canonical = alerts_canonical_region(region) or region
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-            info = alerts_region_status(canonical, lang)
-            display_name = h(alerts_display_region_name(canonical, lang))
-            if info["status"] == "active" and info["started"]:
-                lines.append(tr(uid, "ALERTS_MENU_SELECTED_ACTIVE", region=display_name, start=h(info["started"])) )
-            elif info["status"] == "recent" and info["ended"]:
-                lines.append(tr(uid, "ALERTS_MENU_SELECTED_RECENT", region=display_name, end=h(info["ended"])) )
-            else:
-                lines.append(tr(uid, "ALERTS_MENU_SELECTED_CALM", region=display_name))
-    else:
-        lines.append(tr(uid, "ALERTS_MENU_SELECTED_EMPTY"))
+    selected_lines = alerts_selected_region_lines(uid)
+    lines.extend(selected_lines)
     lines.append("")
     lines.append(tr(uid, "ALERTS_MENU_ACTIONS_TITLE"))
     lines.append(tr(uid, "ALERTS_MENU_ACTIONS_HINT"))
     return "\n".join(lines)
+
+
+def alerts_selected_region_lines(uid: int) -> List[str]:
+    lang = resolve_lang(uid)
+    admin_region = alerts_admin_region()
+    custom_regions = sorted(alerts_user_custom_regions(uid), key=lambda r: alerts_display_region_name(r, lang))
+    settlements_map = alerts_user_settlements(uid)
+    lines: List[str] = []
+    seen: Set[str] = set()
+
+    def append_region(canonical: str, source: str) -> None:
+        if not canonical or canonical in seen:
+            return
+        seen.add(canonical)
+        info = alerts_region_status(canonical, lang)
+        display_name = h(alerts_display_region_name(canonical, lang))
+        lines.append(display_name)
+        if info["status"] == "active" and info["started"]:
+            lines.append(tr(uid, "ALERTS_MENU_ZONE_STATUS_ACTIVE", time=h(info["started"])) )
+        elif info["status"] == "recent" and info["ended"]:
+            lines.append(tr(uid, "ALERTS_MENU_ZONE_STATUS_RECENT", time=h(info["ended"])) )
+        else:
+            lines.append(tr(uid, "ALERTS_MENU_ZONE_STATUS_CALM"))
+        if source == "admin":
+            lines.append(tr(uid, "ALERTS_MENU_ZONE_SOURCE_PROJECT"))
+        else:
+            lines.append(tr(uid, "ALERTS_MENU_ZONE_SOURCE_USER"))
+        cities = settlements_map.get(canonical, [])
+        if cities:
+            ordered: List[str] = []
+            for city in cities:
+                clean = city.strip()
+                if clean and clean not in ordered:
+                    ordered.append(clean)
+            if ordered:
+                lines.append(tr(uid, "ALERTS_MENU_ZONE_CITIES", items=h(", ".join(ordered))))
+        lines.append("")
+
+    if admin_region:
+        append_region(admin_region, "admin")
+    for region in custom_regions:
+        append_region(region, "user")
+    for region in sorted(settlements_map.keys(), key=lambda r: alerts_display_region_name(r, lang)):
+        append_region(region, "user" if region != admin_region else "admin")
+
+    if not lines:
+        return [tr(uid, "ALERTS_MENU_SELECTED_EMPTY")]
+    while lines and lines[-1] == "":
+        lines.pop()
+    return lines
 
 
 def alerts_region_button_label(canonical: str, lang: str) -> str:
@@ -5379,7 +5556,59 @@ def alerts_snapshot_path(lang: str, highlight: Optional[Set[str]] = None) -> str
     return os.path.join(ALERTS_MEDIA_DIR, f"snapshot_{digest}.png")
 
 
-def alerts_render_snapshot(lang: str, highlight_regions: Optional[List[str]] = None) -> Optional[str]:
+def alerts_fetch_map_image() -> Optional[bytes]:
+    endpoints = [
+        "https://alerts.in.ua/alerts/regions-map.png",
+        "https://alerts.in.ua/alerts/map.png",
+        "https://alerts.in.ua/alerts/current-map.png",
+    ]
+    headers = _alerts_request_headers()
+    headers.update({
+        "Accept": "image/png,image/*;q=0.9",
+        "Referer": "https://alerts.in.ua/",
+    })
+    for url in endpoints:
+        try:
+            response = requests.get(url, headers=headers, timeout=ALERTS_API_TIMEOUT)
+            response.raise_for_status()
+            if response.content:
+                return response.content
+        except requests.RequestException as exc:
+            print(f"[alerts] map fetch failed from {url}: {exc}")
+    return None
+
+
+def alerts_process_map_image(binary: bytes) -> Optional[bytes]:
+    try:
+        with Image.open(io.BytesIO(binary)) as image:
+            image.load()
+            width, height = image.size
+            if width < 400 or height < 400:
+                buffer = io.BytesIO()
+                image.save(buffer, format="PNG")
+                return buffer.getvalue()
+            top_cut = int(height * 0.08)
+            bottom_cut = int(height * 0.08)
+            left_cut = int(width * 0.05)
+            right_cut = int(width * 0.05)
+            crop_box = (
+                max(0, left_cut),
+                max(0, top_cut),
+                max(0, width - right_cut),
+                max(0, height - bottom_cut),
+            )
+            if crop_box[2] - crop_box[0] > 10 and crop_box[3] - crop_box[1] > 10:
+                image = image.crop(crop_box)
+            image = image.resize((1280, 720), Image.LANCZOS)
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return buffer.getvalue()
+    except Exception as exc:
+        print(f"[alerts] map post-process failed: {exc}")
+    return None
+
+
+def _alerts_render_text_snapshot(lang: str, highlight_regions: Optional[List[str]] = None) -> Optional[str]:
     highlight_set: Set[str] = set()
     if highlight_regions:
         for item in highlight_regions:
@@ -5390,6 +5619,7 @@ def alerts_render_snapshot(lang: str, highlight_regions: Optional[List[str]] = N
     if os.path.exists(path):
         return path
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         width, height = 1200, 900
         padding = 80
         column_gap = 60
@@ -5461,8 +5691,32 @@ def alerts_render_snapshot(lang: str, highlight_regions: Optional[List[str]] = N
                 draw.text((x + bullet_radius * 2 + 12, y + 18), status_text, fill=text_muted, font=caption_font)
         image.save(path)
         return path
-    except Exception:
+    except Exception as exc:
+        print(f"[alerts] text snapshot failed: {exc}")
         return None
+
+
+def alerts_render_snapshot(lang: str, highlight_regions: Optional[List[str]] = None) -> Optional[str]:
+    highlight_set: Set[str] = set()
+    if highlight_regions:
+        for item in highlight_regions:
+            canonical = alerts_canonical_region(item) or item
+            if canonical:
+                highlight_set.add(canonical)
+    path = alerts_snapshot_path(lang, highlight_set)
+    if os.path.exists(path):
+        return path
+    binary = alerts_fetch_map_image()
+    if binary:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            processed = alerts_process_map_image(binary) or binary
+            with open(path, "wb") as fh:
+                fh.write(processed)
+            return path
+        except Exception as exc:
+            print(f"[alerts] map snapshot save failed: {exc}")
+    return _alerts_render_text_snapshot(lang, highlight_regions)
 
 
 def alerts_snapshot_caption(uid: int) -> str:
@@ -5560,6 +5814,22 @@ def alerts_subscription_group_view(uid: int, letter: str) -> Tuple[str, InlineKe
     profile = load_user(uid) or {}
     alerts = alerts_profile_block(profile)
     selected = {alerts_canonical_region(x) or x for x in alerts.get("regions", [])}
+    settlements_raw = alerts.get("settlements") or {}
+    settlements: Dict[str, List[str]] = {}
+    if isinstance(settlements_raw, dict):
+        for region_key, cities in settlements_raw.items():
+            canonical = alerts_canonical_region(region_key) or str(region_key)
+            if not canonical:
+                continue
+            bucket: List[str] = []
+            if isinstance(cities, list):
+                for city in cities:
+                    if isinstance(city, str) and city.strip():
+                        cleaned = city.strip()
+                        if cleaned not in bucket:
+                            bucket.append(cleaned)
+            if bucket:
+                settlements[canonical] = bucket
     project_region = None
     if active_project.get("name"):
         info = load_project_info(active_project["name"])
@@ -5580,12 +5850,15 @@ def alerts_subscription_group_view(uid: int, letter: str) -> Tuple[str, InlineKe
         canonical = alerts_canonical_region(region) or region
         label_text = alerts_region_button_label(canonical, lang)
         if canonical_project and canonical == canonical_project:
-            label = f"🔒 {label_text}"
+            label = tr(uid, "ALERTS_REGION_BUTTON_LOCKED", name=label_text)
             callback = "alerts_locked"
         else:
-            is_selected = canonical in selected
-            prefix = "✅" if is_selected else "➕"
-            label = f"{prefix} {label_text}"
+            if canonical in selected:
+                label = tr(uid, "ALERTS_REGION_BUTTON_SELECTED", name=label_text)
+            elif settlements.get(canonical):
+                label = tr(uid, "ALERTS_REGION_BUTTON_PARTIAL", name=label_text)
+            else:
+                label = tr(uid, "ALERTS_REGION_BUTTON_ADD", name=label_text)
             callback = f"alerts_toggle:{letter}:{idx}"
         kb.add(InlineKeyboardButton(label, callback_data=callback))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_SUBS_BACK_TO_GROUPS"), callback_data="alerts_subscriptions"))
@@ -5657,28 +5930,41 @@ async def alerts_send_card(uid: int, chat_id: int, events: List[Dict[str, Any]],
     return msg
 
 
-def alerts_active_oblast_count() -> int:
+def alerts_active_oblast_count_for_regions(regions: Set[str]) -> int:
+    if not regions:
+        return 0
     state = _alerts_load_state()
+    region_map = state.get("regions", {})
     events_map = state.get("events", {})
-    oblasts: Set[str] = set()
-    for payload in events_map.values():
-        if not isinstance(payload, dict):
+    seen: Set[str] = set()
+    total = 0
+    for raw_region in regions:
+        canonical = alerts_canonical_region(raw_region) or raw_region
+        key = canonical or raw_region
+        if not key or key in seen:
             continue
-        if payload.get("ended_at"):
-            continue
-        region_name = payload.get("region") or payload.get("region_display") or ""
-        canonical = alerts_canonical_region(region_name)
-        normalized = (canonical or region_name or "").strip()
-        if not normalized:
-            continue
-        lower = normalized.lower()
-        if any(token in lower for token in ("област", "oblast")):
-            oblasts.add(normalized)
-    return len(oblasts)
+        seen.add(key)
+        bucket = region_map.get(key) or {}
+        for event_id in bucket.get("active", []):
+            event = events_map.get(event_id)
+            if event and not event.get("ended_at"):
+                total += 1
+                break
+    return total
+
+
+def alerts_active_oblast_count() -> int:
+    universe: Set[str] = set()
+    for region in UKRAINE_REGIONS:
+        canonical = alerts_canonical_region(region) or region
+        if canonical:
+            universe.add(canonical)
+    return alerts_active_oblast_count_for_regions(universe)
 
 
 def alerts_active_summary_line(uid: int) -> str:
-    count = alerts_active_oblast_count()
+    regions = set(alerts_user_regions(uid))
+    count = alerts_active_oblast_count_for_regions(regions)
     return tr(uid, "ANCHOR_ALERT_SUMMARY", count=count)
 
 
