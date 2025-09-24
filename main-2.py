@@ -152,6 +152,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🏢 Przesyłki BSG: łącznie — <b>{total}</b> • do odebrania — <b>{pending}</b> • odebrano — <b>{delivered}</b>",
         "ru": "🏢 Посылки BSG: всего — <b>{total}</b> • забрать — <b>{pending}</b> • получено — <b>{delivered}</b>",
     },
+    "ANCHOR_ALERT_SUMMARY": {
+        "uk": "🇺🇦 Активні тривоги: <b>{count}</b> областей",
+        "en": "🇺🇦 Active alerts: <b>{count}</b> oblasts",
+        "de": "🇺🇦 Aktive Alarme: <b>{count}</b> Regionen",
+        "pl": "🇺🇦 Aktywne alarmy: <b>{count}</b> obwodów",
+        "ru": "🇺🇦 Активные тревоги: <b>{count}</b> областей",
+    },
     "ANCHOR_ALERT_ACTIVE": {
         "uk": "🚨 Тривога у регіоні <b>{region}</b> • {type} • від {start} • {severity}",
         "en": "🚨 Alert in <b>{region}</b> • {type} • since {start} • {severity}",
@@ -5234,19 +5241,46 @@ async def alerts_send_card(uid: int, chat_id: int, events: List[Dict[str, Any]],
     return msg
 
 
+def alerts_active_oblast_count() -> int:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    oblasts: Set[str] = set()
+    for payload in events_map.values():
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("ended_at"):
+            continue
+        region_name = payload.get("region") or payload.get("region_display") or ""
+        canonical = alerts_canonical_region(region_name)
+        normalized = (canonical or region_name or "").strip()
+        if not normalized:
+            continue
+        lower = normalized.lower()
+        if any(token in lower for token in ("област", "oblast")):
+            oblasts.add(normalized)
+    return len(oblasts)
+
+
+def alerts_active_summary_line(uid: int) -> str:
+    count = alerts_active_oblast_count()
+    return tr(uid, "ANCHOR_ALERT_SUMMARY", count=count)
+
+
 def alerts_anchor_section(uid: int) -> str:
+    summary_line = alerts_active_summary_line(uid)
     if not active_project.get("name"):
-        return ""
+        return summary_line
     info = load_project_info(active_project["name"])
     project_region = info.get("region") or ""
     if not project_region:
-        return ""
+        return summary_line
     canonical = alerts_canonical_region(project_region)
     display_region = canonical or project_region
     state = _alerts_load_state()
     bucket = state.get("regions", {}).get(canonical or project_region) or {}
     events_map = state.get("events", {})
     lang = resolve_lang(uid)
+    region_text = ""
     for event_id in bucket.get("active", []):
         event = events_map.get(event_id)
         if not event or event.get("ended_at"):
@@ -5268,30 +5302,40 @@ def alerts_anchor_section(uid: int) -> str:
             extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
         if extras:
             text = "\n".join([text, *extras])
-        return text
-    for event_id in bucket.get("history", []):
-        event = events_map.get(event_id)
-        if not event:
-            continue
-        text = tr(
-            uid,
-            "ANCHOR_ALERT_RECENT",
-            region=h(display_region),
-            type=h(alerts_type_label(event, lang)),
-            start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
-            end=h(alerts_format_timestamp(event.get("ended_at")) or "—"),
-        )
-        extras: List[str] = []
-        cause = (event.get("extra") or {}).get("cause") or ""
-        details = (event.get("extra") or {}).get("details") or ""
-        if cause:
-            extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
-        if details:
-            extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
-        if extras:
-            text = "\n".join([text, *extras])
-        return text
-    return tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
+        region_text = text
+        break
+    if not region_text:
+        for event_id in bucket.get("history", []):
+            event = events_map.get(event_id)
+            if not event:
+                continue
+            text = tr(
+                uid,
+                "ANCHOR_ALERT_RECENT",
+                region=h(display_region),
+                type=h(alerts_type_label(event, lang)),
+                start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
+                end=h(alerts_format_timestamp(event.get("ended_at")) or "—"),
+            )
+            extras: List[str] = []
+            cause = (event.get("extra") or {}).get("cause") or ""
+            details = (event.get("extra") or {}).get("details") or ""
+            if cause:
+                extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
+            if details:
+                extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
+            if extras:
+                text = "\n".join([text, *extras])
+            region_text = text
+            break
+    if not region_text:
+        region_text = tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
+    lines: List[str] = []
+    if summary_line:
+        lines.append(summary_line)
+    if region_text:
+        lines.append(region_text)
+    return "\n".join(lines)
 
 
 def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
