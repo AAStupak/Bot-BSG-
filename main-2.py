@@ -89,7 +89,7 @@ ALERTS_API_URL = f"{ALERTS_API_BASE_URL}{ALERTS_API_ACTIVE_ENDPOINT}"
 ALERTS_DEFAULT_HISTORY_PERIOD = "week_ago"
 ALERTS_API_TOKEN = "62f89091e56951ef257f763e445c09c1fd9dacd1ab2203"
 ALERTS_API_TIMEOUT = 15
-ALERTS_POLL_INTERVAL = 60  # seconds
+ALERTS_POLL_INTERVAL = 30  # seconds
 ALERTS_HISTORY_CACHE_TTL = 300  # seconds
 
 UKRAINE_REGIONS = [
@@ -250,6 +250,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🔥 Aktywne alarmy",
         "ru": "🔥 Активные тревоги",
     },
+    "ALERTS_BTN_OVERVIEW": {
+        "uk": "🗺️ Статус областей",
+        "en": "🗺️ Region status",
+        "de": "🗺️ Regionenstatus",
+        "pl": "🗺️ Status regionów",
+        "ru": "🗺️ Статус областей",
+    },
     "ALERTS_BTN_HISTORY": {
         "uk": "📜 Історія",
         "en": "📜 History",
@@ -277,6 +284,34 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "📜 <b>Alarmverlauf</b> ({count})",
         "pl": "📜 <b>Historia alarmów</b> ({count})",
         "ru": "📜 <b>История тревог</b> ({count})",
+    },
+    "ALERTS_OVERVIEW_HEADER": {
+        "uk": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
+        "en": "🗺️ <b>Region status</b>\n━━━━━━━━━━━━━━━━━━\nSee which oblasts are under alert right now.",
+        "de": "🗺️ <b>Status der Regionen</b>\n━━━━━━━━━━━━━━━━━━\nÜberblick über aktuelle Alarme nach Oblast.",
+        "pl": "🗺️ <b>Status regionów</b>\n━━━━━━━━━━━━━━━━━━\nSprawdź, w których obwodach trwa alarm.",
+        "ru": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПроверяйте, где сейчас действует тревога.",
+    },
+    "ALERTS_OVERVIEW_ACTIVE": {
+        "uk": "🔴 {region} — тривога з {start}",
+        "en": "🔴 {region} — alert since {start}",
+        "de": "🔴 {region} — Alarm seit {start}",
+        "pl": "🔴 {region} — alarm od {start}",
+        "ru": "🔴 {region} — тревога с {start}",
+    },
+    "ALERTS_OVERVIEW_ACTIVE_UNKNOWN": {
+        "uk": "🔴 {region} — тривога (час уточнюється)",
+        "en": "🔴 {region} — alert (start time pending)",
+        "de": "🔴 {region} — Alarm (Startzeit wird ermittelt)",
+        "pl": "🔴 {region} — alarm (czas ustalany)",
+        "ru": "🔴 {region} — тревога (время уточняется)",
+    },
+    "ALERTS_OVERVIEW_CALM": {
+        "uk": "🟢 {region} — спокійно",
+        "en": "🟢 {region} — calm",
+        "de": "🟢 {region} — ruhig",
+        "pl": "🟢 {region} — spokojnie",
+        "ru": "🟢 {region} — спокойно",
     },
     "ALERTS_NO_ACTIVE": {
         "uk": "✅ Зараз немає активних тривог для вибраних областей.",
@@ -1074,6 +1109,7 @@ def ensure_dirs():
     os.makedirs(BASE_PATH, exist_ok=True)
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
+    os.makedirs(ALERTS_STORAGE_DIR, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -3080,6 +3116,7 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
 def kb_alerts(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_OVERVIEW"), callback_data="alerts_overview"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
@@ -3863,6 +3900,14 @@ async def alerts_active_view(c: types.CallbackQuery):
     await c.answer()
 
 
+@dp.callback_query_handler(lambda c: c.data == "alerts_overview")
+async def alerts_overview_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    text = alerts_regions_overview_text(uid)
+    await clear_then_anchor(uid, text, kb_alerts(uid))
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "alerts_history")
 async def alerts_history_view(c: types.CallbackQuery):
     uid = c.from_user.id
@@ -3917,7 +3962,7 @@ async def alerts_toggle_subscription(c: types.CallbackQuery):
     except Exception:
         await c.answer("", show_alert=False)
         return
-    profile = load_user(uid) or {}
+    profile = load_user(uid) or {"user_id": uid}
     alerts = alerts_profile_block(profile)
     region = alerts_canonical_region(UKRAINE_REGIONS[region_index]) or UKRAINE_REGIONS[region_index]
     items = alerts.get("regions", [])
@@ -4015,9 +4060,12 @@ async def back_root(c: types.CallbackQuery):
 
 
 # ========================== ALERTS STORAGE ==========================
-ALERTS_DATA_FILE = os.path.join("data", "alerts.json")
+ALERTS_STORAGE_DIR = os.path.join("data", "alerts")
+ALERTS_DATA_FILE = os.path.join(ALERTS_STORAGE_DIR, "events.json")
+ALERTS_USERS_FILE = os.path.join(ALERTS_STORAGE_DIR, "users.json")
 ALERTS_MAX_HISTORY = 100
 _alerts_state_cache: Optional[Dict[str, Any]] = None
+_alerts_user_cache: Optional[Dict[str, Any]] = None
 
 if ZoneInfo:
     try:
@@ -4343,6 +4391,54 @@ def _alerts_save_state() -> None:
     with open(tmp_file, "w", encoding="utf-8") as fh:
         json.dump(_alerts_state_cache, fh, ensure_ascii=False, indent=2)
     os.replace(tmp_file, ALERTS_DATA_FILE)
+
+
+def _alerts_blank_user_state() -> Dict[str, Any]:
+    return {}
+
+
+def _alerts_load_users() -> Dict[str, Any]:
+    global _alerts_user_cache
+    if _alerts_user_cache is not None:
+        return _alerts_user_cache
+    _alerts_ensure_storage()
+    if not os.path.exists(ALERTS_USERS_FILE):
+        _alerts_user_cache = _alerts_blank_user_state()
+        _alerts_save_users()
+        return _alerts_user_cache
+    try:
+        with open(ALERTS_USERS_FILE, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid alerts user state")
+    except Exception:
+        payload = _alerts_blank_user_state()
+    _alerts_user_cache = payload
+    return _alerts_user_cache
+
+
+def _alerts_save_users() -> None:
+    if _alerts_user_cache is None:
+        return
+    _alerts_ensure_storage()
+    tmp_file = f"{ALERTS_USERS_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(_alerts_user_cache, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, ALERTS_USERS_FILE)
+
+
+def _alerts_user_entry(uid: int) -> Dict[str, Any]:
+    store = _alerts_load_users()
+    key = str(uid)
+    created = key not in store
+    entry = store.setdefault(key, {"regions": [], "last_seen": {}})
+    if not isinstance(entry.get("regions"), list):
+        entry["regions"] = []
+    if not isinstance(entry.get("last_seen"), dict):
+        entry["last_seen"] = {}
+    if created:
+        _alerts_save_users()
+    return entry
 
 
 def _alerts_region_state(region: str) -> Dict[str, Any]:
@@ -4898,10 +4994,32 @@ def alerts_summarize_event(event: Dict[str, Any], lang: str) -> str:
 
 
 def alerts_profile_block(profile: dict) -> dict:
-    alerts = profile.setdefault("alerts", {})
-    alerts.setdefault("regions", [])
-    alerts.setdefault("last_seen", {})
-    return alerts
+    uid = profile.get("user_id")
+    if not uid:
+        return {"regions": [], "last_seen": {}}
+    entry = _alerts_user_entry(uid)
+    legacy = profile.get("alerts")
+    migrated = False
+    if isinstance(legacy, dict):
+        legacy_regions = legacy.get("regions", [])
+        if isinstance(legacy_regions, list):
+            for region in legacy_regions:
+                canonical = alerts_canonical_region(region) or region
+                if canonical and canonical not in entry["regions"]:
+                    entry["regions"].append(canonical)
+                    migrated = True
+        legacy_seen = legacy.get("last_seen")
+        if isinstance(legacy_seen, dict):
+            entry["last_seen"].update({str(k): v for k, v in legacy_seen.items()})
+            migrated = True
+        if migrated:
+            _alerts_save_users()
+        profile.pop("alerts", None)
+        try:
+            save_user(profile)
+        except Exception:
+            pass
+    return entry
 
 
 def alerts_user_regions(uid: int) -> List[str]:
@@ -4914,7 +5032,7 @@ def alerts_user_regions(uid: int) -> List[str]:
             regions.append(canonical)
         elif project_region:
             regions.append(project_region)
-    profile = load_user(uid) or {}
+    profile = load_user(uid) or {"user_id": uid}
     alerts = alerts_profile_block(profile)
     for region in alerts.get("regions", []):
         canonical = alerts_canonical_region(region)
@@ -4923,6 +5041,48 @@ def alerts_user_regions(uid: int) -> List[str]:
         elif region not in regions:
             regions.append(region)
     return regions
+
+
+def alerts_display_region_name(region: str, lang: str) -> str:
+    canonical = alerts_canonical_region(region) or region
+    aliases = ALERTS_REGION_EQUIVALENTS.get(canonical)
+    if not aliases:
+        return canonical
+    if lang == "ru":
+        return canonical
+    if lang == "en":
+        for alias in aliases:
+            if re.search(r"[A-Za-z]", alias):
+                return alias
+        return aliases[-1]
+    return aliases[0]
+
+
+def alerts_regions_overview_text(uid: int) -> str:
+    lang = resolve_lang(uid)
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    regions_map = state.get("regions", {})
+    lines: List[str] = [tr(uid, "ALERTS_OVERVIEW_HEADER")]
+    for raw_region in UKRAINE_REGIONS:
+        canonical = alerts_canonical_region(raw_region) or raw_region
+        bucket = regions_map.get(canonical) or regions_map.get(raw_region) or {}
+        active_ids = []
+        for event_id in bucket.get("active", []):
+            payload = events_map.get(event_id)
+            if payload and not payload.get("ended_at"):
+                active_ids.append(payload)
+        display_name = alerts_display_region_name(canonical, lang)
+        if active_ids:
+            active_ids.sort(key=lambda ev: ev.get("started_at") or "")
+            started = alerts_format_timestamp(active_ids[0].get("started_at"))
+            if started:
+                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE", region=h(display_name), start=h(started)))
+            else:
+                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE_UNKNOWN", region=h(display_name)))
+        else:
+            lines.append(tr(uid, "ALERTS_OVERVIEW_CALM", region=h(display_name)))
+    return "\n".join(lines)
 
 
 def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
@@ -5015,15 +5175,21 @@ def alerts_update_subscription(uid: int, region_index: int, add: bool) -> bool:
     if region_index < 0 or region_index >= len(UKRAINE_REGIONS):
         return False
     region = alerts_canonical_region(UKRAINE_REGIONS[region_index]) or UKRAINE_REGIONS[region_index]
-    profile = load_user(uid) or {}
+    profile = load_user(uid) or {"user_id": uid}
     alerts = alerts_profile_block(profile)
     items = alerts.setdefault("regions", [])
-    if add and region not in items:
-        items.append(region)
-    elif not add and region in items:
-        items.remove(region)
-    save_user(profile)
-    return True
+    changed = False
+    if add:
+        if region not in items:
+            items.append(region)
+            changed = True
+    else:
+        if region in items:
+            items.remove(region)
+            changed = True
+    if changed:
+        _alerts_save_users()
+    return changed
 
 
 def alerts_card_keyboard(uid: int, context: str, total: int, index: int) -> InlineKeyboardMarkup:
