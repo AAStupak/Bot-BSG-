@@ -745,13 +745,6 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "📥 <b>Odebrane przesyłki BSG</b>\n━━━━━━━━━━━━━━━━━━\nSprawdź statusy, komentarze i historię potwierdzonych dostaw.",
         "ru": "📥 <b>Полученные посылки BSG</b>\n━━━━━━━━━━━━━━━━━━\nПросмотрите статусы, комментарии и историю подтверждённых доставок.",
     },
-    "NP_ADMIN_DELIVERY_ALERT": {
-        "uk": "📦 <b>Посилка отримана</b>\\nTTN: <b>{ttn}</b>\\nОтримувач: {user}\\nПідтверджено: {time}",
-        "en": "📦 <b>Parcel received</b>\\nTTN: <b>{ttn}</b>\\nRecipient: {user}\\nConfirmed: {time}",
-        "de": "📦 <b>Sendung erhalten</b>\\nTTN: <b>{ttn}</b>\\nEmpfänger: {user}\\nBestätigt: {time}",
-        "pl": "📦 <b>Przesyłka odebrana</b>\\nTTN: <b>{ttn}</b>\\nOdbiorca: {user}\\nPotwierdzono: {time}",
-        "ru": "📦 <b>Посылка получена</b>\\nTTN: <b>{ttn}</b>\\nПолучатель: {user}\\nПодтверждено: {time}",
-    },
 }
 
 LANG_CODES = {code for code, _ in LANG_ORDER}
@@ -2093,6 +2086,38 @@ NP_COMMENT_SECTION_TITLE = {
     "ru": "💬 Комментарии ({count})",
 }
 
+NP_DELIVERY_RECEIPT_TITLE = {
+    "uk": "📦 Посилка отримана",
+    "en": "📦 Parcel received",
+    "de": "📦 Sendung erhalten",
+    "pl": "📦 Przesyłka odebrana",
+    "ru": "📦 Посылка получена",
+}
+
+NP_DELIVERY_STATUS_CONFIRMED = {
+    "uk": "Підтверджено",
+    "en": "Confirmed",
+    "de": "Bestätigt",
+    "pl": "Potwierdzono",
+    "ru": "Подтверждено",
+}
+
+NP_DELIVERY_RECEIPT_LABELS = {
+    "uk": {"ttn": "ТТН", "recipient": "Отримувач", "date": "Дата", "status": "Статус"},
+    "en": {"ttn": "TTN", "recipient": "Recipient", "date": "Date", "status": "Status"},
+    "de": {"ttn": "TTN", "recipient": "Empfänger", "date": "Datum", "status": "Status"},
+    "pl": {"ttn": "TTN", "recipient": "Odbiorca", "date": "Data", "status": "Status"},
+    "ru": {"ttn": "ТТН", "recipient": "Получатель", "date": "Дата", "status": "Статус"},
+}
+
+NP_DATETIME_CARD_FORMATS = {
+    "uk": "%d.%m.%Y • %H:%M",
+    "en": "%d.%m.%Y • %H:%M",
+    "de": "%d.%m.%Y • %H:%M",
+    "pl": "%d.%m.%Y • %H:%M",
+    "ru": "%d.%m.%Y • %H:%M",
+}
+
 NP_REFRESH_BUTTON_LABEL = {
     "uk": "🔄 Оновити",
     "en": "🔄 Refresh",
@@ -2279,6 +2304,41 @@ def _np_render_receipt_block(entries: List[Tuple[str, ...]]) -> str:
         lines.pop()
 
     return "\n".join(lines)
+
+
+def np_format_delivery_timestamp(value: Optional[str], lang: str) -> str:
+    if not value:
+        return ""
+    raw = str(value)
+    try:
+        dt = datetime.fromisoformat(raw)
+    except Exception:
+        try:
+            dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+        except Exception:
+            return raw
+    fmt = NP_DATETIME_CARD_FORMATS.get(lang) or NP_DATETIME_CARD_FORMATS.get(DEFAULT_LANG) or "%d.%m.%Y • %H:%M"
+    try:
+        return dt.strftime(fmt)
+    except Exception:
+        return raw
+
+
+def np_render_delivery_receipt(lang: str, ttn: Any, recipient: Any, delivered_at: Optional[str]) -> str:
+    labels = (
+        NP_DELIVERY_RECEIPT_LABELS.get(lang)
+        or NP_DELIVERY_RECEIPT_LABELS.get(DEFAULT_LANG)
+        or next(iter(NP_DELIVERY_RECEIPT_LABELS.values()))
+    )
+    entries: List[Tuple[str, ...]] = [
+        ("kv", labels.get("ttn", "TTN"), str(ttn) if ttn is not None else ""),
+        ("kv", labels.get("recipient", "Recipient"), str(recipient) if recipient is not None else ""),
+        ("kv", labels.get("date", "Date"), np_format_delivery_timestamp(delivered_at, lang)),
+        ("kv", labels.get("status", "Status"), _np_pick(lang, NP_DELIVERY_STATUS_CONFIRMED)),
+    ]
+    block_plain = _np_render_receipt_block(entries)
+    header = _np_pick(lang, NP_DELIVERY_RECEIPT_TITLE)
+    return f"{header}\n━━━━━━━━━━━━━━━━━━\n<pre>{html_escape(block_plain)}</pre>"
 
 
 def format_np_status(uid: int, ttn: str, payload: Optional[dict],
@@ -4047,17 +4107,35 @@ async def np_assigned_received_cb(c: types.CallbackQuery):
 
     user_profile = load_user(uid) or {"user_id": uid}
     user_name = user_profile.get("fullname") or (user_profile.get("tg") or {}).get("first_name") or f"User {uid}"
-    confirm_time = format_datetime_short(assignment.get("delivered_at")) or assignment.get("delivered_at") or "—"
+    delivered_at = assignment.get("delivered_at")
+
+    user_lang = resolve_lang(uid)
+    user_receipt = np_render_delivery_receipt(user_lang, ttn, user_name, delivered_at)
+    user_kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton(_np_pick(user_lang, NP_CLOSE_BUTTON_LABEL), callback_data="np_close")
+    )
+    try:
+        receipt_msg = await bot.send_message(
+            c.message.chat.id,
+            user_receipt,
+            reply_markup=user_kb,
+            disable_web_page_preview=True,
+        )
+        flow_track(uid, receipt_msg)
+    except Exception:
+        pass
+
     for admin_id in admins:
         chat_id = users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id") or (load_user(admin_id) or {}).get("tg", {}).get("chat_id")
         if not chat_id:
             continue
-        alert = tr(admin_id, "NP_ADMIN_DELIVERY_ALERT", ttn=h(ttn), user=h(user_name), time=h(confirm_time))
+        admin_lang = resolve_lang(admin_id)
+        alert = np_render_delivery_receipt(admin_lang, ttn, user_name, delivered_at)
         kb_admin = InlineKeyboardMarkup().add(
-            InlineKeyboardButton(_np_pick(resolve_lang(admin_id), NP_CLOSE_BUTTON_LABEL), callback_data="np_close")
+            InlineKeyboardButton(_np_pick(admin_lang, NP_CLOSE_BUTTON_LABEL), callback_data="np_close")
         )
         try:
-            await bot.send_message(chat_id, alert, reply_markup=kb_admin)
+            await bot.send_message(chat_id, alert, reply_markup=kb_admin, disable_web_page_preview=True)
         except Exception:
             continue
 
