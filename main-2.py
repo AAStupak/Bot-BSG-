@@ -40,7 +40,7 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, sys, json, random, re, base64, hashlib, secrets, textwrap
+import os, sys, json, random, re, base64, hashlib, secrets
 from html import escape as html_escape
 from datetime import datetime, timezone
 from typing import Dict, Optional, List, Tuple, Any, Set
@@ -1922,37 +1922,37 @@ def format_day_month(value: Optional[str]) -> str:
 
 NP_FIELD_LABELS = {
     "uk": {
-        "ttn": "Номер ТТН",
+        "ttn": "ТТН",
         "status": "Статус",
         "last_update": "Оновлено",
         "delivery_date": "Планова доставка",
         "estimated_date": "Орієнтовно",
-        "recipient": "Отримувач",
-        "recipient_city": "Місто отримання",
-        "recipient_warehouse": "Відділення отримання",
-        "sender": "Відправник",
-        "sender_city": "Місто відправлення",
-        "sender_warehouse": "Відділення відправлення",
-        "service_type": "Послуга",
+        "recipient": "Ім’я",
+        "recipient_city": "Місто",
+        "recipient_warehouse": "Відділення",
+        "sender": "Ім’я",
+        "sender_city": "Місто",
+        "sender_warehouse": "Відділення",
+        "service_type": "Сервіс",
         "weight": "Вага",
-        "cost": "Оцінена вартість",
-        "section_summary": "Зведення",
-        "section_recipient": "Отримувач",
-        "section_sender": "Відправник",
-        "section_parcel": "Відправлення",
+        "cost": "Оціночна вартість",
+        "section_summary": "СВОДКА",
+        "section_recipient": "ОТРИМУВАЧ",
+        "section_sender": "ВІДПРАВНИК",
+        "section_parcel": "ПОСИЛКА",
     },
     "en": {
-        "ttn": "TTN number",
+        "ttn": "TTN",
         "status": "Status",
         "last_update": "Updated",
         "delivery_date": "Planned delivery",
         "estimated_date": "Estimated",
-        "recipient": "Recipient",
-        "recipient_city": "Destination city",
-        "recipient_warehouse": "Destination branch",
-        "sender": "Sender",
-        "sender_city": "Origin city",
-        "sender_warehouse": "Origin branch",
+        "recipient": "Name",
+        "recipient_city": "City",
+        "recipient_warehouse": "Branch",
+        "sender": "Name",
+        "sender_city": "City",
+        "sender_warehouse": "Branch",
         "service_type": "Service",
         "weight": "Weight",
         "cost": "Declared value",
@@ -1962,17 +1962,17 @@ NP_FIELD_LABELS = {
         "section_parcel": "Parcel",
     },
     "de": {
-        "ttn": "TTN-Nummer",
+        "ttn": "TTN",
         "status": "Status",
         "last_update": "Aktualisiert",
         "delivery_date": "Geplante Zustellung",
         "estimated_date": "Voraussichtlich",
-        "recipient": "Empfänger",
-        "recipient_city": "Zielstadt",
-        "recipient_warehouse": "Ziel-Filiale",
-        "sender": "Absender",
-        "sender_city": "Absenderstadt",
-        "sender_warehouse": "Absender-Filiale",
+        "recipient": "Name",
+        "recipient_city": "Stadt",
+        "recipient_warehouse": "Filiale",
+        "sender": "Name",
+        "sender_city": "Stadt",
+        "sender_warehouse": "Filiale",
         "service_type": "Service",
         "weight": "Gewicht",
         "cost": "Deklarierter Wert",
@@ -1982,17 +1982,17 @@ NP_FIELD_LABELS = {
         "section_parcel": "Sendung",
     },
     "pl": {
-        "ttn": "Numer TTN",
+        "ttn": "TTN",
         "status": "Status",
         "last_update": "Aktualizacja",
         "delivery_date": "Planowana dostawa",
         "estimated_date": "Szacunkowo",
-        "recipient": "Odbiorca",
-        "recipient_city": "Miasto odbioru",
-        "recipient_warehouse": "Oddział odbioru",
-        "sender": "Nadawca",
-        "sender_city": "Miasto nadania",
-        "sender_warehouse": "Oddział nadania",
+        "recipient": "Imię",
+        "recipient_city": "Miasto",
+        "recipient_warehouse": "Oddział",
+        "sender": "Imię",
+        "sender_city": "Miasto",
+        "sender_warehouse": "Oddział",
         "service_type": "Usługa",
         "weight": "Waga",
         "cost": "Deklarowana wartość",
@@ -2002,24 +2002,24 @@ NP_FIELD_LABELS = {
         "section_parcel": "Przesyłka",
     },
     "ru": {
-        "ttn": "Номер ТТН",
+        "ttn": "ТТН",
         "status": "Статус",
         "last_update": "Обновлено",
         "delivery_date": "Плановая доставка",
         "estimated_date": "Ориентировочно",
-        "recipient": "Получатель",
-        "recipient_city": "Город получения",
-        "recipient_warehouse": "Отделение получения",
-        "sender": "Отправитель",
-        "sender_city": "Город отправления",
-        "sender_warehouse": "Отделение отправления",
+        "recipient": "Имя",
+        "recipient_city": "Город",
+        "recipient_warehouse": "Отделение",
+        "sender": "Имя",
+        "sender_city": "Город",
+        "sender_warehouse": "Отделение",
         "service_type": "Сервис",
         "weight": "Вес",
         "cost": "Оценочная стоимость",
-        "section_summary": "Сводка",
-        "section_recipient": "Получатель",
-        "section_sender": "Отправитель",
-        "section_parcel": "Посылка",
+        "section_summary": "СВОДКА",
+        "section_recipient": "ПОЛУЧАТЕЛЬ",
+        "section_sender": "ОТПРАВИТЕЛЬ",
+        "section_parcel": "ПОСЫЛКА",
     },
 }
 
@@ -2039,23 +2039,6 @@ NP_COST_SUFFIX = {
     "ru": " грн",
 }
 
-NP_FIELD_ICONS = {
-    "ttn": "🔖",
-    "status": "🗒",
-    "delivery_date": "📅",
-    "recipient_city": "📍",
-    "recipient_warehouse": "🏤",
-    "sender_city": "🚚",
-    "sender_warehouse": "🏢",
-    "sender": "🏢",
-    "weight": "⚖️",
-    "cost": "💰",
-    "estimated_date": "⏳",
-    "last_update": "🕒",
-    "service_type": "⚙️",
-    "recipient": "👤",
-}
-
 NP_SECTION_ICONS = {
     "section_summary": "📌",
     "section_recipient": "🎯",
@@ -2064,7 +2047,7 @@ NP_SECTION_ICONS = {
 }
 
 NP_TTN_TITLE = {
-    "uk": "🧾 <b>Nova Poshta — квитанція</b>\n🔖 TTN: <code>{ttn}</code>",
+    "uk": "🧾 <b>Nova Poshta — квитанція</b>\n🔖 ТТН: <code>{ttn}</code>",
     "en": "🧾 <b>Nova Poshta — receipt</b>\n🔖 TTN: <code>{ttn}</code>",
     "de": "🧾 <b>Nova Poshta — Beleg</b>\n🔖 TTN: <code>{ttn}</code>",
     "pl": "🧾 <b>Nova Poshta — potwierdzenie</b>\n🔖 TTN: <code>{ttn}</code>",
@@ -2243,46 +2226,43 @@ def _np_render_receipt_block(entries: List[Tuple[str, ...]]) -> str:
     while items and items[-1]["type"] == "sep":
         items.pop()
 
+    if not items:
+        return "—"
+
     kv_items = [item for item in items if item["type"] == "kv"]
     label_width = max((len(item["label"]) for item in kv_items), default=0)
-    label_width = max(10, min(24, label_width)) if kv_items else 12
-    inner_width = max(42, label_width + 20)
-    value_width = max(14, inner_width - label_width - 7)
+    value_column = max(20, min(40, label_width + 4))
 
-    def _fit(text: str, limit: int) -> str:
-        if len(text) <= limit:
-            return text
-        return text[: max(1, limit - 1)] + "…"
-
-    lines: List[str] = ["╔" + "═" * inner_width + "╗"]
-    for item in items or [{"type": "kv", "label": "", "value": "—"}]:
+    lines: List[str] = []
+    for item in items:
         if item["type"] == "sep":
-            lines.append("╟" + "─" * inner_width + "╢")
+            if lines and lines[-1] != "":
+                lines.append("")
             continue
         if item["type"] == "section":
-            title = _fit(item["text"], inner_width - 3)
-            lines.append("║" + ("◇ " + title).ljust(inner_width) + "║")
+            if lines and lines[-1] != "":
+                lines.append("")
+            lines.append(item["text"])
             continue
-        label = _fit(item["label"], label_width)
-        label_block = label.ljust(label_width)
-        wrapped = textwrap.wrap(
-            item["value"],
-            width=value_width,
-            break_long_words=True,
-            replace_whitespace=False,
-            drop_whitespace=False,
-        ) or [item["value"]]
-        first_value = wrapped[0]
-        line_prefix = f"{label_block} "
-        filler_count = max(2, inner_width - len(line_prefix) - len(first_value) - 1)
-        filler = "·" * filler_count
-        body = f"{line_prefix}{filler} {first_value}"
-        lines.append("║" + body.ljust(inner_width) + "║")
-        pad = " " * (label_width + 2)
-        for extra in wrapped[1:]:
-            continuation = f"{pad}{extra}"
-            lines.append("║" + continuation.ljust(inner_width) + "║")
-    lines.append("╚" + "═" * inner_width + "╝")
+        label = item["label"].strip()
+        prefix = f"{label}:" if label else ""
+        gap = value_column - len(prefix)
+        if gap < 2:
+            gap = 2
+        spaces = " " * gap
+        raw_value = item["value"]
+        value_lines = [line.strip() for line in raw_value.splitlines()] or ["—"]
+        first_line = value_lines[0] or "—"
+        line_prefix = prefix + spaces
+        lines.append(line_prefix + first_line)
+        indent = " " * len(line_prefix)
+        for extra in value_lines[1:]:
+            extra_line = extra or "—"
+            lines.append(indent + extra_line)
+
+    while lines and lines[-1] == "":
+        lines.pop()
+
     return "\n".join(lines)
 
 
@@ -2294,18 +2274,15 @@ def format_np_status(uid: int, ttn: str, payload: Optional[dict],
     header = _np_pick(lang, NP_TTN_TITLE).format(ttn=h(ttn))
 
     def field_label(key: str) -> str:
-        base = labels.get(key, key)
-        icon = NP_FIELD_ICONS.get(key)
-        if icon and not base.startswith(icon):
-            base = f"{icon} {base}"
-        return base
+        return labels.get(key, key)
 
     def section_title(key: str) -> str:
         base = labels.get(key, key)
         icon = NP_SECTION_ICONS.get(key)
-        if icon and not base.startswith(icon):
-            base = f"{icon} {base}"
-        return base
+        title = base.strip().upper()
+        if icon and not title.startswith(icon):
+            return f"{icon} {title}"
+        return title
 
     summary_rows: List[Tuple[str, ...]] = [
         ("section", section_title("section_summary")),
