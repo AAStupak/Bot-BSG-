@@ -669,11 +669,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Действие отменено.",
     },
     "NP_ASSIGN_DONE": {
-        "uk": "✅ ТТН {ttn} закріплено за користувачем {user}. Повідомлення вже надіслано.",
-        "en": "✅ TTN {ttn} assigned to {user}. They have been notified.",
-        "de": "✅ TTN {ttn} wurde {user} zugeordnet. Der Nutzer wurde informiert.",
-        "pl": "✅ TTN {ttn} przypisano użytkownikowi {user}. Powiadomienie wysłano.",
-        "ru": "✅ ТТН {ttn} закреплена за пользователем {user}. Уведомление отправлено.",
+        "uk": "🏢 <b>Передача оформлена</b>\n━━━━━━━━━━━━━━━━━━\n🔖 ТТН: <code>{ttn}</code>\n👤 Отримувач: {user}\n🕒 Призначено: {time}\n\n✅ Повідомлення надіслано.",
+        "en": "🏢 <b>Forwarding complete</b>\n━━━━━━━━━━━━━━━━━━\n🔖 TTN: <code>{ttn}</code>\n👤 Recipient: {user}\n🕒 Assigned: {time}\n\n✅ Notification sent.",
+        "de": "🏢 <b>Weitergabe abgeschlossen</b>\n━━━━━━━━━━━━━━━━━━\n🔖 TTN: <code>{ttn}</code>\n👤 Empfänger: {user}\n🕒 Zugeordnet: {time}\n\n✅ Benachrichtigung gesendet.",
+        "pl": "🏢 <b>Przekazanie zakończone</b>\n━━━━━━━━━━━━━━━━━━\n🔖 TTN: <code>{ttn}</code>\n👤 Odbiorca: {user}\n🕒 Przypisano: {time}\n\n✅ Powiadomienie wysłano.",
+        "ru": "🏢 <b>Передача оформлена</b>\n━━━━━━━━━━━━━━━━━━\n🔖 ТТН: <code>{ttn}</code>\n👤 Получатель: {user}\n🕒 Назначено: {time}\n\n✅ Уведомление отправлено.",
+    },
+    "NP_ASSIGN_DONE_NOTE_LABEL": {
+        "uk": "📝 Коментар адміністратора:\n{note}",
+        "en": "📝 Admin note:\n{note}",
+        "de": "📝 Notiz des Administrators:\n{note}",
+        "pl": "📝 Notatka administratora:\n{note}",
+        "ru": "📝 Комментарий администратора:\n{note}",
     },
     "NP_ASSIGN_NOTIFY_USER": {
         "uk": "📦 Адміністратор {admin} передав вам накладну <b>{ttn}</b>. Відкрийте картку нижче, щоб переглянути статус і підтвердити отримання.",
@@ -4167,8 +4174,18 @@ async def np_assign_finalize(uid: int, state: FSMContext, chat_id: int, note_tex
     admin_profile = load_user(uid) or {"user_id": uid}
     admin_name = admin_profile.get("fullname") or (admin_profile.get("tg") or {}).get("first_name") or f"ID {uid}"
     target_name = target_profile.get("fullname") or (target_profile.get("tg") or {}).get("first_name") or f"User {target_id}"
+    lang = resolve_lang(uid)
+    assigned_time = format_datetime_short(assignment.get("updated_at")) or assignment.get("updated_at") or "—"
 
-    confirm = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_DONE", ttn=h(ttn), user=h(target_name)))
+    confirm_text = tr(uid, "NP_ASSIGN_DONE", ttn=h(ttn), user=h(target_name), time=h(assigned_time))
+    note_display = (assignment.get("note") or "").strip()
+    if note_display:
+        confirm_text = f"{confirm_text}\n\n{_np_pick(lang, NP_ASSIGN_DONE_NOTE_LABEL).format(note=h(note_display))}"
+
+    confirm_kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton(_np_pick(lang, NP_CLOSE_BUTTON_LABEL), callback_data="np_close")
+    )
+    confirm = await bot.send_message(chat_id, confirm_text, reply_markup=confirm_kb)
     flow_track(uid, confirm)
     await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
 
