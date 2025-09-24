@@ -47,7 +47,7 @@ from typing import Dict, Optional, List, Tuple, Any, Set, Union
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageDraw, ImageFont
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited
@@ -250,33 +250,124 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🚨 <b>Alarmy powietrzne</b>\n━━━━━━━━━━━━━━━━━━\nPrzeglądaj aktywne ostrzeżenia, historię i zarządzaj regionami powiadomień.\nWybierz działanie poniżej.",
         "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
     },
+    "ALERTS_MENU_TITLE": {
+        "uk": "🚨 <b>Повітряні тривоги</b>",
+        "en": "🚨 <b>Air raid alerts</b>",
+        "de": "🚨 <b>Luftalarme</b>",
+        "pl": "🚨 <b>Alarmy powietrzne</b>",
+        "ru": "🚨 <b>Воздушные тревоги</b>",
+    },
+    "ALERTS_MENU_STATUS_TITLE": {
+        "uk": "📊 <b>Статус областей України</b>",
+        "en": "📊 <b>Status across Ukraine</b>",
+        "de": "📊 <b>Status der ukrainischen Regionen</b>",
+        "pl": "📊 <b>Status obwodów Ukrainy</b>",
+        "ru": "📊 <b>Статус областей України</b>",
+    },
+    "ALERTS_MENU_UPDATED": {
+        "uk": "Оновлено: {moment}",
+        "en": "Updated: {moment}",
+        "de": "Aktualisiert: {moment}",
+        "pl": "Zaktualizowano: {moment}",
+        "ru": "Обновлено: {moment}",
+    },
+    "ALERTS_MENU_UPDATED_UNKNOWN": {
+        "uk": "Оновлено щойно",
+        "en": "Updated moments ago",
+        "de": "Gerade aktualisiert",
+        "pl": "Zaktualizowano przed chwilą",
+        "ru": "Обновлено только что",
+    },
+    "ALERTS_MENU_SELECTED_TITLE": {
+        "uk": "🎯 <b>Ваші зони сповіщень</b>",
+        "en": "🎯 <b>Your alert zones</b>",
+        "de": "🎯 <b>Ihre Alarmzonen</b>",
+        "pl": "🎯 <b>Twoje strefy alarmów</b>",
+        "ru": "🎯 <b>Ваши зоны тревог</b>",
+    },
+    "ALERTS_MENU_SELECTED_EMPTY": {
+        "uk": "Поки що жодної області не обрано.",
+        "en": "No additional regions selected yet.",
+        "de": "Noch keine zusätzlichen Regionen ausgewählt.",
+        "pl": "Nie wybrano jeszcze dodatkowych regionów.",
+        "ru": "Дополнительные регионы пока не выбраны.",
+    },
+    "ALERTS_MENU_SELECTED_ACTIVE": {
+        "uk": "🔴 {region} — тривога з {start}",
+        "en": "🔴 {region} — alert since {start}",
+        "de": "🔴 {region} — Alarm seit {start}",
+        "pl": "🔴 {region} — alarm od {start}",
+        "ru": "🔴 {region} — тревога с {start}",
+    },
+    "ALERTS_MENU_SELECTED_RECENT": {
+        "uk": "🟡 {region} — відбій о {end}",
+        "en": "🟡 {region} — cleared at {end}",
+        "de": "🟡 {region} — Entwarnung um {end}",
+        "pl": "🟡 {region} — odwołano o {end}",
+        "ru": "🟡 {region} — отбой в {end}",
+    },
+    "ALERTS_MENU_SELECTED_CALM": {
+        "uk": "🟢 {region} — спокійно",
+        "en": "🟢 {region} — calm",
+        "de": "🟢 {region} — ruhig",
+        "pl": "🟢 {region} — spokojnie",
+        "ru": "🟢 {region} — спокойно",
+    },
+    "ALERTS_MENU_ACTIONS_TITLE": {
+        "uk": "⚙️ <b>Подальші дії</b>",
+        "en": "⚙️ <b>Next steps</b>",
+        "de": "⚙️ <b>Nächste Schritte</b>",
+        "pl": "⚙️ <b>Dalsze kroki</b>",
+        "ru": "⚙️ <b>Дальнейшие действия</b>",
+    },
+    "ALERTS_MENU_ACTIONS_HINT": {
+        "uk": "Скористайтеся кнопками нижче, щоб відкрити карту, історію або змінити налаштування сповіщень.",
+        "en": "Use the buttons below to open the map, review history, or adjust your alert zones.",
+        "de": "Nutzen Sie die Schaltflächen unten, um die Karte zu öffnen, den Verlauf einzusehen oder Ihre Zonen anzupassen.",
+        "pl": "Użyj przycisków poniżej, aby otworzyć mapę, przejrzeć historię lub zmienić strefy alertów.",
+        "ru": "Используйте кнопки ниже, чтобы открыть карту, посмотреть историю или настроить зоны тревог.",
+    },
+    "ALERTS_SNAPSHOT_CAPTION": {
+        "uk": "Мапа тривог — оновлено {moment}",
+        "en": "Alert map — updated {moment}",
+        "de": "Alarmkarte — aktualisiert {moment}",
+        "pl": "Mapa alarmów — zaktualizовано {moment}",
+        "ru": "Карта тревог — обновлено {moment}",
+    },
+    "ALERTS_SNAPSHOT_CAPTION_SIMPLE": {
+        "uk": "Мапа тривог — актуальні дані",
+        "en": "Alert map — live data",
+        "de": "Alarmkarte — Live-Daten",
+        "pl": "Mapa alarmów — bieżące dane",
+        "ru": "Карта тревог — актуальные данные",
+    },
     "ALERTS_BTN_ACTIVE": {
-        "uk": "🔥 Поточні тривоги",
-        "en": "🔥 Active alerts",
-        "de": "🔥 Aktive Alarme",
-        "pl": "🔥 Aktywne alarmy",
-        "ru": "🔥 Активные тревоги",
+        "uk": "📡 Поточні тривоги",
+        "en": "📡 Live alerts",
+        "de": "📡 Live-Alarme",
+        "pl": "📡 Aktywne alarmy",
+        "ru": "📡 Активные тревоги",
     },
     "ALERTS_BTN_OVERVIEW": {
-        "uk": "🗺️ Статус областей",
-        "en": "🗺️ Region status",
-        "de": "🗺️ Regionenstatus",
-        "pl": "🗺️ Status regionów",
-        "ru": "🗺️ Статус областей",
+        "uk": "🗺️ Карта областей",
+        "en": "🗺️ Map overview",
+        "de": "🗺️ Kartenübersicht",
+        "pl": "🗺️ Mapa obwodów",
+        "ru": "🗺️ Карта областей",
     },
     "ALERTS_BTN_HISTORY": {
-        "uk": "📜 Історія",
-        "en": "📜 History",
-        "de": "📜 Verlauf",
-        "pl": "📜 Historia",
-        "ru": "📜 История",
+        "uk": "🕘 Хронологія",
+        "en": "🕘 Timeline",
+        "de": "🕘 Verlauf",
+        "pl": "🕘 Historia",
+        "ru": "🕘 Хронология",
     },
     "ALERTS_BTN_SUBSCRIPTIONS": {
-        "uk": "🧭 Керувати областями",
-        "en": "🧭 Manage regions",
-        "de": "🧭 Regionen verwalten",
-        "pl": "🧭 Zarządzaj regionami",
-        "ru": "🧭 Управлять регионами",
+        "uk": "🎛 Зони сповіщень",
+        "en": "🎛 Manage zones",
+        "de": "🎛 Zonen verwalten",
+        "pl": "🎛 Zarządzaj strefami",
+        "ru": "🎛 Управлять зонами",
     },
     "ALERTS_ACTIVE_HEADER": {
         "uk": "🔥 <b>Поточні тривоги</b> ({count})",
@@ -319,6 +410,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "🟢 {region} — ruhig",
         "pl": "🟢 {region} — spokojnie",
         "ru": "🟢 {region} — спокойно",
+    },
+    "ALERTS_OVERVIEW_RECENT": {
+        "uk": "🟡 {region} — відбій о {end}",
+        "en": "🟡 {region} — cleared at {end}",
+        "de": "🟡 {region} — Entwarnung um {end}",
+        "pl": "🟡 {region} — odwołano o {end}",
+        "ru": "🟡 {region} — отбой в {end}",
     },
     "ALERTS_NO_ACTIVE": {
         "uk": "✅ Зараз немає активних тривог для вибраних областей.",
@@ -363,11 +461,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Сейчас активный проект не выбран; можно вручную выбрать любые регионы.",
     },
     "ALERTS_SUBS_MANAGE": {
-        "uk": "Додайте або приберіть області за допомогою кнопок нижче.",
-        "en": "Add or remove regions using the buttons below.",
-        "de": "Fügen Sie Regionen über die Schaltflächen unten hinzu oder entfernen Sie sie.",
-        "pl": "Dodaj lub usuń regiony za pomocą przycisków poniżej.",
-        "ru": "Добавляйте или убирайте регионы с помощью кнопок ниже.",
+        "uk": "Натисніть на літеру, щоб відкрити перелік областей і додати або прибрати сповіщення.",
+        "en": "Tap a letter to open its regions and add or remove alert coverage.",
+        "de": "Tippen Sie auf einen Buchstaben, um die Regionen zu öffnen und die Alarmabdeckung anzupassen.",
+        "pl": "Dotknij litery, aby otworzyć jej regiony i dodać lub usunąć powiadomienia.",
+        "ru": "Нажмите на букву, чтобы открыть регионы и настроить уведомления.",
     },
     "ALERTS_SUBS_SELECTED": {
         "uk": "Активні області: {items}",
@@ -375,6 +473,27 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "Aktive Regionen: {items}",
         "pl": "Aktywne regiony: {items}",
         "ru": "Выбранные регионы: {items}",
+    },
+    "ALERTS_SUBS_GROUP_HINT": {
+        "uk": "Виберіть літеру українського алфавіту, щоб переглянути відповідні області.",
+        "en": "Choose a letter to browse the matching oblasts.",
+        "de": "Wählen Sie einen Buchstaben, um die passenden Oblaste anzuzeigen.",
+        "pl": "Wybierz literę, aby zobaczyć odpowiadające obwody.",
+        "ru": "Выберите букву, чтобы просмотреть соответствующие области.",
+    },
+    "ALERTS_SUBS_REGION_HEADER": {
+        "uk": "📍 Області на літеру «{letter}»",
+        "en": "📍 Regions starting with “{letter}”",
+        "de": "📍 Regionen beginnend mit „{letter}“",
+        "pl": "📍 Obwody na literę „{letter}”",
+        "ru": "📍 Области на букву «{letter}»",
+    },
+    "ALERTS_SUBS_REGION_HINT": {
+        "uk": "Натисніть, щоб увімкнути або вимкнути сповіщення по області. Кнопка «Назад» поверне до переліку літер.",
+        "en": "Tap a region to enable or disable alerts. Use “Back” to return to the letter list.",
+        "de": "Tippen Sie auf eine Region, um Alarme zu aktivieren oder zu deaktivieren. Mit „Zurück“ gelangen Sie zur Buchstabenliste.",
+        "pl": "Dotknij region, aby włączyć lub wyłączyć alerty. Użyj „Wstecz”, aby wrócić do liter.",
+        "ru": "Нажмите на область, чтобы включить или выключить уведомления. Кнопка «Назад» вернёт к буквам.",
     },
     "ALERTS_SUBS_ADDED": {
         "uk": "✅ Додано область: {region}",
@@ -403,6 +522,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "📄 Seite {current}/{total}",
         "pl": "📄 Strona {current}/{total}",
         "ru": "📄 Страница {current}/{total}",
+    },
+    "ALERTS_SUBS_BACK_TO_GROUPS": {
+        "uk": "⬅️ До літер",
+        "en": "⬅️ Back to letters",
+        "de": "⬅️ Zurück zur Buchstabenauswahl",
+        "pl": "⬅️ Wróć do liter",
+        "ru": "⬅️ К списку букв",
     },
     "ALERTS_BACK_TO_MENU": {
         "uk": "⬅️ Меню тривог",
@@ -1117,6 +1243,7 @@ def ensure_dirs():
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
     os.makedirs(ALERTS_STORAGE_DIR, exist_ok=True)
+    os.makedirs(ALERTS_MEDIA_DIR, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -3879,7 +4006,20 @@ async def menu_about(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_alerts")
 async def menu_alerts(c: types.CallbackQuery):
     uid = c.from_user.id
-    await clear_then_anchor(uid, tr(uid, "ALERTS_MENU_INTRO"), kb_alerts(uid))
+    await clear_then_anchor(uid, alerts_menu_text(uid), kb_alerts(uid))
+    chat_id = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if chat_id:
+        snapshot = alerts_render_snapshot(resolve_lang(uid), alerts_user_regions(uid))
+        if snapshot and os.path.exists(snapshot):
+            try:
+                msg = await bot.send_photo(
+                    chat_id,
+                    InputFile(snapshot),
+                    caption=alerts_snapshot_caption(uid),
+                )
+                flow_track(uid, msg)
+            except Exception:
+                pass
     await c.answer()
 
 
@@ -3942,19 +4082,16 @@ async def alerts_history_view(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "alerts_subscriptions")
 async def alerts_subscriptions_menu(c: types.CallbackQuery):
     uid = c.from_user.id
-    text, kb = alerts_subscription_view(uid, page=0)
+    text, kb = alerts_subscription_view(uid)
     await clear_then_anchor(uid, text, kb)
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("alerts_sub_page:"))
-async def alerts_subscriptions_page(c: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_group:"))
+async def alerts_subscriptions_group(c: types.CallbackQuery):
     uid = c.from_user.id
-    try:
-        page = int(c.data.split(":", 1)[1])
-    except ValueError:
-        page = 0
-    text, kb = alerts_subscription_view(uid, page=page)
+    letter = (c.data.split(":", 1)[1] or "").upper()
+    text, kb = alerts_subscription_group_view(uid, letter)
     await anchor_show_text(uid, text, kb)
     await c.answer()
 
@@ -3963,19 +4100,19 @@ async def alerts_subscriptions_page(c: types.CallbackQuery):
 async def alerts_toggle_subscription(c: types.CallbackQuery):
     uid = c.from_user.id
     try:
-        _, page_raw, idx_raw = c.data.split(":", 2)
-        page = int(page_raw)
+        _, letter, idx_raw = c.data.split(":", 2)
         region_index = int(idx_raw)
     except Exception:
         await c.answer("", show_alert=False)
         return
+    letter = (letter or "").upper()
     profile = load_user(uid) or {"user_id": uid}
     alerts = alerts_profile_block(profile)
     region = alerts_canonical_region(UKRAINE_REGIONS[region_index]) or UKRAINE_REGIONS[region_index]
     items = alerts.get("regions", [])
     add = region not in items
     alerts_update_subscription(uid, region_index, add)
-    text, kb = alerts_subscription_view(uid, page=page)
+    text, kb = alerts_subscription_group_view(uid, letter)
     await anchor_show_text(uid, text, kb)
     key = "ALERTS_SUBS_ADDED" if add else "ALERTS_SUBS_REMOVED"
     await c.answer(tr(uid, key, region=h(region)), show_alert=False)
@@ -4070,6 +4207,7 @@ async def back_root(c: types.CallbackQuery):
 ALERTS_STORAGE_DIR = os.path.join("data", "alerts")
 ALERTS_DATA_FILE = os.path.join(ALERTS_STORAGE_DIR, "events.json")
 ALERTS_USERS_FILE = os.path.join(ALERTS_STORAGE_DIR, "users.json")
+ALERTS_MEDIA_DIR = os.path.join(ALERTS_STORAGE_DIR, "media")
 ALERTS_MAX_HISTORY = 100
 _alerts_state_cache: Optional[Dict[str, Any]] = None
 _alerts_user_cache: Optional[Dict[str, Any]] = None
@@ -5065,31 +5203,279 @@ def alerts_display_region_name(region: str, lang: str) -> str:
     return aliases[0]
 
 
-def alerts_regions_overview_text(uid: int) -> str:
-    lang = resolve_lang(uid)
+def alerts_region_status(canonical: str, lang: str) -> Dict[str, Any]:
     state = _alerts_load_state()
-    events_map = state.get("events", {})
     regions_map = state.get("regions", {})
-    lines: List[str] = [tr(uid, "ALERTS_OVERVIEW_HEADER")]
+    bucket = regions_map.get(canonical)
+    if not bucket:
+        # fall back to raw key
+        for raw_key, candidate in regions_map.items():
+            if alerts_canonical_region(raw_key) == canonical:
+                bucket = candidate
+                break
+    bucket = bucket or {"active": [], "history": []}
+    events_map = state.get("events", {})
+    active_event = None
+    for event_id in bucket.get("active", []):
+        event = events_map.get(event_id)
+        if event and not event.get("ended_at"):
+            active_event = event
+            break
+    recent_event = None
+    if not active_event:
+        for event_id in bucket.get("history", []):
+            event = events_map.get(event_id)
+            if event:
+                recent_event = event
+                break
+    display = alerts_display_region_name(canonical, lang)
+    status = "calm"
+    started = ""
+    ended = ""
+    severity = ""
+    event_ref: Optional[Dict[str, Any]] = None
+    if active_event:
+        status = "active"
+        started = alerts_format_timestamp(active_event.get("started_at"))
+        severity = alerts_severity_label(active_event, lang)
+        event_ref = active_event
+    elif recent_event and recent_event.get("ended_at"):
+        status = "recent"
+        ended = alerts_format_timestamp(recent_event.get("ended_at"))
+        event_ref = recent_event
+    return {
+        "canonical": canonical,
+        "display": display,
+        "status": status,
+        "started": started or "",
+        "ended": ended or "",
+        "severity": severity or "",
+        "event": event_ref,
+    }
+
+
+def alerts_regions_overview_lines(uid: int, include_header: bool = True) -> List[str]:
+    lang = resolve_lang(uid)
+    lines: List[str] = []
+    if include_header:
+        lines.append(tr(uid, "ALERTS_OVERVIEW_HEADER"))
     for raw_region in UKRAINE_REGIONS:
         canonical = alerts_canonical_region(raw_region) or raw_region
-        bucket = regions_map.get(canonical) or regions_map.get(raw_region) or {}
-        active_ids = []
-        for event_id in bucket.get("active", []):
-            payload = events_map.get(event_id)
-            if payload and not payload.get("ended_at"):
-                active_ids.append(payload)
-        display_name = alerts_display_region_name(canonical, lang)
-        if active_ids:
-            active_ids.sort(key=lambda ev: ev.get("started_at") or "")
-            started = alerts_format_timestamp(active_ids[0].get("started_at"))
-            if started:
-                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE", region=h(display_name), start=h(started)))
+        info = alerts_region_status(canonical, lang)
+        display_name = h(info["display"])
+        if info["status"] == "active":
+            if info["started"]:
+                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE", region=display_name, start=h(info["started"])) )
             else:
-                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE_UNKNOWN", region=h(display_name)))
+                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE_UNKNOWN", region=display_name))
+        elif info["status"] == "recent" and info["ended"]:
+            lines.append(tr(uid, "ALERTS_OVERVIEW_RECENT", region=display_name, end=h(info["ended"])) )
         else:
-            lines.append(tr(uid, "ALERTS_OVERVIEW_CALM", region=h(display_name)))
+            lines.append(tr(uid, "ALERTS_OVERVIEW_CALM", region=display_name))
+    return lines
+
+
+def alerts_menu_text(uid: int) -> str:
+    lang = resolve_lang(uid)
+    state = _alerts_load_state()
+    updated_raw = state.get("last_fetch")
+    updated_display = alerts_format_timestamp(updated_raw) if updated_raw else ""
+    lines: List[str] = [tr(uid, "ALERTS_MENU_TITLE")]
+    if updated_display:
+        lines.append(tr(uid, "ALERTS_MENU_UPDATED", moment=h(updated_display)))
+    else:
+        lines.append(tr(uid, "ALERTS_MENU_UPDATED_UNKNOWN"))
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_MENU_STATUS_TITLE"))
+    overview_lines = alerts_regions_overview_lines(uid, include_header=False)
+    lines.extend(overview_lines)
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_MENU_SELECTED_TITLE"))
+    regions = alerts_user_regions(uid)
+    if regions:
+        seen: Set[str] = set()
+        for region in regions:
+            canonical = alerts_canonical_region(region) or region
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            info = alerts_region_status(canonical, lang)
+            display_name = h(alerts_display_region_name(canonical, lang))
+            if info["status"] == "active" and info["started"]:
+                lines.append(tr(uid, "ALERTS_MENU_SELECTED_ACTIVE", region=display_name, start=h(info["started"])) )
+            elif info["status"] == "recent" and info["ended"]:
+                lines.append(tr(uid, "ALERTS_MENU_SELECTED_RECENT", region=display_name, end=h(info["ended"])) )
+            else:
+                lines.append(tr(uid, "ALERTS_MENU_SELECTED_CALM", region=display_name))
+    else:
+        lines.append(tr(uid, "ALERTS_MENU_SELECTED_EMPTY"))
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_MENU_ACTIONS_TITLE"))
+    lines.append(tr(uid, "ALERTS_MENU_ACTIONS_HINT"))
     return "\n".join(lines)
+
+
+def alerts_region_button_label(canonical: str, lang: str) -> str:
+    name = alerts_display_region_name(canonical, lang)
+    cleaned = re.sub(r"\s*(область|oblast|region)$", "", name, flags=re.IGNORECASE).strip()
+    if cleaned:
+        return cleaned
+    return name
+
+
+def alerts_subscription_groups(lang: str) -> List[Tuple[str, List[int]]]:
+    groups: Dict[str, List[int]] = {}
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        canonical = alerts_canonical_region(region) or region
+        display = alerts_display_region_name(canonical, lang).strip()
+        if not display:
+            letter = "#"
+        else:
+            letter = display[0].upper()
+        groups.setdefault(letter, []).append(idx)
+    ordered = sorted(groups.items(), key=lambda item: item[0])
+    return ordered
+
+
+def _alerts_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+    candidates = []
+    if bold:
+        candidates.extend([
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+        ])
+    else:
+        candidates.extend([
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+        ])
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size=size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
+
+
+def alerts_snapshot_path(lang: str, highlight: Optional[Set[str]] = None) -> str:
+    highlight = highlight or set()
+    entries = []
+    for raw_region in UKRAINE_REGIONS:
+        canonical = alerts_canonical_region(raw_region) or raw_region
+        info = alerts_region_status(canonical, lang)
+        entries.append({
+            "region": canonical,
+            "status": info["status"],
+            "started": info["started"],
+            "ended": info["ended"],
+        })
+    payload = {
+        "lang": lang,
+        "entries": entries,
+        "highlight": sorted(highlight),
+    }
+    digest = hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    return os.path.join(ALERTS_MEDIA_DIR, f"snapshot_{digest}.png")
+
+
+def alerts_render_snapshot(lang: str, highlight_regions: Optional[List[str]] = None) -> Optional[str]:
+    highlight_set: Set[str] = set()
+    if highlight_regions:
+        for item in highlight_regions:
+            canonical = alerts_canonical_region(item) or item
+            if canonical:
+                highlight_set.add(canonical)
+    path = alerts_snapshot_path(lang, highlight_set)
+    if os.path.exists(path):
+        return path
+    try:
+        width, height = 1200, 900
+        padding = 80
+        column_gap = 60
+        background = "#0f172a"
+        text_primary = "#f8fafc"
+        text_muted = "#94a3b8"
+        bullet_active = "#f97316"
+        bullet_recent = "#fbbf24"
+        bullet_calm = "#22c55e"
+        highlight_outline = "#38bdf8"
+        image = Image.new("RGB", (width, height), background)
+        draw = ImageDraw.Draw(image)
+        title_font = _alerts_font(52, bold=True)
+        subtitle_font = _alerts_font(28, bold=False)
+        body_font = _alerts_font(28, bold=False)
+        caption_font = _alerts_font(24, bold=False)
+        title = tr(lang, "ALERTS_MENU_TITLE").replace("<b>", "").replace("</b>", "")
+        draw.text((padding, padding), title, fill=text_primary, font=title_font)
+        state = _alerts_load_state()
+        updated_raw = state.get("last_fetch")
+        updated_display = alerts_format_timestamp(updated_raw) if updated_raw else ""
+        subtitle = tr(lang, "ALERTS_MENU_STATUS_TITLE").replace("<b>", "").replace("</b>", "")
+        draw.text((padding, padding + 70), subtitle, fill=text_muted, font=subtitle_font)
+        if updated_display:
+            updated_line = tr(lang, "ALERTS_MENU_UPDATED", moment=updated_display)
+        else:
+            updated_line = tr(lang, "ALERTS_MENU_UPDATED_UNKNOWN")
+        draw.text((padding, padding + 110), updated_line, fill=text_muted, font=caption_font)
+        entries: List[Dict[str, Any]] = []
+        for raw_region in UKRAINE_REGIONS:
+            canonical = alerts_canonical_region(raw_region) or raw_region
+            info = alerts_region_status(canonical, lang)
+            entries.append(info)
+        columns = 3
+        rows_per_column = max(1, (len(entries) + columns - 1) // columns)
+        col_width = (width - (2 * padding) - ((columns - 1) * column_gap)) / columns
+        start_y = padding + 170
+        bullet_radius = 10
+        line_spacing = 42
+        for idx, info in enumerate(entries):
+            column = idx // rows_per_column
+            row = idx % rows_per_column
+            x = padding + column * (col_width + column_gap)
+            y = start_y + row * line_spacing
+            bullet_color = bullet_calm
+            if info["status"] == "active":
+                bullet_color = bullet_active
+            elif info["status"] == "recent":
+                bullet_color = bullet_recent
+            bullet_bbox = [
+                x,
+                y,
+                x + bullet_radius * 2,
+                y + bullet_radius * 2,
+            ]
+            draw.ellipse(bullet_bbox, fill=bullet_color)
+            if info["canonical"] in highlight_set:
+                outline = [coord - 3 if i < 2 else coord + 3 for i, coord in enumerate(bullet_bbox)]
+                draw.ellipse(outline, outline=highlight_outline, width=3)
+            label = alerts_display_region_name(info["canonical"], lang)
+            status_text = ""
+            if info["status"] == "active" and info["started"]:
+                status_text = info["started"]
+            elif info["status"] == "recent" and info["ended"]:
+                status_text = info["ended"]
+            label_text = label
+            draw.text((x + bullet_radius * 2 + 12, y - 6), label_text, fill=text_primary, font=body_font)
+            if status_text:
+                draw.text((x + bullet_radius * 2 + 12, y + 18), status_text, fill=text_muted, font=caption_font)
+        image.save(path)
+        return path
+    except Exception:
+        return None
+
+
+def alerts_snapshot_caption(uid: int) -> str:
+    state = _alerts_load_state()
+    updated_raw = state.get("last_fetch")
+    updated_display = alerts_format_timestamp(updated_raw) if updated_raw else ""
+    if updated_display:
+        return tr(uid, "ALERTS_SNAPSHOT_CAPTION", moment=h(updated_display))
+    return tr(uid, "ALERTS_SNAPSHOT_CAPTION_SIMPLE")
+
+
+def alerts_regions_overview_text(uid: int) -> str:
+    return "\n".join(alerts_regions_overview_lines(uid, include_header=True))
 
 
 def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
@@ -5124,16 +5510,28 @@ def alerts_collect_history_for_user(uid: int, limit: int = 20) -> List[Dict[str,
     return collected[:limit]
 
 
-def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboardMarkup]:
+def alerts_subscription_view(uid: int) -> Tuple[str, InlineKeyboardMarkup]:
     profile = load_user(uid) or {}
     alerts = alerts_profile_block(profile)
+    lang = resolve_lang(uid)
     project_region = None
     if active_project.get("name"):
         info = load_project_info(active_project["name"])
         project_region = info.get("region") or ""
     canonical_project = alerts_canonical_region(project_region)
     selected = alerts_user_regions(uid)
-    selected_display = ", ".join(selected) if selected else "—"
+    if selected:
+        display_items: List[str] = []
+        seen: Set[str] = set()
+        for item in selected:
+            canonical = alerts_canonical_region(item) or item
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            display_items.append(alerts_display_region_name(canonical, lang))
+        selected_display = ", ".join(display_items)
+    else:
+        selected_display = "—"
     lines = [tr(uid, "ALERTS_SUBS_HEADER")]
     if canonical_project:
         lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(canonical_project)))
@@ -5141,41 +5539,59 @@ def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboa
         lines.append(tr(uid, "ALERTS_SUBS_NOTE_NO_PROJECT"))
     lines.append(tr(uid, "ALERTS_SUBS_SELECTED", items=h(selected_display)))
     lines.append(tr(uid, "ALERTS_SUBS_MANAGE"))
-    kb = alerts_build_subscription_keyboard(uid, page, canonical_project, alerts)
+    lines.append(tr(uid, "ALERTS_SUBS_GROUP_HINT"))
+    kb = alerts_group_keyboard(uid)
     return "\n".join(lines), kb
 
 
-def alerts_build_subscription_keyboard(uid: int, page: int, project_region: Optional[str], alerts: dict) -> InlineKeyboardMarkup:
-    per_page = 6
-    total = len(UKRAINE_REGIONS)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = max(0, min(page, total_pages - 1))
-    start = page * per_page
-    chunk = UKRAINE_REGIONS[start:start + per_page]
+def alerts_group_keyboard(uid: int) -> InlineKeyboardMarkup:
+    lang = resolve_lang(uid)
+    groups = alerts_subscription_groups(lang)
+    kb = InlineKeyboardMarkup(row_width=4)
+    for letter, indices in groups:
+        label = f"{letter} • {len(indices)}"
+        kb.insert(InlineKeyboardButton(label, callback_data=f"alerts_group:{letter}"))
+    kb.row(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def alerts_subscription_group_view(uid: int, letter: str) -> Tuple[str, InlineKeyboardMarkup]:
+    profile = load_user(uid) or {}
+    alerts = alerts_profile_block(profile)
     selected = {alerts_canonical_region(x) or x for x in alerts.get("regions", [])}
-    kb = InlineKeyboardMarkup(row_width=2)
-    for idx, region in enumerate(chunk):
+    project_region = None
+    if active_project.get("name"):
+        info = load_project_info(active_project["name"])
+        project_region = info.get("region") or ""
+    canonical_project = alerts_canonical_region(project_region)
+    lang = resolve_lang(uid)
+    groups = dict(alerts_subscription_groups(lang))
+    indices = groups.get(letter)
+    if not indices:
+        return alerts_subscription_view(uid)
+    lines = [
+        tr(uid, "ALERTS_SUBS_REGION_HEADER", letter=h(letter)),
+        tr(uid, "ALERTS_SUBS_REGION_HINT"),
+    ]
+    kb = InlineKeyboardMarkup(row_width=1)
+    for idx in indices:
+        region = UKRAINE_REGIONS[idx]
         canonical = alerts_canonical_region(region) or region
-        if project_region and canonical == alerts_canonical_region(project_region):
-            label = f"🔒 {canonical}"
+        label_text = alerts_region_button_label(canonical, lang)
+        if canonical_project and canonical == canonical_project:
+            label = f"🔒 {label_text}"
             callback = "alerts_locked"
         else:
             is_selected = canonical in selected
             prefix = "✅" if is_selected else "➕"
-            label = f"{prefix} {canonical}"
-            callback = f"alerts_toggle:{page}:{start + idx}"
-        kb.insert(InlineKeyboardButton(label, callback_data=callback))
-    if total_pages > 1:
-        nav: List[InlineKeyboardButton] = []
-        if page > 0:
-            nav.append(InlineKeyboardButton("◀️", callback_data=f"alerts_sub_page:{page - 1}"))
-        nav.append(InlineKeyboardButton(tr(uid, "ALERTS_SUBS_PAGE", current=page + 1, total=total_pages), callback_data=f"alerts_sub_page:{page}"))
-        if page < total_pages - 1:
-            nav.append(InlineKeyboardButton("▶️", callback_data=f"alerts_sub_page:{page + 1}"))
-        kb.row(*nav)
+            label = f"{prefix} {label_text}"
+            callback = f"alerts_toggle:{letter}:{idx}"
+        kb.add(InlineKeyboardButton(label, callback_data=callback))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_SUBS_BACK_TO_GROUPS"), callback_data="alerts_subscriptions"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
-    return kb
+    return "\n".join(lines), kb
 
 
 def alerts_update_subscription(uid: int, region_index: int, add: bool) -> bool:
@@ -5383,7 +5799,20 @@ async def alerts_broadcast(event_id: str, kind: str) -> None:
             kb = InlineKeyboardMarkup().add(
                 InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data="alerts_close_push")
             )
-            await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+            highlight_region = [event.get("region") or event.get("region_display") or ""]
+            snapshot = alerts_render_snapshot(resolve_lang(uid), highlight_region)
+            if snapshot and os.path.exists(snapshot) and len(text) <= 1024:
+                try:
+                    await bot.send_photo(
+                        chat_id,
+                        InputFile(snapshot),
+                        caption=text,
+                        reply_markup=kb,
+                    )
+                except Exception:
+                    await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+            else:
+                await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
         except Exception:
             continue
     _alerts_mark_notified(event_id, kind)
