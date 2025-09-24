@@ -61,6 +61,11 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 import requests
 
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
+
 
 # ========================== CONFIG ==========================
 TOKEN = "7005343266:AAG0bnY-wTc3kScKiIskSd0fO6MstesSbCk"
@@ -76,6 +81,11 @@ BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
+
+ALERTS_API_URL = "https://alerts.in.ua/api/v1/alerts"
+ALERTS_API_TOKEN = "62f89091e56951ef257f763e445c09c1fd9dacd1ab2203"
+ALERTS_API_TIMEOUT = 15
+ALERTS_POLL_INTERVAL = 60  # seconds
 
 UKRAINE_REGIONS = [
     "Винницкая область",
@@ -124,11 +134,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Активный объект пока не выбран.\nПопросите администратора включить проект, чтобы открыть рабочие разделы.\n\n📋 <b>Меню действий</b>\nИспользуйте кнопки ниже, чтобы изучить доступные возможности.",
     },
     "ANCHOR_PROJECT": {
-        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
-        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
-        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
-        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
-        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
+        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
+        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
+        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
+        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
     },
     "ANCHOR_PROJECT_BSG_SUMMARY": {
         "uk": "🏢 Посилки BSG: усього — <b>{total}</b> • забрати — <b>{pending}</b> • отримано — <b>{delivered}</b>",
@@ -136,6 +146,41 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "🏢 BSG-Sendungen: gesamt — <b>{total}</b> • abzuholen — <b>{pending}</b> • erhalten — <b>{delivered}</b>",
         "pl": "🏢 Przesyłki BSG: łącznie — <b>{total}</b> • do odebrania — <b>{pending}</b> • odebrano — <b>{delivered}</b>",
         "ru": "🏢 Посылки BSG: всего — <b>{total}</b> • забрать — <b>{pending}</b> • получено — <b>{delivered}</b>",
+    },
+    "ANCHOR_ALERT_ACTIVE": {
+        "uk": "🚨 Тривога у регіоні <b>{region}</b> • {type} • від {start} • {severity}",
+        "en": "🚨 Alert in <b>{region}</b> • {type} • since {start} • {severity}",
+        "de": "🚨 Alarm in <b>{region}</b> • {type} • seit {start} • {severity}",
+        "pl": "🚨 Alarm w regionie <b>{region}</b> • {type} • od {start} • {severity}",
+        "ru": "🚨 Тревога в регионе <b>{region}</b> • {type} • с {start} • {severity}",
+    },
+    "ANCHOR_ALERT_RECENT": {
+        "uk": "🟡 Остання тривога у <b>{region}</b> • {type} • {start} → {end}",
+        "en": "🟡 Last alert in <b>{region}</b> • {type} • {start} → {end}",
+        "de": "🟡 Letzter Alarm in <b>{region}</b> • {type} • {start} → {end}",
+        "pl": "🟡 Ostatni alarm w <b>{region}</b> • {type} • {start} → {end}",
+        "ru": "🟡 Последняя тревога в <b>{region}</b> • {type} • {start} → {end}",
+    },
+    "ANCHOR_ALERT_CALM": {
+        "uk": "🟢 У регіоні <b>{region}</b> спокійно.",
+        "en": "🟢 <b>{region}</b> is calm.",
+        "de": "🟢 In <b>{region}</b> ist es ruhig.",
+        "pl": "🟢 W regionie <b>{region}</b> jest spokojnie.",
+        "ru": "🟢 В регионе <b>{region}</b> спокойно.",
+    },
+    "ANCHOR_ALERT_CAUSE": {
+        "uk": "🎯 Причина: {cause}",
+        "en": "🎯 Cause: {cause}",
+        "de": "🎯 Ursache: {cause}",
+        "pl": "🎯 Przyczyna: {cause}",
+        "ru": "🎯 Причина: {cause}",
+    },
+    "ANCHOR_ALERT_DETAILS": {
+        "uk": "🔎 Деталі: {details}",
+        "en": "🔎 Details: {details}",
+        "de": "🔎 Details: {details}",
+        "pl": "🔎 Szczegóły: {details}",
+        "ru": "🔎 Детали: {details}",
     },
     "BTN_CHECKS": {
         "uk": "🧾 Чеки",
@@ -158,6 +203,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "💵 Finanse",
         "ru": "💵 Финансы",
     },
+    "BTN_ALERTS": {
+        "uk": "🚨 Тривоги",
+        "en": "🚨 Alerts",
+        "de": "🚨 Alarme",
+        "pl": "🚨 Alarmy",
+        "ru": "🚨 Тревоги",
+    },
     "BTN_SOS": {
         "uk": "🆘 SOS",
         "en": "🆘 SOS",
@@ -178,6 +230,167 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "ℹ️ Über den Bot",
         "pl": "ℹ️ O bocie",
         "ru": "ℹ️ О боте",
+    },
+    "ALERTS_MENU_INTRO": {
+        "uk": "🚨 <b>Повітряні тривоги</b>\n━━━━━━━━━━━━━━━━━━\nПереглядайте активні сигнали, історію та керуйте областями сповіщень.\nВиберіть дію нижче.",
+        "en": "🚨 <b>Air alerts</b>\n━━━━━━━━━━━━━━━━━━\nReview active warnings, browse history, and manage the regions you follow.\nChoose an option below.",
+        "de": "🚨 <b>Luftalarme</b>\n━━━━━━━━━━━━━━━━━━\nSehen Sie aktive Warnungen, den Verlauf und verwalten Sie Ihre Regionen.\nWählen Sie eine Aktion unten.",
+        "pl": "🚨 <b>Alarmy powietrzne</b>\n━━━━━━━━━━━━━━━━━━\nPrzeglądaj aktywne ostrzeżenia, historię i zarządzaj regionami powiadomień.\nWybierz działanie poniżej.",
+        "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
+    },
+    "ALERTS_BTN_ACTIVE": {
+        "uk": "🔥 Поточні тривоги",
+        "en": "🔥 Active alerts",
+        "de": "🔥 Aktive Alarme",
+        "pl": "🔥 Aktywne alarmy",
+        "ru": "🔥 Активные тревоги",
+    },
+    "ALERTS_BTN_HISTORY": {
+        "uk": "📜 Історія",
+        "en": "📜 History",
+        "de": "📜 Verlauf",
+        "pl": "📜 Historia",
+        "ru": "📜 История",
+    },
+    "ALERTS_BTN_SUBSCRIPTIONS": {
+        "uk": "🧭 Керувати областями",
+        "en": "🧭 Manage regions",
+        "de": "🧭 Regionen verwalten",
+        "pl": "🧭 Zarządzaj regionami",
+        "ru": "🧭 Управлять регионами",
+    },
+    "ALERTS_ACTIVE_HEADER": {
+        "uk": "🔥 <b>Поточні тривоги</b> ({count})",
+        "en": "🔥 <b>Active alerts</b> ({count})",
+        "de": "🔥 <b>Aktive Alarme</b> ({count})",
+        "pl": "🔥 <b>Aktywne alarmy</b> ({count})",
+        "ru": "🔥 <b>Активные тревоги</b> ({count})",
+    },
+    "ALERTS_HISTORY_HEADER": {
+        "uk": "📜 <b>Історія тривог</b> ({count})",
+        "en": "📜 <b>Alert history</b> ({count})",
+        "de": "📜 <b>Alarmverlauf</b> ({count})",
+        "pl": "📜 <b>Historia alarmów</b> ({count})",
+        "ru": "📜 <b>История тревог</b> ({count})",
+    },
+    "ALERTS_NO_ACTIVE": {
+        "uk": "✅ Зараз немає активних тривог для вибраних областей.",
+        "en": "✅ There are no active alerts for your selected regions right now.",
+        "de": "✅ Für die ausgewählten Regionen gibt es derzeit keine aktiven Alarme.",
+        "pl": "✅ Brak aktywnych alarmów dla wybranych regionów.",
+        "ru": "✅ Для выбранных регионов сейчас нет активных тревог.",
+    },
+    "ALERTS_NO_HISTORY": {
+        "uk": "ℹ️ Поки що немає збереженої історії для цих областей.",
+        "en": "ℹ️ There is no saved history for these regions yet.",
+        "de": "ℹ️ Für diese Regionen gibt es noch keine gespeicherte Historie.",
+        "pl": "ℹ️ Brak zapisanej historii dla tych regionów.",
+        "ru": "ℹ️ Пока нет сохранённой истории для этих регионов.",
+    },
+    "ALERTS_NO_REGIONS": {
+        "uk": "⚠️ Спершу оберіть хоча б одну область для сповіщень.",
+        "en": "⚠️ Please select at least one region to receive alerts.",
+        "de": "⚠️ Wählen Sie zunächst mindestens eine Region für Benachrichtigungen aus.",
+        "pl": "⚠️ Wybierz co najmniej jeden region, aby otrzymywać alerty.",
+        "ru": "⚠️ Сначала выберите хотя бы один регион для уведомлений.",
+    },
+    "ALERTS_SUBS_HEADER": {
+        "uk": "🧭 <b>Області сповіщень</b>",
+        "en": "🧭 <b>Alert regions</b>",
+        "de": "🧭 <b>Alarm-Regionen</b>",
+        "pl": "🧭 <b>Regiony alertów</b>",
+        "ru": "🧭 <b>Регионы тревог</b>",
+    },
+    "ALERTS_SUBS_NOTE_HAS_PROJECT": {
+        "uk": "Основна область проєкту: <b>{region}</b> — її неможливо вимкнути.",
+        "en": "Project region: <b>{region}</b> — it cannot be disabled.",
+        "de": "Projektregion: <b>{region}</b> — kann nicht deaktiviert werden.",
+        "pl": "Region projektu: <b>{region}</b> — nie można go wyłączyć.",
+        "ru": "Область проекта: <b>{region}</b> — её нельзя отключить.",
+    },
+    "ALERTS_SUBS_NOTE_NO_PROJECT": {
+        "uk": "Наразі активний проєкт не вибрано, ви можете обрати будь-які області вручну.",
+        "en": "No active project region is set; feel free to pick any regions manually.",
+        "de": "Derzeit ist keine Projektregion aktiv; wählen Sie beliebige Regionen manuell aus.",
+        "pl": "Nie ustawiono aktywnego projektu, możesz ręcznie wybrać dowolne regiony.",
+        "ru": "Сейчас активный проект не выбран; можно вручную выбрать любые регионы.",
+    },
+    "ALERTS_SUBS_MANAGE": {
+        "uk": "Додайте або приберіть області за допомогою кнопок нижче.",
+        "en": "Add or remove regions using the buttons below.",
+        "de": "Fügen Sie Regionen über die Schaltflächen unten hinzu oder entfernen Sie sie.",
+        "pl": "Dodaj lub usuń regiony za pomocą przycisków poniżej.",
+        "ru": "Добавляйте или убирайте регионы с помощью кнопок ниже.",
+    },
+    "ALERTS_SUBS_SELECTED": {
+        "uk": "Активні області: {items}",
+        "en": "Selected regions: {items}",
+        "de": "Aktive Regionen: {items}",
+        "pl": "Aktywne regiony: {items}",
+        "ru": "Выбранные регионы: {items}",
+    },
+    "ALERTS_SUBS_ADDED": {
+        "uk": "✅ Додано область: {region}",
+        "en": "✅ Region added: {region}",
+        "de": "✅ Region hinzugefügt: {region}",
+        "pl": "✅ Dodano region: {region}",
+        "ru": "✅ Добавлен регион: {region}",
+    },
+    "ALERTS_SUBS_REMOVED": {
+        "uk": "➖ Видалено область: {region}",
+        "en": "➖ Region removed: {region}",
+        "de": "➖ Region entfernt: {region}",
+        "pl": "➖ Usunięto region: {region}",
+        "ru": "➖ Регион удалён: {region}",
+    },
+    "ALERTS_SUBS_LOCKED": {
+        "uk": "ℹ️ Цю область неможливо вимкнути.",
+        "en": "ℹ️ This region cannot be disabled.",
+        "de": "ℹ️ Diese Region kann nicht deaktiviert werden.",
+        "pl": "ℹ️ Tego regionu nie można wyłączyć.",
+        "ru": "ℹ️ Этот регион нельзя отключить.",
+    },
+    "ALERTS_SUBS_PAGE": {
+        "uk": "📄 Сторінка {current}/{total}",
+        "en": "📄 Page {current}/{total}",
+        "de": "📄 Seite {current}/{total}",
+        "pl": "📄 Strona {current}/{total}",
+        "ru": "📄 Страница {current}/{total}",
+    },
+    "ALERTS_BACK_TO_MENU": {
+        "uk": "⬅️ Меню тривог",
+        "en": "⬅️ Alerts menu",
+        "de": "⬅️ Alarm-Menü",
+        "pl": "⬅️ Menu alarmów",
+        "ru": "⬅️ Меню тревог",
+    },
+    "ALERTS_CLOSE_CARD": {
+        "uk": "✖️ Закрити",
+        "en": "✖️ Close",
+        "de": "✖️ Schließen",
+        "pl": "✖️ Zamknąć",
+        "ru": "✖️ Закрыть",
+    },
+    "ALERTS_NAV_PREV": {
+        "uk": "◀️ Попередня",
+        "en": "◀️ Previous",
+        "de": "◀️ Zurück",
+        "pl": "◀️ Poprzednia",
+        "ru": "◀️ Назад",
+    },
+    "ALERTS_NAV_NEXT": {
+        "uk": "▶️ Наступна",
+        "en": "▶️ Next",
+        "de": "▶️ Weiter",
+        "pl": "▶️ Następna",
+        "ru": "▶️ Далее",
+    },
+    "ALERTS_CARD_INDEX": {
+        "uk": "{index} із {total}",
+        "en": "{index} of {total}",
+        "de": "{index} von {total}",
+        "pl": "{index} z {total}",
+        "ru": "{index} из {total}",
     },
     "BTN_SETTINGS": {
         "uk": "⚙️ Налаштування",
@@ -807,6 +1020,7 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 users_runtime: Dict[int, dict] = {}
 admins: set = set()
 active_project = {"name": None}
+alerts_poll_task: Optional[asyncio.Task] = None
 
 
 # ========================== FSM ==========================
@@ -2810,6 +3024,7 @@ def project_status_text(uid: int) -> str:
         pending=pending_assigned,
         delivered=delivered_count,
     )
+    alerts_section = alerts_anchor_section(uid)
     name = h(info.get("name", "—")) or "—"
     region = h(info.get("region") or "—")
     location = h(info.get("location", "—")) or "—"
@@ -2828,6 +3043,7 @@ def project_status_text(uid: int) -> str:
         start=start,
         end=end,
         bsg_section=bsg_section,
+        alerts_section=alerts_section,
     )
 
 
@@ -2842,13 +3058,25 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
     kb.add(InlineKeyboardButton(tr(uid, "BTN_PHOTO_TIMELINE"), callback_data="menu_photos"))
     kb.row(
         InlineKeyboardButton(tr(uid, "BTN_FINANCE"), callback_data="menu_finance"),
-        InlineKeyboardButton(tr(uid, "BTN_SOS"), callback_data="menu_sos"),
+        InlineKeyboardButton(tr(uid, "BTN_ALERTS"), callback_data="menu_alerts"),
     )
-    kb.add(InlineKeyboardButton(tr(uid, "BTN_NOVA_POSHTA"), callback_data="menu_np"))
+    kb.row(
+        InlineKeyboardButton(tr(uid, "BTN_SOS"), callback_data="menu_sos"),
+        InlineKeyboardButton(tr(uid, "BTN_NOVA_POSHTA"), callback_data="menu_np"),
+    )
     kb.add(InlineKeyboardButton(tr(uid, "BTN_SETTINGS"), callback_data="menu_settings"))
     if uid in admins:
         kb.add(InlineKeyboardButton(tr(uid, "BTN_ADMIN"), callback_data="menu_admin"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_ABOUT"), callback_data="menu_about"))
+    return kb
+
+
+def kb_alerts(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
     return kb
 
 
@@ -3216,6 +3444,7 @@ async def flow_clear(uid: int):
     last_card = runtime.pop("np_last_card", None)
     if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
         tasks.append(_delete_message_safe(last_card[0], last_card[1]))
+    runtime.pop("alerts_cards", None)
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -3597,11 +3826,1039 @@ async def menu_about(c: types.CallbackQuery):
     await c.answer()
 
 
+@dp.callback_query_handler(lambda c: c.data == "menu_alerts")
+async def menu_alerts(c: types.CallbackQuery):
+    uid = c.from_user.id
+    await clear_then_anchor(uid, tr(uid, "ALERTS_MENU_INTRO"), kb_alerts(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_active")
+async def alerts_active_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    regions = alerts_user_regions(uid)
+    if not regions:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid))
+        await c.answer()
+        return
+    events = alerts_collect_active_for_user(uid)
+    if not events:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_ACTIVE"), kb_alerts(uid))
+        await c.answer()
+        return
+    lang = resolve_lang(uid)
+    lines = [tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events))]
+    for idx, event in enumerate(events[:10], start=1):
+        region_display = event.get("region_display") or event.get("region") or "—"
+        summary = alerts_summarize_event(event, lang)
+        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+    await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
+    await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_history")
+async def alerts_history_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    regions = alerts_user_regions(uid)
+    if not regions:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid))
+        await c.answer()
+        return
+    events = alerts_collect_history_for_user(uid)
+    if not events:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_HISTORY"), kb_alerts(uid))
+        await c.answer()
+        return
+    lang = resolve_lang(uid)
+    lines = [tr(uid, "ALERTS_HISTORY_HEADER", count=len(events))]
+    for idx, event in enumerate(events[:10], start=1):
+        region_display = event.get("region_display") or event.get("region") or "—"
+        summary = alerts_summarize_event(event, lang)
+        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+    await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
+    await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_subscriptions")
+async def alerts_subscriptions_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    text, kb = alerts_subscription_view(uid, page=0)
+    await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_sub_page:"))
+async def alerts_subscriptions_page(c: types.CallbackQuery):
+    uid = c.from_user.id
+    try:
+        page = int(c.data.split(":", 1)[1])
+    except ValueError:
+        page = 0
+    text, kb = alerts_subscription_view(uid, page=page)
+    await anchor_show_text(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_toggle:"))
+async def alerts_toggle_subscription(c: types.CallbackQuery):
+    uid = c.from_user.id
+    try:
+        _, page_raw, idx_raw = c.data.split(":", 2)
+        page = int(page_raw)
+        region_index = int(idx_raw)
+    except Exception:
+        await c.answer("", show_alert=False)
+        return
+    profile = load_user(uid) or {}
+    alerts = alerts_profile_block(profile)
+    region = alerts_canonical_region(UKRAINE_REGIONS[region_index]) or UKRAINE_REGIONS[region_index]
+    items = alerts.get("regions", [])
+    add = region not in items
+    alerts_update_subscription(uid, region_index, add)
+    text, kb = alerts_subscription_view(uid, page=page)
+    await anchor_show_text(uid, text, kb)
+    key = "ALERTS_SUBS_ADDED" if add else "ALERTS_SUBS_REMOVED"
+    await c.answer(tr(uid, key, region=h(region)), show_alert=False)
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_locked")
+async def alerts_locked_info(c: types.CallbackQuery):
+    uid = c.from_user.id
+    await c.answer(tr(uid, "ALERTS_SUBS_LOCKED"), show_alert=True)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_index:"))
+async def alerts_card_index_stub(c: types.CallbackQuery):
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_nav:"))
+async def alerts_card_nav(c: types.CallbackQuery):
+    uid = c.from_user.id
+    parts = c.data.split(":", 2)
+    if len(parts) != 3:
+        await c.answer()
+        return
+    context = parts[1]
+    try:
+        target_index = int(parts[2])
+    except ValueError:
+        await c.answer()
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    cards = runtime.get("alerts_cards", {})
+    card = cards.get(context)
+    if not card:
+        await c.answer()
+        return
+    event_ids: List[str] = card.get("events", [])
+    events: List[Dict[str, Any]] = []
+    for event_id in event_ids:
+        event = _alerts_get_event(event_id)
+        if event:
+            events.append(event)
+    if not events:
+        await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
+        return
+    target_index = max(0, min(target_index, len(events) - 1))
+    current_index = max(0, min(int(card.get("index", 0)), len(events) - 1))
+    if target_index == current_index:
+        await c.answer()
+        return
+    card["index"] = target_index
+    lang = resolve_lang(uid)
+    text = alerts_format_card(events[target_index], lang, index=target_index, total=len(events))
+    kb = alerts_card_keyboard(uid, context, len(events), target_index)
+    try:
+        await bot.edit_message_text(text, c.message.chat.id, c.message.message_id, reply_markup=kb, disable_web_page_preview=True)
+    except MessageNotModified:
+        pass
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_close:"))
+async def alerts_close_card(c: types.CallbackQuery):
+    uid = c.from_user.id
+    context = c.data.split(":", 1)[1]
+    runtime = users_runtime.setdefault(uid, {})
+    cards = runtime.setdefault("alerts_cards", {})
+    cards.pop(context, None)
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_close_push")
+async def alerts_close_push(c: types.CallbackQuery):
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "back_root")
 async def back_root(c: types.CallbackQuery):
     uid = c.from_user.id
     await clear_then_anchor(uid, project_status_text(uid), kb_root(uid))
     await c.answer()
+
+
+# ========================== ALERTS STORAGE ==========================
+ALERTS_DATA_FILE = os.path.join("data", "alerts.json")
+ALERTS_MAX_HISTORY = 100
+_alerts_state_cache: Optional[Dict[str, Any]] = None
+
+if ZoneInfo:
+    try:
+        ALERTS_TIMEZONE = ZoneInfo("Europe/Kiev")
+    except Exception:
+        ALERTS_TIMEZONE = timezone.utc
+else:
+    ALERTS_TIMEZONE = timezone.utc
+
+ALERTS_REGION_EQUIVALENTS: Dict[str, List[str]] = {
+    "Винницкая область": ["Вінницька область", "Vinnytska oblast", "Vinnytsia region"],
+    "Волынская область": ["Волинська область", "Volynska oblast", "Volyn region"],
+    "Днепропетровская область": ["Дніпропетровська область", "Dnipropetrovska oblast", "Dnipropetrovsk region"],
+    "Донецкая область": ["Донецька область", "Donetska oblast", "Donetsk region"],
+    "Житомирская область": ["Житомирська область", "Zhytomyrska oblast", "Zhytomyr region"],
+    "Закарпатская область": ["Закарпатська область", "Zakarpatska oblast", "Zakarpattia region"],
+    "Запорожская область": ["Запорізька область", "Zaporizka oblast", "Zaporizhzhia region"],
+    "Ивано-Франковская область": ["Івано-Франківська область", "Ivano-Frankivska oblast", "Ivano-Frankivsk region"],
+    "Киевская область": ["Київська область", "Kyivska oblast", "Kyiv region"],
+    "г. Киев": ["м. Київ", "Київ", "Kyiv", "Kiev"],
+    "Кировоградская область": ["Кіровоградська область", "Kirovohradska oblast", "Kirovohrad region"],
+    "Луганская область": ["Луганська область", "Luhanska oblast", "Luhansk region"],
+    "Львовская область": ["Львівська область", "Lvivska oblast", "Lviv region"],
+    "Николаевская область": ["Миколаївська область", "Mykolaivska oblast", "Mykolaiv region"],
+    "Одесская область": ["Одеська область", "Odeska oblast", "Odesa region"],
+    "Полтавская область": ["Полтавська область", "Poltavska oblast", "Poltava region"],
+    "Ровенская область": ["Рівненська область", "Rivnenska oblast", "Rivne region"],
+    "Сумская область": ["Сумська область", "Sumska oblast", "Sumy region"],
+    "Тернопольская область": ["Тернопільська область", "Ternopilska oblast", "Ternopil region"],
+    "Харьковская область": ["Харківська область", "Kharkivska oblast", "Kharkiv region"],
+    "Херсонская область": ["Херсонська область", "Khersonska oblast", "Kherson region"],
+    "Хмельницкая область": ["Хмельницька область", "Khmelnytska oblast", "Khmelnytskyi region"],
+    "Черкасская область": ["Черкаська область", "Cherkaska oblast", "Cherkasy region"],
+    "Черниговская область": ["Чернігівська область", "Chernihivska oblast", "Chernihiv region"],
+    "Черновицкая область": ["Чернівецька область", "Chernivetska oblast", "Chernivtsi region"],
+}
+
+ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
+    "air_raid": {
+        "uk": "Повітряна тривога",
+        "en": "Air raid alert",
+        "de": "Luftalarm",
+        "pl": "Alarm lotniczy",
+        "ru": "Воздушная тревога",
+    },
+    "artillery": {
+        "uk": "Артобстріл",
+        "en": "Artillery shelling",
+        "de": "Artilleriebeschuss",
+        "pl": "Ostrzał artyleryjski",
+        "ru": "Артобстрел",
+    },
+    "missile": {
+        "uk": "Ракетна небезпека",
+        "en": "Missile threat",
+        "de": "Raketenbedrohung",
+        "pl": "Zagrożenie rakietowe",
+        "ru": "Ракетная опасность",
+    },
+    "drone": {
+        "uk": "Небезпека БпЛА",
+        "en": "UAV threat",
+        "de": "Drohnengefahr",
+        "pl": "Zagrożenie dronami",
+        "ru": "Опасность БПЛА",
+    },
+    "unknown": {
+        "uk": "Тривога",
+        "en": "Alert",
+        "de": "Alarm",
+        "pl": "Alarm",
+        "ru": "Тревога",
+    },
+}
+
+ALERTS_SEVERITY_LABELS: Dict[str, Dict[str, str]] = {
+    "low": {
+        "icon": "🟢",
+        "uk": "Низький (увага)",
+        "en": "Low (attention)",
+        "de": "Niedrig (Achtung)",
+        "pl": "Niski (uwaga)",
+        "ru": "Низкий (внимание)",
+    },
+    "medium": {
+        "icon": "🟠",
+        "uk": "Середній (підвищена готовність)",
+        "en": "Medium (heightened readiness)",
+        "de": "Mittel (erhöhte Bereitschaft)",
+        "pl": "Średni (podwyższona gotowość)",
+        "ru": "Средний (повышенная готовность)",
+    },
+    "high": {
+        "icon": "🔴",
+        "uk": "Високий (серйозна небезпека)",
+        "en": "High (serious danger)",
+        "de": "Hoch (ernste Gefahr)",
+        "pl": "Wysoki (poważne zagrożenie)",
+        "ru": "Высокий (серьёзная опасность)",
+    },
+    "critical": {
+        "icon": "🟣",
+        "uk": "Критичний (максимальна небезпека)",
+        "en": "Critical (extreme danger)",
+        "de": "Kritisch (äußerste Gefahr)",
+        "pl": "Krytyczny (skrajne zagrożenie)",
+        "ru": "Критический (крайняя опасность)",
+    },
+}
+
+ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
+    "uk": {
+        "header_active": "🚨 УВАГА! ТРИВОГА 🚨",
+        "header_ended": "🟢 ВІДБІЙ ТРИВОГИ",
+        "type": "Тип",
+        "region": "Регіон",
+        "location": "Локація",
+        "severity": "Рівень",
+        "cause": "Причина",
+        "details": "Деталі",
+        "started": "Початок",
+        "ended": "Відбій",
+        "message": "Повідомлення",
+        "source": "Джерело",
+        "status_active": "ще триває",
+        "status_unknown": "—",
+    },
+    "en": {
+        "header_active": "🚨 ALERT IN PROGRESS 🚨",
+        "header_ended": "🟢 ALERT ENDED",
+        "type": "Type",
+        "region": "Region",
+        "location": "Location",
+        "severity": "Severity",
+        "cause": "Cause",
+        "details": "Details",
+        "started": "Start",
+        "ended": "End",
+        "message": "Message",
+        "source": "Source",
+        "status_active": "still active",
+        "status_unknown": "—",
+    },
+    "de": {
+        "header_active": "🚨 ALARM AKTIV 🚨",
+        "header_ended": "🟢 ALARM BEENDET",
+        "type": "Art",
+        "region": "Region",
+        "location": "Ort",
+        "severity": "Stufe",
+        "cause": "Ursache",
+        "details": "Details",
+        "started": "Beginn",
+        "ended": "Ende",
+        "message": "Meldung",
+        "source": "Quelle",
+        "status_active": "läuft noch",
+        "status_unknown": "—",
+    },
+    "pl": {
+        "header_active": "🚨 TRWA ALARM 🚨",
+        "header_ended": "🟢 ALARM ODWOŁANY",
+        "type": "Typ",
+        "region": "Region",
+        "location": "Lokalizacja",
+        "severity": "Poziom",
+        "cause": "Przyczyna",
+        "details": "Szczegóły",
+        "started": "Początek",
+        "ended": "Zakończenie",
+        "message": "Komunikat",
+        "source": "Źródło",
+        "status_active": "wciąż trwa",
+        "status_unknown": "—",
+    },
+    "ru": {
+        "header_active": "🚨 ТРЕВОГА! 🚨",
+        "header_ended": "🟢 ОТБОЙ ТРЕВОГИ",
+        "type": "Тип",
+        "region": "Регион",
+        "location": "Локация",
+        "severity": "Уровень",
+        "cause": "Причина",
+        "details": "Детали",
+        "started": "Начало",
+        "ended": "Отбой",
+        "message": "Сообщение",
+        "source": "Источник",
+        "status_active": "ещё продолжается",
+        "status_unknown": "—",
+    },
+}
+
+
+def _alerts_ensure_storage() -> None:
+    os.makedirs(os.path.dirname(ALERTS_DATA_FILE), exist_ok=True)
+
+
+def _alerts_blank_state() -> Dict[str, Any]:
+    return {"events": {}, "regions": {}, "last_fetch": None}
+
+
+def _alerts_load_state() -> Dict[str, Any]:
+    global _alerts_state_cache
+    if _alerts_state_cache is not None:
+        return _alerts_state_cache
+    _alerts_ensure_storage()
+    if not os.path.exists(ALERTS_DATA_FILE):
+        _alerts_state_cache = _alerts_blank_state()
+        _alerts_save_state()
+        return _alerts_state_cache
+    try:
+        with open(ALERTS_DATA_FILE, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid alerts state")
+    except Exception:
+        payload = _alerts_blank_state()
+    payload.setdefault("events", {})
+    payload.setdefault("regions", {})
+    payload.setdefault("last_fetch", None)
+    _alerts_state_cache = payload
+    return _alerts_state_cache
+
+
+def _alerts_save_state() -> None:
+    if _alerts_state_cache is None:
+        return
+    _alerts_ensure_storage()
+    tmp_file = f"{ALERTS_DATA_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(_alerts_state_cache, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, ALERTS_DATA_FILE)
+
+
+def _alerts_region_state(region: str) -> Dict[str, Any]:
+    state = _alerts_load_state()
+    bucket = state.setdefault("regions", {}).setdefault(region, {})
+    bucket.setdefault("active", [])
+    bucket.setdefault("history", [])
+    return bucket
+
+
+def alerts_canonical_region(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    cleaned = str(name).strip()
+    if not cleaned:
+        return None
+    lower = cleaned.lower()
+    for canonical, aliases in ALERTS_REGION_EQUIVALENTS.items():
+        if lower == canonical.lower():
+            return canonical
+        for alias in aliases:
+            if lower == alias.lower():
+                return canonical
+    return cleaned
+
+
+def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return None
+    payload = dict(raw)
+    event_id = payload.get("id") or payload.get("alert_id") or ""
+    if not event_id:
+        region_hint = str(payload.get("region") or payload.get("area") or "").strip()
+        started_hint = str(payload.get("started_at") or payload.get("start") or payload.get("timestamp") or "")
+        event_id = f"{region_hint}|{payload.get('type') or 'alert'}|{started_hint}"
+    event_id = str(event_id)
+    region_original = str(payload.get("region") or payload.get("area") or "").strip()
+    region_canonical = alerts_canonical_region(region_original)
+    type_code = str(payload.get("type") or payload.get("alert_type") or "unknown").strip().lower() or "unknown"
+    started_at = payload.get("started_at") or payload.get("start") or payload.get("timestamp") or ""
+    ended_at = payload.get("ended_at") or payload.get("end") or payload.get("finished_at") or ""
+    message = str(payload.get("message") or payload.get("text") or "").strip()
+    source = str(payload.get("source") or payload.get("issuer") or "").strip()
+    extra_raw = payload.get("extra")
+    if not isinstance(extra_raw, dict):
+        extra_raw = {}
+    extra_payload = {
+        "location": extra_raw.get("location") or payload.get("location") or "",
+        "severity": (payload.get("severity") or extra_raw.get("severity") or "").strip().lower(),
+        "cause": extra_raw.get("cause") or payload.get("cause") or "",
+        "details": extra_raw.get("details") or payload.get("details") or "",
+    }
+    return {
+        "id": event_id,
+        "type": type_code or "unknown",
+        "region": region_canonical or region_original,
+        "region_display": region_original or region_canonical or "",
+        "started_at": str(started_at) if started_at else "",
+        "ended_at": str(ended_at) if ended_at else "",
+        "message": message,
+        "source": source,
+        "extra": extra_payload,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def alerts_fetch_remote() -> Tuple[bool, str, List[Dict[str, Any]]]:
+    if not ALERTS_API_TOKEN:
+        return False, "API token is empty", []
+    headers = {
+        "Authorization": f"Bearer {ALERTS_API_TOKEN}",
+        "X-API-Key": ALERTS_API_TOKEN,
+    }
+    params = {"token": ALERTS_API_TOKEN}
+    try:
+        response = requests.get(ALERTS_API_URL, headers=headers, params=params, timeout=ALERTS_API_TIMEOUT)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return False, f"Запрос тревог не удался: {exc}", []
+    try:
+        data = response.json()
+    except ValueError:
+        return False, "Некорректный ответ тревог", []
+    if isinstance(data, dict):
+        if isinstance(data.get("alerts"), list):
+            items = data["alerts"]
+        elif isinstance(data.get("data"), list):
+            items = data["data"]
+        else:
+            items = [data]
+    elif isinstance(data, list):
+        items = data
+    else:
+        items = []
+    events: List[Dict[str, Any]] = []
+    for item in items:
+        normalized = alerts_normalize_event(item)
+        if not normalized:
+            continue
+        events.append(normalized)
+    return True, "", events
+
+
+def alerts_refresh_once() -> Tuple[List[str], List[str]]:
+    ok, error, events = alerts_fetch_remote()
+    if not ok:
+        print(f"[alerts] {error}")
+        return [], []
+    state = _alerts_load_state()
+    events_map = state.setdefault("events", {})
+    regions_map = state.setdefault("regions", {})
+    start_notify: List[str] = []
+    end_notify: List[str] = []
+    for event in events:
+        event_id = event["id"]
+        stored = events_map.get(event_id)
+        ended_now = bool(event.get("ended_at"))
+        if stored:
+            previously_ended = bool(stored.get("ended_at"))
+            stored.update(event)
+            if not previously_ended and ended_now:
+                stored.setdefault("notified_end", False)
+                end_notify.append(event_id)
+        else:
+            event["notified_start"] = bool(ended_now)
+            event["notified_end"] = False
+            events_map[event_id] = event
+            if ended_now:
+                end_notify.append(event_id)
+            else:
+                start_notify.append(event_id)
+        region_key = event.get("region") or ""
+        bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+        history = bucket.setdefault("history", [])
+        active = bucket.setdefault("active", [])
+        if event_id not in history:
+            history.insert(0, event_id)
+        del history[ALERTS_MAX_HISTORY:]
+        if ended_now:
+            if event_id in active:
+                active.remove(event_id)
+        else:
+            if event_id not in active:
+                active.append(event_id)
+    for region_key, bucket in regions_map.items():
+        active = bucket.get("active", [])
+        bucket["active"] = [eid for eid in active if not events_map.get(eid, {}).get("ended_at")]
+    state["last_fetch"] = datetime.now(timezone.utc).isoformat()
+    _alerts_save_state()
+    return start_notify, end_notify
+
+
+def _alerts_get_event(event_id: str) -> Optional[Dict[str, Any]]:
+    state = _alerts_load_state()
+    payload = state.get("events", {}).get(event_id)
+    if payload:
+        return dict(payload)
+    return None
+
+
+def _alerts_mark_notified(event_id: str, kind: str) -> None:
+    state = _alerts_load_state()
+    payload = state.get("events", {}).get(event_id)
+    if not payload:
+        return
+    if kind == "start":
+        payload["notified_start"] = True
+    elif kind == "end":
+        payload["notified_end"] = True
+    _alerts_save_state()
+
+
+def alerts_parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                dt = datetime.strptime(raw, fmt)
+                dt = dt.replace(tzinfo=timezone.utc)
+                break
+            except ValueError:
+                continue
+        else:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        return dt.astimezone(ALERTS_TIMEZONE)
+    except Exception:
+        return dt
+
+
+def alerts_format_timestamp(value: Optional[str]) -> str:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return value or ""
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def alerts_type_label(event: Dict[str, Any], lang: str) -> str:
+    mapping = ALERTS_TYPE_LABELS.get(event.get("type")) or ALERTS_TYPE_LABELS.get("unknown")
+    return mapping.get(lang) or mapping.get(DEFAULT_LANG) or event.get("type") or "Alert"
+
+
+def alerts_severity_label(event: Dict[str, Any], lang: str) -> str:
+    severity = (event.get("extra") or {}).get("severity") or ""
+    mapping = ALERTS_SEVERITY_LABELS.get(severity)
+    if not mapping:
+        return severity.capitalize() if severity else "—"
+    icon = mapping.get("icon", "")
+    text = mapping.get(lang) or mapping.get(DEFAULT_LANG) or severity
+    return f"{icon} {text}" if icon else text
+
+
+def alerts_field_labels(lang: str) -> Dict[str, str]:
+    return ALERTS_FIELD_LABELS.get(lang) or ALERTS_FIELD_LABELS[DEFAULT_LANG]
+
+
+def alerts_format_row(icon: str, label: str, value: str) -> List[str]:
+    if not value:
+        return []
+    text = str(value)
+    prefix = f"{icon} {label}: "
+    indent = " " * len(prefix)
+    rows = [prefix + text.splitlines()[0]]
+    for part in text.splitlines()[1:]:
+        rows.append(indent + part)
+    return rows
+
+
+def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = None, total: Optional[int] = None) -> str:
+    labels = alerts_field_labels(lang)
+    ended = bool(event.get("ended_at"))
+    header = labels["header_ended"] if ended else labels["header_active"]
+    lines: List[str] = [header, "━━━━━━━━━━━━━━━━━━━"]
+    type_label = alerts_type_label(event, lang)
+    lines.extend(alerts_format_row("🌐", labels["type"], type_label))
+    region_display = event.get("region_display") or event.get("region") or "—"
+    lines.extend(alerts_format_row("📍", labels["region"], region_display))
+    location = (event.get("extra") or {}).get("location") or ""
+    lines.extend(alerts_format_row("🏙️", labels["location"], location))
+    lines.extend(alerts_format_row("🔴", labels["severity"], alerts_severity_label(event, lang)))
+    cause = (event.get("extra") or {}).get("cause") or ""
+    lines.extend(alerts_format_row("🎯", labels["cause"], cause))
+    details = (event.get("extra") or {}).get("details") or ""
+    lines.extend(alerts_format_row("🔎", labels["details"], details))
+    lines.extend(alerts_format_row("⏱️", labels["started"], alerts_format_timestamp(event.get("started_at"))))
+    end_value = alerts_format_timestamp(event.get("ended_at")) if ended else labels["status_active"]
+    lines.extend(alerts_format_row("🛑", labels["ended"], end_value))
+    lines.extend(alerts_format_row("📢", labels["message"], event.get("message") or ""))
+    lines.extend(alerts_format_row("🏛️", labels["source"], event.get("source") or ""))
+    if index is not None and total:
+        lines.append("━━━━━━━━━━━━━━━━━━━")
+        lines.append(tr(lang, "ALERTS_CARD_INDEX", index=index + 1, total=total))
+    return "\n".join(line for line in lines if line)
+
+
+def alerts_summarize_event(event: Dict[str, Any], lang: str) -> str:
+    started = alerts_format_timestamp(event.get("started_at"))
+    ended = alerts_format_timestamp(event.get("ended_at")) if event.get("ended_at") else ""
+    parts = [part for part in [started, alerts_type_label(event, lang), alerts_severity_label(event, lang)] if part]
+    summary = " • ".join(parts)
+    if ended:
+        summary += f" → {ended}"
+    return summary
+
+
+def alerts_profile_block(profile: dict) -> dict:
+    alerts = profile.setdefault("alerts", {})
+    alerts.setdefault("regions", [])
+    alerts.setdefault("last_seen", {})
+    return alerts
+
+
+def alerts_user_regions(uid: int) -> List[str]:
+    regions: List[str] = []
+    if active_project.get("name"):
+        info = load_project_info(active_project["name"])
+        project_region = info.get("region")
+        canonical = alerts_canonical_region(project_region)
+        if canonical:
+            regions.append(canonical)
+        elif project_region:
+            regions.append(project_region)
+    profile = load_user(uid) or {}
+    alerts = alerts_profile_block(profile)
+    for region in alerts.get("regions", []):
+        canonical = alerts_canonical_region(region)
+        if canonical and canonical not in regions:
+            regions.append(canonical)
+        elif region not in regions:
+            regions.append(region)
+    return regions
+
+
+def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    collected: List[Dict[str, Any]] = []
+    for region in alerts_user_regions(uid):
+        bucket = state.get("regions", {}).get(region) or {}
+        for event_id in bucket.get("active", []):
+            event = events_map.get(event_id)
+            if event and not event.get("ended_at"):
+                collected.append(dict(event))
+    collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
+    return collected
+
+
+def alerts_collect_history_for_user(uid: int, limit: int = 20) -> List[Dict[str, Any]]:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    seen: Set[str] = set()
+    collected: List[Dict[str, Any]] = []
+    for region in alerts_user_regions(uid):
+        bucket = state.get("regions", {}).get(region) or {}
+        for event_id in bucket.get("history", []):
+            if event_id in seen:
+                continue
+            event = events_map.get(event_id)
+            if event:
+                collected.append(dict(event))
+                seen.add(event_id)
+    collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
+    return collected[:limit]
+
+
+def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboardMarkup]:
+    profile = load_user(uid) or {}
+    alerts = alerts_profile_block(profile)
+    project_region = None
+    if active_project.get("name"):
+        info = load_project_info(active_project["name"])
+        project_region = info.get("region") or ""
+    canonical_project = alerts_canonical_region(project_region)
+    selected = alerts_user_regions(uid)
+    selected_display = ", ".join(selected) if selected else "—"
+    lines = [tr(uid, "ALERTS_SUBS_HEADER")]
+    if canonical_project:
+        lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(canonical_project)))
+    else:
+        lines.append(tr(uid, "ALERTS_SUBS_NOTE_NO_PROJECT"))
+    lines.append(tr(uid, "ALERTS_SUBS_SELECTED", items=h(selected_display)))
+    lines.append(tr(uid, "ALERTS_SUBS_MANAGE"))
+    kb = alerts_build_subscription_keyboard(uid, page, canonical_project, alerts)
+    return "\n".join(lines), kb
+
+
+def alerts_build_subscription_keyboard(uid: int, page: int, project_region: Optional[str], alerts: dict) -> InlineKeyboardMarkup:
+    per_page = 6
+    total = len(UKRAINE_REGIONS)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    start = page * per_page
+    chunk = UKRAINE_REGIONS[start:start + per_page]
+    selected = {alerts_canonical_region(x) or x for x in alerts.get("regions", [])}
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(chunk):
+        canonical = alerts_canonical_region(region) or region
+        if project_region and canonical == alerts_canonical_region(project_region):
+            label = f"🔒 {canonical}"
+            callback = "alerts_locked"
+        else:
+            is_selected = canonical in selected
+            prefix = "✅" if is_selected else "➕"
+            label = f"{prefix} {canonical}"
+            callback = f"alerts_toggle:{page}:{start + idx}"
+        kb.insert(InlineKeyboardButton(label, callback_data=callback))
+    if total_pages > 1:
+        nav: List[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("◀️", callback_data=f"alerts_sub_page:{page - 1}"))
+        nav.append(InlineKeyboardButton(tr(uid, "ALERTS_SUBS_PAGE", current=page + 1, total=total_pages), callback_data=f"alerts_sub_page:{page}"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton("▶️", callback_data=f"alerts_sub_page:{page + 1}"))
+        kb.row(*nav)
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def alerts_update_subscription(uid: int, region_index: int, add: bool) -> bool:
+    if region_index < 0 or region_index >= len(UKRAINE_REGIONS):
+        return False
+    region = alerts_canonical_region(UKRAINE_REGIONS[region_index]) or UKRAINE_REGIONS[region_index]
+    profile = load_user(uid) or {}
+    alerts = alerts_profile_block(profile)
+    items = alerts.setdefault("regions", [])
+    if add and region not in items:
+        items.append(region)
+    elif not add and region in items:
+        items.remove(region)
+    save_user(profile)
+    return True
+
+
+def alerts_card_keyboard(uid: int, context: str, total: int, index: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if total > 1:
+        row: List[InlineKeyboardButton] = []
+        if index > 0:
+            row.append(InlineKeyboardButton("◀️", callback_data=f"alerts_nav:{context}:{index - 1}"))
+        row.append(
+            InlineKeyboardButton(
+                tr(uid, "ALERTS_CARD_INDEX", index=index + 1, total=total),
+                callback_data=f"alerts_index:{context}:{index}",
+            )
+        )
+        if index < total - 1:
+            row.append(InlineKeyboardButton("▶️", callback_data=f"alerts_nav:{context}:{index + 1}"))
+        kb.row(*row)
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data=f"alerts_close:{context}"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
+    return kb
+
+
+async def alerts_send_card(uid: int, chat_id: int, events: List[Dict[str, Any]], context: str, index: int = 0) -> Optional[types.Message]:
+    if not events:
+        return None
+    runtime = users_runtime.setdefault(uid, {})
+    cards = runtime.setdefault("alerts_cards", {})
+    previous = cards.get(context, {}).get("message")
+    if isinstance(previous, (list, tuple)) and len(previous) == 2:
+        await _delete_message_safe(previous[0], previous[1])
+    index = max(0, min(index, len(events) - 1))
+    lang = resolve_lang(uid)
+    text = alerts_format_card(events[index], lang, index=index, total=len(events))
+    kb = alerts_card_keyboard(uid, context, len(events), index)
+    msg = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+    flow_track(uid, msg)
+    cards[context] = {
+        "events": [event["id"] for event in events],
+        "index": index,
+        "message": (msg.chat.id, msg.message_id),
+    }
+    return msg
+
+
+def alerts_anchor_section(uid: int) -> str:
+    if not active_project.get("name"):
+        return ""
+    info = load_project_info(active_project["name"])
+    project_region = info.get("region") or ""
+    if not project_region:
+        return ""
+    canonical = alerts_canonical_region(project_region)
+    display_region = canonical or project_region
+    state = _alerts_load_state()
+    bucket = state.get("regions", {}).get(canonical or project_region) or {}
+    events_map = state.get("events", {})
+    lang = resolve_lang(uid)
+    for event_id in bucket.get("active", []):
+        event = events_map.get(event_id)
+        if not event or event.get("ended_at"):
+            continue
+        text = tr(
+            uid,
+            "ANCHOR_ALERT_ACTIVE",
+            region=h(display_region),
+            type=h(alerts_type_label(event, lang)),
+            start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
+            severity=h(alerts_severity_label(event, lang)),
+        )
+        extras: List[str] = []
+        cause = (event.get("extra") or {}).get("cause") or ""
+        details = (event.get("extra") or {}).get("details") or ""
+        if cause:
+            extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
+        if details:
+            extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
+        if extras:
+            text = "\n".join([text, *extras])
+        return text
+    for event_id in bucket.get("history", []):
+        event = events_map.get(event_id)
+        if not event:
+            continue
+        text = tr(
+            uid,
+            "ANCHOR_ALERT_RECENT",
+            region=h(display_region),
+            type=h(alerts_type_label(event, lang)),
+            start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
+            end=h(alerts_format_timestamp(event.get("ended_at")) or "—"),
+        )
+        extras: List[str] = []
+        cause = (event.get("extra") or {}).get("cause") or ""
+        details = (event.get("extra") or {}).get("details") or ""
+        if cause:
+            extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
+        if details:
+            extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
+        if extras:
+            text = "\n".join([text, *extras])
+        return text
+    return tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
+
+
+def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
+    recipients: List[Tuple[int, Dict[str, Any]]] = []
+    target_region = alerts_canonical_region(event.get("region") or event.get("region_display")) or event.get("region")
+    if not target_region:
+        return recipients
+    for profile in load_all_users():
+        uid = profile.get("user_id")
+        if not uid:
+            continue
+        regions = alerts_user_regions(uid)
+        canonical_regions = {alerts_canonical_region(r) or r for r in regions}
+        if target_region not in canonical_regions:
+            continue
+        recipients.append((uid, profile))
+    return recipients
+
+
+def alerts_notification_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+    lang = resolve_lang(uid)
+    return alerts_format_card(event, lang)
+
+
+async def alerts_broadcast(event_id: str, kind: str) -> None:
+    event = _alerts_get_event(event_id)
+    if not event:
+        return
+    if kind == "start" and event.get("notified_start"):
+        return
+    if kind == "end" and event.get("notified_end"):
+        return
+    recipients = alerts_recipients_for_event(event)
+    if not recipients:
+        _alerts_mark_notified(event_id, kind)
+        return
+    for uid, profile in recipients:
+        chat_id = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+        if not chat_id:
+            chat_id = (profile.get("tg") or {}).get("chat_id")
+        if not chat_id:
+            continue
+        try:
+            text = alerts_notification_text(uid, event, kind)
+            kb = InlineKeyboardMarkup().add(
+                InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data="alerts_close_push")
+            )
+            await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+        except Exception:
+            continue
+    _alerts_mark_notified(event_id, kind)
+
+
+async def alerts_dispatch_updates(start_ids: List[str], end_ids: List[str]) -> None:
+    changed = False
+    for event_id in start_ids:
+        event = _alerts_get_event(event_id)
+        if not event:
+            continue
+        await alerts_broadcast(event_id, "start")
+        changed = True
+    for event_id in end_ids:
+        event = _alerts_get_event(event_id)
+        if not event:
+            continue
+        await alerts_broadcast(event_id, "end")
+        changed = True
+    if changed:
+        await update_all_anchors()
+
+
+async def alerts_poll_loop() -> None:
+    global alerts_poll_task
+    try:
+        await asyncio.sleep(5)
+        while True:
+            try:
+                start_ids, end_ids = await asyncio.to_thread(alerts_refresh_once)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[alerts] refresh error: {exc}")
+                start_ids, end_ids = [], []
+            if start_ids or end_ids:
+                await alerts_dispatch_updates(start_ids, end_ids)
+            await asyncio.sleep(ALERTS_POLL_INTERVAL)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        alerts_poll_task = None
+
+
+async def alerts_bootstrap() -> None:
+    try:
+        start_ids, end_ids = await asyncio.to_thread(alerts_refresh_once)
+    except Exception as exc:
+        print(f"[alerts] initial refresh error: {exc}")
+        await update_all_anchors()
+        return
+    if start_ids or end_ids:
+        await alerts_dispatch_updates(start_ids, end_ids)
+    else:
+        await update_all_anchors()
+
+
+async def alerts_start_polling() -> None:
+    global alerts_poll_task
+    if alerts_poll_task and not alerts_poll_task.done():
+        return
+    alerts_poll_task = asyncio.create_task(alerts_poll_loop())
 
 
 # ========================== NOVA POSHTA STORAGE ==========================
@@ -7175,10 +8432,26 @@ def print_startup_banner():
     print(_colorize_terminal(ready_line, "92"))
 
 
+async def on_startup(dispatcher):
+    await alerts_bootstrap()
+    await alerts_start_polling()
+
+
+async def on_shutdown(dispatcher):
+    global alerts_poll_task
+    if alerts_poll_task:
+        alerts_poll_task.cancel()
+        try:
+            await alerts_poll_task
+        except asyncio.CancelledError:
+            pass
+        alerts_poll_task = None
+
+
 # ========================== BOOT ==========================
 if __name__ == "__main__":
     ensure_dirs()
     sync_state()
     print_startup_banner()
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup, on_shutdown=on_shutdown)
 
