@@ -40,7 +40,7 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, sys, json, random, re, base64, hashlib, secrets
+import os, sys, json, random, re, base64, hashlib, secrets, asyncio
 from html import escape as html_escape
 from datetime import datetime, timezone
 from typing import Dict, Optional, List, Tuple, Any, Set
@@ -2883,9 +2883,10 @@ def kb_photo_session_controls(has_uploads: bool) -> InlineKeyboardMarkup:
 
 def kb_photo_view_actions() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="photo_view_close"))
-    kb.add(InlineKeyboardButton("📂 Меню фото", callback_data="photo_view_menu"))
-    kb.add(InlineKeyboardButton("🏠 На главную", callback_data="photo_view_root"))
+    kb.row(
+        InlineKeyboardButton("❌ Закрыть", callback_data="photo_view_close"),
+        InlineKeyboardButton("🏠 На главную", callback_data="photo_view_root"),
+    )
     return kb
 
 
@@ -2944,10 +2945,8 @@ async def _photo_refresh_session_message(chat_id: int, uid: int, state: FSMConte
             return
         except MessageNotModified:
             return
-        except MessageCantBeEdited:
-            pass
         except Exception:
-            pass
+            await _delete_message_safe(tgt_chat, tgt_id)
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     flow_track(uid, msg)
     await state.update_data(photo_session_message=(msg.chat.id, msg.message_id))
@@ -3172,8 +3171,13 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
             await bot.edit_message_text(text, chat_id, anchor, reply_markup=kb)
             ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
             return
+        except MessageNotModified:
+            return
         except Exception:
-            pass
+            try:
+                await bot.delete_message(chat_id, anchor)
+            except Exception:
+                pass
 
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     ur["anchor"] = msg.message_id
@@ -3202,19 +3206,18 @@ def flow_track(uid: int, msg: types.Message):
 
 async def flow_clear(uid: int):
     runtime = users_runtime.setdefault(uid, {})
-    for chat_id, mid in list(runtime.get("flow_msgs", [])):
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception:
-            pass
+    tracked = list(runtime.get("flow_msgs", []))
     runtime["flow_msgs"] = []
+    tasks = [
+        _delete_message_safe(chat_id, mid)
+        for chat_id, mid in tracked
+        if chat_id and mid
+    ]
     last_card = runtime.pop("np_last_card", None)
     if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
-        chat_id, mid = last_card
-        try:
-            await bot.delete_message(chat_id, mid)
-        except Exception:
-            pass
+        tasks.append(_delete_message_safe(last_card[0], last_card[1]))
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def clear_then_anchor(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -5560,12 +5563,13 @@ async def photo_view_controls(c: types.CallbackQuery):
     if action == "photo_view_menu":
         await menu_photos(c)
         return
-    await flow_clear(uid)
     if action == "photo_view_root":
-        await anchor_show_root(uid)
         await c.answer("Главное меню открыто")
+        await flow_clear(uid)
+        await anchor_show_root(uid)
     else:
         await c.answer("Просмотр закрыт")
+        await flow_clear(uid)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("photo_original:"))
