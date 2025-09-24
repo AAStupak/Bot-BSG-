@@ -2078,6 +2078,14 @@ NP_ADMIN_NOTE_PREFIX = {
     "ru": "💬 Комментарий администратора: {note}",
 }
 
+NP_COMMENT_SECTION_TITLE = {
+    "uk": "💬 Коментарі ({count})",
+    "en": "💬 Comments ({count})",
+    "de": "💬 Kommentare ({count})",
+    "pl": "💬 Komentarze ({count})",
+    "ru": "💬 Комментарии ({count})",
+}
+
 NP_REFRESH_BUTTON_LABEL = {
     "uk": "🔄 Оновити",
     "en": "🔄 Refresh",
