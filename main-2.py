@@ -4408,10 +4408,14 @@ async def np_assign_receive_ttn(m: types.Message, state: FSMContext):
     if not text:
         return
     if text.lower() in NP_CANCEL_WORDS:
+        await np_assign_clear_picker(state)
         await state.finish()
         await flow_clear(uid)
-        notice = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_CANCELLED"))
-        flow_track(uid, notice)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
         return
     ttn = _np_clean_ttn(text) or text
     try:
@@ -4440,11 +4444,14 @@ async def np_assign_receive_user(m: types.Message, state: FSMContext):
         await state.finish()
         return
     if m.text and m.text.strip().lower() in NP_CANCEL_WORDS:
+        await np_assign_clear_picker(state)
         await state.finish()
         await flow_clear(uid)
-        await np_assign_clear_picker(state)
-        notice = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_CANCELLED"))
-        flow_track(uid, notice)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
         return
     profile = resolve_user_reference(m)
     if not profile:
@@ -4470,8 +4477,10 @@ async def np_assign_receive_note(m: types.Message, state: FSMContext):
         await np_assign_clear_picker(state)
         await state.finish()
         await flow_clear(uid)
-        notice = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_CANCELLED"))
-        flow_track(uid, notice)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
         await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
         return
     if note_text == "-":
