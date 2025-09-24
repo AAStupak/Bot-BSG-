@@ -43,7 +43,7 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 import os, sys, json, random, re, base64, hashlib, secrets, asyncio
 from html import escape as html_escape
 from datetime import datetime, timezone
-from typing import Dict, Optional, List, Tuple, Any, Set
+from typing import Dict, Optional, List, Tuple, Any, Set, Union
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
@@ -82,10 +82,15 @@ FIN_PATH = "data/finances"  # запросы/история выплат (фай
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
 
-ALERTS_API_URL = "https://alerts.in.ua/api/v1/alerts"
+ALERTS_API_BASE_URL = "https://api.alerts.in.ua/v1"
+ALERTS_API_ACTIVE_ENDPOINT = "/alerts/active.json"
+ALERTS_API_HISTORY_TEMPLATE = "/regions/{uid}/alerts/{period}.json"
+ALERTS_API_URL = f"{ALERTS_API_BASE_URL}{ALERTS_API_ACTIVE_ENDPOINT}"
+ALERTS_DEFAULT_HISTORY_PERIOD = "week_ago"
 ALERTS_API_TOKEN = "62f89091e56951ef257f763e445c09c1fd9dacd1ab2203"
 ALERTS_API_TIMEOUT = 15
 ALERTS_POLL_INTERVAL = 60  # seconds
+ALERTS_HISTORY_CACHE_TTL = 300  # seconds
 
 UKRAINE_REGIONS = [
     "Винницкая область",
@@ -1021,6 +1026,7 @@ users_runtime: Dict[int, dict] = {}
 admins: set = set()
 active_project = {"name": None}
 alerts_poll_task: Optional[asyncio.Task] = None
+alerts_history_cache: Dict[str, Dict[str, Any]] = {}
 
 
 # ========================== FSM ==========================
@@ -4049,6 +4055,77 @@ ALERTS_REGION_EQUIVALENTS: Dict[str, List[str]] = {
     "Черновицкая область": ["Чернівецька область", "Chernivetska oblast", "Chernivtsi region"],
 }
 
+ALERTS_TYPE_ALIASES: Dict[str, str] = {
+    "air_raid": "air_raid",
+    "air-raid": "air_raid",
+    "airalert": "air_raid",
+    "air alert": "air_raid",
+    "air_raid_alert": "air_raid",
+    "artillery": "artillery",
+    "artillery_shelling": "artillery",
+    "shelling": "artillery",
+    "missile": "missile",
+    "missile_attack": "missile",
+    "rocket": "missile",
+    "rocket_attack": "missile",
+    "ballistic": "missile",
+    "ballistic_missile": "missile",
+    "drone": "drone",
+    "drone_attack": "drone",
+    "uav": "drone",
+    "nuclear": "nuclear",
+    "nuclear_threat": "nuclear",
+    "chemical": "chemical",
+    "chemical_threat": "chemical",
+    "urban_fights": "urban_fights",
+    "urban": "urban_fights",
+    "ground_assault": "urban_fights",
+    "unknown": "unknown",
+}
+
+ALERTS_DEFAULT_SEVERITY: Dict[str, str] = {
+    "air_raid": "high",
+    "artillery": "high",
+    "missile": "critical",
+    "drone": "medium",
+    "nuclear": "critical",
+    "chemical": "critical",
+    "urban_fights": "high",
+    "unknown": "high",
+}
+
+ALERTS_SEVERITY_KEYWORDS: Dict[str, str] = {
+    "critical": "critical",
+    "extreme": "critical",
+    "highest": "critical",
+    "max": "critical",
+    "максим": "critical",
+    "крит": "critical",
+    "violet": "critical",
+    "purple": "critical",
+    "фіолет": "critical",
+    "червон": "high",
+    "red": "high",
+    "висок": "high",
+    "high": "high",
+    "повітряна": "high",
+    "жовт": "medium",
+    "yellow": "medium",
+    "orange": "medium",
+    "помаран": "medium",
+    "середн": "medium",
+    "medium": "medium",
+    "elevated": "medium",
+    "зел": "low",
+    "green": "low",
+    "низ": "low",
+    "low": "low",
+    "мінім": "low",
+    "none": "low",
+    "відсут": "low",
+    "без": "low",
+}
+
 ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
     "air_raid": {
         "uk": "Повітряна тривога",
@@ -4077,6 +4154,27 @@ ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
         "de": "Drohnengefahr",
         "pl": "Zagrożenie dronami",
         "ru": "Опасность БПЛА",
+    },
+    "nuclear": {
+        "uk": "Ядерна небезпека",
+        "en": "Nuclear threat",
+        "de": "Atomare Gefahr",
+        "pl": "Zagrożenie nuklearne",
+        "ru": "Ядерная опасность",
+    },
+    "chemical": {
+        "uk": "Хімічна небезпека",
+        "en": "Chemical threat",
+        "de": "Chemische Gefahr",
+        "pl": "Zagrożenie chemiczne",
+        "ru": "Химическая опасность",
+    },
+    "urban_fights": {
+        "uk": "Вуличні бої",
+        "en": "Urban fights",
+        "de": "Straßenkämpfe",
+        "pl": "Walki uliczne",
+        "ru": "Уличные бои",
     },
     "unknown": {
         "uk": "Тривога",
@@ -4271,81 +4369,322 @@ def alerts_canonical_region(name: Optional[str]) -> Optional[str]:
     return cleaned
 
 
+def alerts_sanitize_notes(notes: Any) -> List[Dict[str, str]]:
+    sanitized: List[Dict[str, str]] = []
+    if isinstance(notes, list):
+        for entry in notes:
+            if isinstance(entry, dict):
+                note_type = str(entry.get("type") or "").strip()
+                title = str(entry.get("title") or "").strip()
+                text = str(entry.get("text") or entry.get("value") or entry.get("note") or "").strip()
+                cleaned: Dict[str, str] = {}
+                if note_type:
+                    cleaned["type"] = note_type
+                if title:
+                    cleaned["title"] = title
+                if text:
+                    cleaned["text"] = text
+                if cleaned:
+                    sanitized.append(cleaned)
+            elif isinstance(entry, str):
+                text = entry.strip()
+                if text:
+                    sanitized.append({"text": text})
+    return sanitized
+
+
+def alerts_extract_note_fields(payload: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
+    severity_raw = ""
+    cause = ""
+    details_parts: List[str] = []
+    message = ""
+    source = ""
+
+    for note in alerts_sanitize_notes(payload.get("notes")):
+        text = str(note.get("text") or "").strip()
+        if not text:
+            continue
+        note_type = str(note.get("type") or "").lower()
+        title_lower = str(note.get("title") or "").lower()
+
+        def matches(keyword: str) -> bool:
+            return keyword in note_type or keyword in title_lower
+
+        if not severity_raw and (matches("severity") or matches("level") or matches("рів") or matches("статус")):
+            severity_raw = text
+            continue
+        if not cause and (matches("cause") or matches("reason") or matches("прич")):
+            cause = text
+            continue
+        if not source and (matches("source") or matches("issuer") or matches("джерел")):
+            source = text
+            continue
+        if not message and (matches("message") or matches("status") or matches("опис") or matches("повідом") or note_type in ("message", "status")):
+            message = text
+            continue
+        if matches("detail") or matches("детал") or matches("info") or note_type in ("details", "description"):
+            details_parts.append(text)
+            continue
+        if not message:
+            message = text
+        else:
+            details_parts.append(text)
+
+    details = " • ".join(part for part in details_parts if part)
+    return severity_raw, cause, details, message, source
+
+
+def alerts_normalize_type_code(raw_type: str) -> str:
+    base = (raw_type or "").strip().lower()
+    if not base:
+        return "unknown"
+    mapped = ALERTS_TYPE_ALIASES.get(base, base)
+    if mapped not in ALERTS_TYPE_LABELS:
+        return "unknown"
+    return mapped
+
+
+def alerts_normalize_severity(raw_severity: Optional[str], type_code: str) -> str:
+    candidate = str(raw_severity or "").strip()
+    lowered = candidate.lower()
+    if lowered:
+        for keyword, mapped in ALERTS_SEVERITY_KEYWORDS.items():
+            if keyword in lowered:
+                return mapped
+        numeric_map = {"4": "critical", "3": "high", "2": "medium", "1": "low", "0": "low"}
+        roman_map = {"iv": "critical", "iii": "high", "ii": "medium", "i": "low"}
+        if lowered in numeric_map:
+            return numeric_map[lowered]
+        if lowered in roman_map:
+            return roman_map[lowered]
+    return ALERTS_DEFAULT_SEVERITY.get(type_code, "high")
+
+
 def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(raw, dict):
         return None
     payload = dict(raw)
     event_id = payload.get("id") or payload.get("alert_id") or ""
     if not event_id:
-        region_hint = str(payload.get("region") or payload.get("area") or "").strip()
+        region_hint = str(
+            payload.get("location_oblast")
+            or payload.get("region")
+            or payload.get("area")
+            or payload.get("location_title")
+            or ""
+        ).strip()
         started_hint = str(payload.get("started_at") or payload.get("start") or payload.get("timestamp") or "")
-        event_id = f"{region_hint}|{payload.get('type') or 'alert'}|{started_hint}"
+        event_id = f"{region_hint}|{payload.get('alert_type') or payload.get('type') or 'alert'}|{started_hint}"
     event_id = str(event_id)
-    region_original = str(payload.get("region") or payload.get("area") or "").strip()
+
+    raw_type = str(payload.get("alert_type") or payload.get("type") or "").strip()
+    type_code = alerts_normalize_type_code(raw_type)
+
+    oblast_title = str(payload.get("location_oblast") or payload.get("region") or payload.get("area") or "").strip()
+    location_title = str(payload.get("location_title") or payload.get("location") or payload.get("city") or "").strip()
+    if not oblast_title and location_title:
+        oblast_title = location_title
+    region_original = oblast_title or location_title or str(payload.get("region") or payload.get("area") or "").strip()
     region_canonical = alerts_canonical_region(region_original)
-    type_code = str(payload.get("type") or payload.get("alert_type") or "unknown").strip().lower() or "unknown"
+
     started_at = payload.get("started_at") or payload.get("start") or payload.get("timestamp") or ""
-    ended_at = payload.get("ended_at") or payload.get("end") or payload.get("finished_at") or ""
-    message = str(payload.get("message") or payload.get("text") or "").strip()
-    source = str(payload.get("source") or payload.get("issuer") or "").strip()
-    extra_raw = payload.get("extra")
-    if not isinstance(extra_raw, dict):
-        extra_raw = {}
+    ended_at = payload.get("finished_at") or payload.get("ended_at") or payload.get("end") or ""
+    updated_at = payload.get("updated_at") or payload.get("last_updated_at") or datetime.now(timezone.utc).isoformat()
+
+    severity_note, cause, details, message_note, source_note = alerts_extract_note_fields(payload)
+    message = str(payload.get("message") or payload.get("text") or message_note or cause or details or "").strip()
+    source = str(payload.get("source") or payload.get("issuer") or source_note or "alerts.in.ua").strip()
+
+    severity_code = alerts_normalize_severity(payload.get("severity") or severity_note, type_code)
+
+    notes_clean = alerts_sanitize_notes(payload.get("notes"))
     extra_payload = {
-        "location": extra_raw.get("location") or payload.get("location") or "",
-        "severity": (payload.get("severity") or extra_raw.get("severity") or "").strip().lower(),
-        "cause": extra_raw.get("cause") or payload.get("cause") or "",
-        "details": extra_raw.get("details") or payload.get("details") or "",
+        "location": location_title or region_original,
+        "severity": severity_code,
+        "cause": cause,
+        "details": details,
+        "severity_note": severity_note,
+        "type_raw": raw_type,
+        "location_type": payload.get("location_type"),
+        "location_uid": payload.get("location_uid"),
+        "oblast_uid": payload.get("location_oblast_uid") or payload.get("oblast_uid"),
+        "oblast_title": oblast_title or region_original,
+        "notes": notes_clean,
     }
+
+    clean_extra: Dict[str, Any] = {}
+    for key, value in extra_payload.items():
+        if key == "severity":
+            clean_extra[key] = value
+            continue
+        if key == "notes":
+            if value:
+                clean_extra[key] = value
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, "", []):
+            continue
+        clean_extra[key] = value
+    clean_extra.setdefault("severity", severity_code)
+
     return {
         "id": event_id,
         "type": type_code or "unknown",
+        "type_raw": raw_type or "unknown",
         "region": region_canonical or region_original,
         "region_display": region_original or region_canonical or "",
         "started_at": str(started_at) if started_at else "",
         "ended_at": str(ended_at) if ended_at else "",
         "message": message,
-        "source": source,
-        "extra": extra_payload,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "source": source or "alerts.in.ua",
+        "extra": clean_extra,
+        "updated_at": str(updated_at) if updated_at else datetime.now(timezone.utc).isoformat(),
     }
 
 
-def alerts_fetch_remote() -> Tuple[bool, str, List[Dict[str, Any]]]:
+def _alerts_user_agent() -> str:
+    base = "Bot.BSG-alerts/1.0 (+https://alerts.in.ua)"
+    token = ALERTS_API_TOKEN or ""
+    if len(token) >= 5:
+        return f"{base} token:{token[:5]}"
+    return base
+
+
+def _alerts_request_headers() -> Dict[str, str]:
     if not ALERTS_API_TOKEN:
-        return False, "API token is empty", []
-    headers = {
+        return {}
+    return {
         "Authorization": f"Bearer {ALERTS_API_TOKEN}",
         "X-API-Key": ALERTS_API_TOKEN,
+        "Accept": "application/json",
+        "Accept-Language": "uk-UA",
+        "User-Agent": _alerts_user_agent(),
     }
-    params = {"token": ALERTS_API_TOKEN}
+
+
+def _alerts_api_get(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Tuple[bool, str, Any]:
+    if not ALERTS_API_TOKEN:
+        return False, "API token is empty", None
+    endpoint = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+    url = f"{ALERTS_API_BASE_URL}{endpoint}"
+    headers = _alerts_request_headers()
     try:
-        response = requests.get(ALERTS_API_URL, headers=headers, params=params, timeout=ALERTS_API_TIMEOUT)
+        response = requests.get(url, headers=headers, params=params, timeout=ALERTS_API_TIMEOUT)
+    except requests.RequestException as exc:
+        return False, str(exc), None
+    try:
         response.raise_for_status()
     except requests.RequestException as exc:
-        return False, f"Запрос тревог не удался: {exc}", []
+        return False, str(exc), None
+    if response.status_code == 204:
+        return True, "", {}
     try:
         data = response.json()
     except ValueError:
-        return False, "Некорректный ответ тревог", []
-    if isinstance(data, dict):
-        if isinstance(data.get("alerts"), list):
-            items = data["alerts"]
-        elif isinstance(data.get("data"), list):
-            items = data["data"]
-        else:
-            items = [data]
-    elif isinstance(data, list):
-        items = data
-    else:
-        items = []
+        return False, "Некорректный ответ тревог", None
+    return True, "", data
+
+
+def alerts_fetch_remote() -> Tuple[bool, str, List[Dict[str, Any]]]:
+    ok, error, data = _alerts_api_get(ALERTS_API_ACTIVE_ENDPOINT)
+    if not ok:
+        return False, f"Запрос тревог не удался: {error}", []
+    if not isinstance(data, dict):
+        return True, "", []
+    items = data.get("alerts")
+    if not isinstance(items, list):
+        items = data.get("data") if isinstance(data.get("data"), list) else []
     events: List[Dict[str, Any]] = []
     for item in items:
         normalized = alerts_normalize_event(item)
-        if not normalized:
-            continue
-        events.append(normalized)
+        if normalized:
+            events.append(normalized)
     return True, "", events
+
+
+def alerts_fetch_history_by_oblast(oblast_uid: Union[int, str], period: str = ALERTS_DEFAULT_HISTORY_PERIOD) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    if not oblast_uid:
+        return False, "Порожній ідентифікатор області", []
+    endpoint = ALERTS_API_HISTORY_TEMPLATE.format(uid=oblast_uid, period=period or ALERTS_DEFAULT_HISTORY_PERIOD)
+    ok, error, data = _alerts_api_get(endpoint)
+    if not ok:
+        return False, error, []
+    if isinstance(data, dict):
+        items = data.get("alerts") or data.get("data") or []
+    else:
+        items = data if isinstance(data, list) else []
+    events: List[Dict[str, Any]] = []
+    for item in items:
+        normalized = alerts_normalize_event(item)
+        if normalized:
+            events.append(normalized)
+    return True, "", events
+
+
+def alerts_history_events(oblast_uid: Union[int, str]) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    key = str(oblast_uid)
+    now = datetime.now(timezone.utc)
+    cached = alerts_history_cache.get(key)
+    if cached:
+        fetched_at = cached.get("fetched_at")
+        if isinstance(fetched_at, datetime) and (now - fetched_at).total_seconds() < ALERTS_HISTORY_CACHE_TTL:
+            return True, "", cached.get("events", [])
+    ok, error, events = alerts_fetch_history_by_oblast(oblast_uid)
+    if ok:
+        alerts_history_cache[key] = {"fetched_at": now, "events": events}
+    return ok, error, events
+
+
+def alerts_merge_extra(base: Optional[Dict[str, Any]], update: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = dict(base or {})
+    for key, value in (update or {}).items():
+        if key == "notes":
+            if value:
+                merged[key] = value
+            continue
+        if key == "severity":
+            if value:
+                merged[key] = value
+            elif "severity" not in merged:
+                merged[key] = value
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, "", []):
+            continue
+        merged[key] = value
+    return merged
+
+
+def alerts_enrich_from_history(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    extra = event.get("extra") or {}
+    oblast_uid = extra.get("oblast_uid")
+    if not oblast_uid:
+        return None
+    ok, error, history_events = alerts_history_events(oblast_uid)
+    if not ok:
+        if error:
+            print(f"[alerts] history fetch failed for oblast {oblast_uid}: {error}")
+        return None
+    event_id = str(event.get("id"))
+    for hist_event in history_events:
+        if str(hist_event.get("id")) != event_id:
+            continue
+        merged_extra = alerts_merge_extra(event.get("extra"), hist_event.get("extra"))
+        if "severity" not in merged_extra:
+            merged_extra["severity"] = alerts_normalize_severity(None, hist_event.get("type") or event.get("type") or "unknown")
+        return {
+            "ended_at": hist_event.get("ended_at") or event.get("ended_at"),
+            "message": hist_event.get("message") or event.get("message"),
+            "source": hist_event.get("source") or event.get("source"),
+            "extra": merged_extra,
+            "region": hist_event.get("region") or event.get("region"),
+            "region_display": hist_event.get("region_display") or event.get("region_display"),
+            "started_at": hist_event.get("started_at") or event.get("started_at"),
+            "updated_at": hist_event.get("updated_at") or event.get("updated_at"),
+        }
+    return None
 
 
 def alerts_refresh_once() -> Tuple[List[str], List[str]]:
@@ -4356,26 +4695,38 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
     state = _alerts_load_state()
     events_map = state.setdefault("events", {})
     regions_map = state.setdefault("regions", {})
+
+    previous_active_ids: Set[str] = {str(eid) for eid, payload in events_map.items() if not payload.get("ended_at")}
     start_notify: List[str] = []
     end_notify: List[str] = []
+    seen_ids: Set[str] = set()
+
     for event in events:
-        event_id = event["id"]
+        event_id = str(event["id"])
+        seen_ids.add(event_id)
         stored = events_map.get(event_id)
         ended_now = bool(event.get("ended_at"))
         if stored:
             previously_ended = bool(stored.get("ended_at"))
+            merged_extra = alerts_merge_extra(stored.get("extra"), event.get("extra"))
             stored.update(event)
+            if merged_extra:
+                stored["extra"] = merged_extra
             if not previously_ended and ended_now:
                 stored.setdefault("notified_end", False)
-                end_notify.append(event_id)
+                if event_id not in end_notify:
+                    end_notify.append(event_id)
         else:
             event["notified_start"] = bool(ended_now)
             event["notified_end"] = False
             events_map[event_id] = event
             if ended_now:
-                end_notify.append(event_id)
+                if event_id not in end_notify:
+                    end_notify.append(event_id)
             else:
-                start_notify.append(event_id)
+                if event_id not in start_notify:
+                    start_notify.append(event_id)
+
         region_key = event.get("region") or ""
         bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
         history = bucket.setdefault("history", [])
@@ -4389,9 +4740,35 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
         else:
             if event_id not in active:
                 active.append(event_id)
+
+    missing_active = previous_active_ids - seen_ids
+    if missing_active:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for event_id in list(missing_active):
+            stored = events_map.get(event_id)
+            if not stored or stored.get("ended_at"):
+                continue
+            enriched = alerts_enrich_from_history(stored)
+            if enriched:
+                merged_extra = alerts_merge_extra(stored.get("extra"), enriched.get("extra"))
+                stored.update({k: v for k, v in enriched.items() if k != "extra"})
+                if merged_extra:
+                    stored["extra"] = merged_extra
+            else:
+                stored["ended_at"] = now_iso
+            stored.setdefault("notified_end", False)
+            if event_id not in end_notify:
+                end_notify.append(event_id)
+            region_key = stored.get("region") or ""
+            bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+            active = bucket.setdefault("active", [])
+            if event_id in active:
+                active.remove(event_id)
+
     for region_key, bucket in regions_map.items():
         active = bucket.get("active", [])
         bucket["active"] = [eid for eid in active if not events_map.get(eid, {}).get("ended_at")]
+
     state["last_fetch"] = datetime.now(timezone.utc).isoformat()
     _alerts_save_state()
     return start_notify, end_notify
