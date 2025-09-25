@@ -93,7 +93,9 @@ ALERTS_POLL_INTERVAL = 5  # seconds
 ALERTS_HISTORY_CACHE_TTL = 300  # seconds
 ALERTS_STANDDOWN_DISPLAY_WINDOW = 90 * 60  # seconds
 ALERTS_DIRNAME = "alerts"
-ALERTS_HISTORY_FILENAME = "history.json"
+ALERTS_STATE_FILENAME = "state.json"
+ALERTS_HISTORY_DIRNAME = "history"
+ALERTS_LEGACY_HISTORY_FILENAME = "history.json"
 ALERTS_USERS_FILENAME = "subscriptions.json"
 ALERTS_TIMELINE_KEY = "timeline"
 
@@ -144,11 +146,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Активный объект пока не выбран.\nПопросите администратора включить проект, чтобы открыть рабочие разделы.\n\n📋 <b>Меню действий</b>\nИспользуйте кнопки ниже, чтобы изучить доступные возможности.",
     },
     "ANCHOR_PROJECT": {
-        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
-        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
-        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
-        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
-        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Область: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
+        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Oblast: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
+        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Oblast: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
+        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Obwód: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
+        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Область: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
     },
     "ANCHOR_PROJECT_BSG_SUMMARY": {
         "uk": "🏢 Посилки BSG: усього — <b>{total}</b> • забрати — <b>{pending}</b> • отримано — <b>{delivered}</b>",
@@ -160,30 +162,30 @@ TEXTS: Dict[str, Dict[str, str]] = {
     "ANCHOR_ALERT_SUMMARY": {
         "uk": "🇺🇦 Активні тривоги: <b>{count}</b> областей",
         "en": "🇺🇦 Active alerts: <b>{count}</b> oblasts",
-        "de": "🇺🇦 Aktive Alarme: <b>{count}</b> Regionen",
+        "de": "🇺🇦 Aktive Alarme: <b>{count}</b> Oblasten",
         "pl": "🇺🇦 Aktywne alarmy: <b>{count}</b> obwodów",
         "ru": "🇺🇦 Активные тревоги: <b>{count}</b> областей",
     },
     "ANCHOR_ALERT_ACTIVE": {
-        "uk": "🚨 Тривога у регіоні <b>{region}</b> • {type} • від {start} • {severity}",
-        "en": "🚨 Alert in <b>{region}</b> • {type} • since {start} • {severity}",
-        "de": "🚨 Alarm in <b>{region}</b> • {type} • seit {start} • {severity}",
-        "pl": "🚨 Alarm w regionie <b>{region}</b> • {type} • od {start} • {severity}",
-        "ru": "🚨 Тревога в регионе <b>{region}</b> • {type} • с {start} • {severity}",
+        "uk": "🚨 Тривога у <b>{region}</b> • {type} • від {start} • {severity}",
+        "en": "🚨 Alert for <b>{region}</b> oblast • {type} • since {start} • {severity}",
+        "de": "🚨 Alarm für Oblast <b>{region}</b> • {type} • seit {start} • {severity}",
+        "pl": "🚨 Alarm w obwodzie <b>{region}</b> • {type} • od {start} • {severity}",
+        "ru": "🚨 Тревога в <b>{region}</b> • {type} • с {start} • {severity}",
     },
     "ANCHOR_ALERT_RECENT": {
         "uk": "🟡 Остання тривога у <b>{region}</b> • {type} • {start} → {end}",
-        "en": "🟡 Last alert in <b>{region}</b> • {type} • {start} → {end}",
-        "de": "🟡 Letzter Alarm in <b>{region}</b> • {type} • {start} → {end}",
-        "pl": "🟡 Ostatni alarm w <b>{region}</b> • {type} • {start} → {end}",
+        "en": "🟡 Last alert for <b>{region}</b> oblast • {type} • {start} → {end}",
+        "de": "🟡 Letzter Alarm für Oblast <b>{region}</b> • {type} • {start} → {end}",
+        "pl": "🟡 Ostatni alarm w obwodzie <b>{region}</b> • {type} • {start} → {end}",
         "ru": "🟡 Последняя тревога в <b>{region}</b> • {type} • {start} → {end}",
     },
     "ANCHOR_ALERT_CALM": {
-        "uk": "🟢 У регіоні <b>{region}</b> відбій тривоги.",
-        "en": "🟢 <b>{region}</b> — alert cleared.",
-        "de": "🟢 In <b>{region}</b> wurde der Alarm aufgehoben.",
-        "pl": "🟢 W regionie <b>{region}</b> alarm odwołано.",
-        "ru": "🟢 В регионе <b>{region}</b> отбой тревоги.",
+        "uk": "🟢 В області <b>{region}</b> відбій тривоги.",
+        "en": "🟢 <b>{region}</b> oblast — alert cleared.",
+        "de": "🟢 In der Oblast <b>{region}</b> wurde der Alarm aufgehoben.",
+        "pl": "🟢 W obwodzie <b>{region}</b> alarm odwołano.",
+        "ru": "🟢 В области <b>{region}</b> отбой тревоги.",
     },
     "ANCHOR_ALERT_CAUSE": {
         "uk": "🎯 Причина: {cause}",
@@ -1417,8 +1419,6 @@ def ensure_project_structure(name: str):
     os.makedirs(proj_pdf_dir(name), exist_ok=True)
     os.makedirs(os.path.join(proj_path(name), "receipts"), exist_ok=True)
     os.makedirs(proj_photos_dir(name), exist_ok=True)
-    alerts_dir = os.path.join(proj_path(name), ALERTS_DIRNAME)
-    os.makedirs(alerts_dir, exist_ok=True)
     if not os.path.exists(proj_finance_file(name)):
         json.dump({"requests": {}}, open(proj_finance_file(name), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     if not os.path.exists(proj_ledger(name)):
@@ -1428,18 +1428,13 @@ def ensure_project_structure(name: str):
         wb.save(proj_ledger(name))
     if not os.path.exists(proj_photos_meta(name)):
         save_project_photos(name, [])
-    history_path = os.path.join(alerts_dir, ALERTS_HISTORY_FILENAME)
-    if not os.path.exists(history_path):
-        json.dump(_alerts_blank_state(), open(history_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    subs_path = os.path.join(alerts_dir, ALERTS_USERS_FILENAME)
-    if not os.path.exists(subs_path):
-        json.dump(_alerts_blank_user_state(), open(subs_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     if not os.path.exists(proj_info_file(name)):
         existing_codes = _project_existing_codes(exclude=name)
         info = {"name": name, "location": "", "description": "",
                 "start_date": "", "end_date": "", "region": "", "code": generate_project_code(name, existing_codes),
                 "active": False, "pdf": [], "created": datetime.now().isoformat()}
         json.dump(info, open(proj_info_file(name), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    _alerts_ensure_storage(name)
 
 def list_projects() -> List[str]:
     ensure_dirs()
@@ -4139,20 +4134,124 @@ def _alerts_context_key(project: Optional[str] = None) -> str:
 
 
 def alerts_storage_root(project: Optional[str] = None) -> str:
-    if project:
-        root = os.path.join(proj_path(project), ALERTS_DIRNAME)
-    else:
-        root = ALERTS_STORAGE_BASE
+    base = ALERTS_STORAGE_BASE
+    os.makedirs(base, exist_ok=True)
+    folder = project or "__global__"
+    root = os.path.join(base, folder)
     os.makedirs(root, exist_ok=True)
     return root
 
 
-def alerts_history_file(project: Optional[str] = None) -> str:
-    return os.path.join(alerts_storage_root(project), ALERTS_HISTORY_FILENAME)
+def alerts_state_file(project: Optional[str] = None) -> str:
+    return os.path.join(alerts_storage_root(project), ALERTS_STATE_FILENAME)
+
+
+def alerts_history_dir(project: Optional[str] = None) -> str:
+    path = os.path.join(alerts_storage_root(project), ALERTS_HISTORY_DIRNAME)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def alerts_history_file(project: Optional[str] = None, day_key: Optional[str] = None) -> str:
+    day = day_key or alerts_today_key()
+    return os.path.join(alerts_history_dir(project), f"{day}.json")
 
 
 def alerts_users_file(project: Optional[str] = None) -> str:
     return os.path.join(alerts_storage_root(project), ALERTS_USERS_FILENAME)
+
+
+def _alerts_save_timeline(project: Optional[str], timeline: List[Dict[str, Any]], day_key: Optional[str] = None) -> None:
+    path = alerts_history_file(project, day_key)
+    tmp_file = f"{path}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(timeline, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, path)
+
+
+def _alerts_load_timeline(project: Optional[str], day_key: Optional[str] = None) -> List[Dict[str, Any]]:
+    path = alerts_history_file(project, day_key)
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if isinstance(payload, list):
+            return payload
+    except Exception:
+        pass
+    return []
+
+
+def _alerts_write_state_payload(project: Optional[str], payload: Dict[str, Any]) -> None:
+    timeline = list(payload.get(ALERTS_TIMELINE_KEY) or [])
+    day_key = payload.get("_timeline_day") or alerts_today_key()
+    state_copy = dict(payload)
+    state_copy.pop(ALERTS_TIMELINE_KEY, None)
+    state_copy.pop("_timeline_day", None)
+    state_copy.pop("_context_project", None)
+    path = alerts_state_file(project)
+    tmp_file = f"{path}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(state_copy, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, path)
+    _alerts_save_timeline(project, timeline, day_key)
+
+
+def _alerts_migrate_legacy(project: Optional[str]) -> None:
+    if not project:
+        return
+    legacy_root = os.path.join(proj_path(project), ALERTS_DIRNAME)
+    if not os.path.isdir(legacy_root):
+        return
+    state_path = alerts_state_file(project)
+    subs_path = alerts_users_file(project)
+    migrated = False
+    if not os.path.exists(state_path):
+        legacy_history = os.path.join(legacy_root, ALERTS_LEGACY_HISTORY_FILENAME)
+        if os.path.exists(legacy_history):
+            try:
+                with open(legacy_history, "r", encoding="utf-8") as fh:
+                    legacy_payload = json.load(fh)
+                if not isinstance(legacy_payload, dict):
+                    raise ValueError("Invalid legacy alerts state")
+            except Exception:
+                legacy_payload = _alerts_blank_state()
+            payload = _alerts_blank_state()
+            payload.update({
+                "events": legacy_payload.get("events", {}),
+                "regions": legacy_payload.get("regions", {}),
+                "last_fetch": legacy_payload.get("last_fetch"),
+            })
+            timeline = legacy_payload.get(ALERTS_TIMELINE_KEY)
+            if isinstance(timeline, list):
+                payload[ALERTS_TIMELINE_KEY] = timeline
+            payload["_timeline_day"] = alerts_today_key()
+            payload["_context_project"] = project
+            _alerts_write_state_payload(project, payload)
+            migrated = True
+    if not os.path.exists(subs_path):
+        legacy_subs = os.path.join(legacy_root, ALERTS_USERS_FILENAME)
+        if os.path.exists(legacy_subs):
+            try:
+                with open(legacy_subs, "r", encoding="utf-8") as fh:
+                    subs_payload = json.load(fh)
+                if isinstance(subs_payload, dict):
+                    tmp_file = f"{subs_path}.tmp"
+                    with open(tmp_file, "w", encoding="utf-8") as fh:
+                        json.dump(subs_payload, fh, ensure_ascii=False, indent=2)
+                    os.replace(tmp_file, subs_path)
+                    migrated = True
+            except Exception:
+                pass
+    if migrated:
+        try:
+            legacy_marker = os.path.join(legacy_root, "migrated.txt")
+            with open(legacy_marker, "w", encoding="utf-8") as fh:
+                fh.write(alerts_now().isoformat())
+        except Exception:
+            pass
+
 
 if ZoneInfo:
     try:
@@ -4394,7 +4493,7 @@ ALERTS_STATUS_TEXT: Dict[str, Dict[str, str]] = {
 ALERTS_LOCATION_TYPE_LABELS: Dict[str, Dict[str, str]] = {
     "oblast": {
         "uk": "Область",
-        "en": "Region",
+        "en": "Oblast",
         "de": "Oblast",
         "pl": "Obwód",
         "ru": "Область",
@@ -4448,7 +4547,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 УВАГА! ТРИВОГА 🚨",
         "header_ended": "🟢 ВІДБІЙ ТРИВОГИ",
         "type": "Тип",
-        "region": "Регіон",
+        "region": "Область",
         "location": "Локація",
         "location_type": "Тип локації",
         "coordinates": "Координати",
@@ -4466,7 +4565,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 ALERT IN PROGRESS 🚨",
         "header_ended": "🟢 ALERT ENDED",
         "type": "Type",
-        "region": "Region",
+        "region": "Oblast",
         "location": "Location",
         "location_type": "Location type",
         "coordinates": "Coordinates",
@@ -4484,7 +4583,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 ALARM AKTIV 🚨",
         "header_ended": "🟢 ALARM BEENDET",
         "type": "Art",
-        "region": "Region",
+        "region": "Oblast",
         "location": "Ort",
         "location_type": "Ortstyp",
         "coordinates": "Koordinaten",
@@ -4502,7 +4601,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 TRWA ALARM 🚨",
         "header_ended": "🟢 ALARM ODWOŁANY",
         "type": "Typ",
-        "region": "Region",
+        "region": "Obwód",
         "location": "Lokalizacja",
         "location_type": "Typ lokalizacji",
         "coordinates": "Współrzędne",
@@ -4520,7 +4619,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 ТРЕВОГА! 🚨",
         "header_ended": "🟢 ОТБОЙ ТРЕВОГИ",
         "type": "Тип",
-        "region": "Регион",
+        "region": "Область",
         "location": "Локация",
         "location_type": "Тип локации",
         "coordinates": "Координаты",
@@ -4539,49 +4638,70 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
 
 def _alerts_ensure_storage(project: Optional[str] = None) -> None:
     alerts_storage_root(project)
+    _alerts_migrate_legacy(project)
 
 
 def _alerts_blank_state() -> Dict[str, Any]:
-    return {"events": {}, "regions": {}, "last_fetch": None, ALERTS_TIMELINE_KEY: []}
+    return {
+        "events": {},
+        "regions": {},
+        "last_fetch": None,
+        ALERTS_TIMELINE_KEY: [],
+        "_timeline_day": alerts_today_key(),
+        "_context_project": None,
+    }
+
+
+def _alerts_refresh_timeline_day(state: Dict[str, Any], project: Optional[str]) -> None:
+    expected_day = alerts_today_key()
+    current_day = state.get("_timeline_day")
+    if current_day == expected_day:
+        return
+    context_project = project if project is not None else state.get("_context_project")
+    timeline = _alerts_load_timeline(context_project, expected_day)
+    state[ALERTS_TIMELINE_KEY] = timeline
+    state["_timeline_day"] = expected_day
 
 
 def _alerts_load_state(project: Optional[str] = None) -> Dict[str, Any]:
     key = _alerts_context_key(project)
     cached = _alerts_state_cache.get(key)
-    if cached is not None:
-        return cached
     resolved = _alerts_resolve_project(project)
+    if cached is not None:
+        _alerts_refresh_timeline_day(cached, resolved)
+        return cached
     _alerts_ensure_storage(resolved)
-    path = alerts_history_file(resolved)
-    if not os.path.exists(path):
-        payload = _alerts_blank_state()
-        _alerts_state_cache[key] = payload
-        _alerts_save_state(project)
-        return payload
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            payload = json.load(fh)
-        if not isinstance(payload, dict):
-            raise ValueError("Invalid alerts state")
-    except Exception:
+    path = alerts_state_file(resolved)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid alerts state")
+        except Exception:
+            payload = _alerts_blank_state()
+    else:
         payload = _alerts_blank_state()
     payload.setdefault("events", {})
     payload.setdefault("regions", {})
     payload.setdefault("last_fetch", None)
-    payload.setdefault(ALERTS_TIMELINE_KEY, [])
+    payload.setdefault("_timeline_day", alerts_today_key())
+    timeline_day = payload.get("_timeline_day") or alerts_today_key()
+    payload[ALERTS_TIMELINE_KEY] = _alerts_load_timeline(resolved, timeline_day)
+    _alerts_refresh_timeline_day(payload, resolved)
+    payload["_context_project"] = resolved
     _alerts_state_cache[key] = payload
     return payload
 
 
 def _alerts_save_state(project: Optional[str] = None) -> None:
     def _write(target_key: str, payload: Dict[str, Any]) -> None:
+        if payload is None:
+            return
         resolved = None if target_key == "__global__" else target_key
+        _alerts_refresh_timeline_day(payload, resolved)
         _alerts_ensure_storage(resolved)
-        path = alerts_history_file(resolved)
-        tmp_file = f"{path}.tmp"
-        with open(tmp_file, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, ensure_ascii=False, indent=2)
-        os.replace(tmp_file, path)
+        _alerts_write_state_payload(resolved, payload)
 
     if project is None:
         for key, payload in list(_alerts_state_cache.items()):
@@ -5108,6 +5228,7 @@ def _alerts_timeline_bucket(state: Dict[str, Any]) -> List[Dict[str, Any]]:
 def alerts_record_timeline(state: Dict[str, Any], event_ids: List[str], kind: str) -> None:
     if not event_ids:
         return
+    _alerts_refresh_timeline_day(state, state.get("_context_project"))
     events_map = state.get("events", {})
     timeline = _alerts_timeline_bucket(state)
     recorded_at = alerts_now().isoformat()
@@ -5180,6 +5301,10 @@ def alerts_now() -> datetime:
     except Exception:
         tz = timezone.utc
     return datetime.now(tz)
+
+
+def alerts_today_key() -> str:
+    return alerts_now().strftime("%Y-%m-%d")
 
 
 def alerts_format_timestamp(value: Optional[str]) -> str:
