@@ -92,6 +92,10 @@ ALERTS_API_TIMEOUT = 15
 ALERTS_POLL_INTERVAL = 5  # seconds
 ALERTS_HISTORY_CACHE_TTL = 300  # seconds
 ALERTS_STANDDOWN_DISPLAY_WINDOW = 90 * 60  # seconds
+ALERTS_DIRNAME = "alerts"
+ALERTS_HISTORY_FILENAME = "history.json"
+ALERTS_USERS_FILENAME = "subscriptions.json"
+ALERTS_TIMELINE_KEY = "timeline"
 
 UKRAINE_REGIONS = [
     "Винницкая область",
@@ -103,7 +107,6 @@ UKRAINE_REGIONS = [
     "Запорожская область",
     "Ивано-Франковская область",
     "Киевская область",
-    "г. Киев",
     "Кировоградская область",
     "Луганская область",
     "Львовская область",
@@ -120,6 +123,7 @@ UKRAINE_REGIONS = [
     "Черниговская область",
     "Черновицкая область",
 ]
+UKRAINE_REGIONS_SET: Set[str] = set(UKRAINE_REGIONS)
 
 LANG_ORDER = [
     ("uk", "🇺🇦 Українська"),
@@ -1131,7 +1135,7 @@ def ensure_dirs():
     os.makedirs(BASE_PATH, exist_ok=True)
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
-    os.makedirs(ALERTS_STORAGE_DIR, exist_ok=True)
+    os.makedirs(ALERTS_STORAGE_BASE, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -1413,6 +1417,8 @@ def ensure_project_structure(name: str):
     os.makedirs(proj_pdf_dir(name), exist_ok=True)
     os.makedirs(os.path.join(proj_path(name), "receipts"), exist_ok=True)
     os.makedirs(proj_photos_dir(name), exist_ok=True)
+    alerts_dir = os.path.join(proj_path(name), ALERTS_DIRNAME)
+    os.makedirs(alerts_dir, exist_ok=True)
     if not os.path.exists(proj_finance_file(name)):
         json.dump({"requests": {}}, open(proj_finance_file(name), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     if not os.path.exists(proj_ledger(name)):
@@ -1422,6 +1428,12 @@ def ensure_project_structure(name: str):
         wb.save(proj_ledger(name))
     if not os.path.exists(proj_photos_meta(name)):
         save_project_photos(name, [])
+    history_path = os.path.join(alerts_dir, ALERTS_HISTORY_FILENAME)
+    if not os.path.exists(history_path):
+        json.dump(_alerts_blank_state(), open(history_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    subs_path = os.path.join(alerts_dir, ALERTS_USERS_FILENAME)
+    if not os.path.exists(subs_path):
+        json.dump(_alerts_blank_user_state(), open(subs_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     if not os.path.exists(proj_info_file(name)):
         existing_codes = _project_existing_codes(exclude=name)
         info = {"name": name, "location": "", "description": "",
@@ -4110,12 +4122,37 @@ async def back_root(c: types.CallbackQuery):
 
 
 # ========================== ALERTS STORAGE ==========================
-ALERTS_STORAGE_DIR = os.path.join("data", "alerts")
-ALERTS_DATA_FILE = os.path.join(ALERTS_STORAGE_DIR, "events.json")
-ALERTS_USERS_FILE = os.path.join(ALERTS_STORAGE_DIR, "users.json")
-ALERTS_MAX_HISTORY = 100
-_alerts_state_cache: Optional[Dict[str, Any]] = None
-_alerts_user_cache: Optional[Dict[str, Any]] = None
+ALERTS_STORAGE_BASE = os.path.join("data", ALERTS_DIRNAME)
+_alerts_state_cache: Dict[str, Dict[str, Any]] = {}
+_alerts_user_cache: Dict[str, Dict[str, Any]] = {}
+
+
+def _alerts_resolve_project(project: Optional[str] = None) -> Optional[str]:
+    if project is not None:
+        return project
+    return active_project.get("name")
+
+
+def _alerts_context_key(project: Optional[str] = None) -> str:
+    resolved = _alerts_resolve_project(project)
+    return resolved or "__global__"
+
+
+def alerts_storage_root(project: Optional[str] = None) -> str:
+    if project:
+        root = os.path.join(proj_path(project), ALERTS_DIRNAME)
+    else:
+        root = ALERTS_STORAGE_BASE
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def alerts_history_file(project: Optional[str] = None) -> str:
+    return os.path.join(alerts_storage_root(project), ALERTS_HISTORY_FILENAME)
+
+
+def alerts_users_file(project: Optional[str] = None) -> str:
+    return os.path.join(alerts_storage_root(project), ALERTS_USERS_FILENAME)
 
 if ZoneInfo:
     try:
@@ -4134,8 +4171,16 @@ ALERTS_REGION_EQUIVALENTS: Dict[str, List[str]] = {
     "Закарпатская область": ["Закарпатська область", "Zakarpatska oblast", "Zakarpattia region"],
     "Запорожская область": ["Запорізька область", "Zaporizka oblast", "Zaporizhzhia region"],
     "Ивано-Франковская область": ["Івано-Франківська область", "Ivano-Frankivska oblast", "Ivano-Frankivsk region"],
-    "Киевская область": ["Київська область", "Kyivska oblast", "Kyiv region"],
-    "г. Киев": ["м. Київ", "Київ", "Kyiv", "Kiev"],
+    "Киевская область": [
+        "Київська область",
+        "Kyivska oblast",
+        "Kyiv region",
+        "м. Київ",
+        "Київ",
+        "Kyiv",
+        "Kiev",
+        "Kyiv City",
+    ],
     "Кировоградская область": ["Кіровоградська область", "Kirovohradska oblast", "Kirovohrad region"],
     "Луганская область": ["Луганська область", "Luhanska oblast", "Luhansk region"],
     "Львовская область": ["Львівська область", "Lvivska oblast", "Lviv region"],
@@ -4492,25 +4537,29 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
 }
 
 
-def _alerts_ensure_storage() -> None:
-    os.makedirs(os.path.dirname(ALERTS_DATA_FILE), exist_ok=True)
+def _alerts_ensure_storage(project: Optional[str] = None) -> None:
+    alerts_storage_root(project)
 
 
 def _alerts_blank_state() -> Dict[str, Any]:
-    return {"events": {}, "regions": {}, "last_fetch": None}
+    return {"events": {}, "regions": {}, "last_fetch": None, ALERTS_TIMELINE_KEY: []}
 
 
-def _alerts_load_state() -> Dict[str, Any]:
-    global _alerts_state_cache
-    if _alerts_state_cache is not None:
-        return _alerts_state_cache
-    _alerts_ensure_storage()
-    if not os.path.exists(ALERTS_DATA_FILE):
-        _alerts_state_cache = _alerts_blank_state()
-        _alerts_save_state()
-        return _alerts_state_cache
+def _alerts_load_state(project: Optional[str] = None) -> Dict[str, Any]:
+    key = _alerts_context_key(project)
+    cached = _alerts_state_cache.get(key)
+    if cached is not None:
+        return cached
+    resolved = _alerts_resolve_project(project)
+    _alerts_ensure_storage(resolved)
+    path = alerts_history_file(resolved)
+    if not os.path.exists(path):
+        payload = _alerts_blank_state()
+        _alerts_state_cache[key] = payload
+        _alerts_save_state(project)
+        return payload
     try:
-        with open(ALERTS_DATA_FILE, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             payload = json.load(fh)
         if not isinstance(payload, dict):
             raise ValueError("Invalid alerts state")
@@ -4519,56 +4568,85 @@ def _alerts_load_state() -> Dict[str, Any]:
     payload.setdefault("events", {})
     payload.setdefault("regions", {})
     payload.setdefault("last_fetch", None)
-    _alerts_state_cache = payload
-    return _alerts_state_cache
+    payload.setdefault(ALERTS_TIMELINE_KEY, [])
+    _alerts_state_cache[key] = payload
+    return payload
 
 
-def _alerts_save_state() -> None:
-    if _alerts_state_cache is None:
+def _alerts_save_state(project: Optional[str] = None) -> None:
+    def _write(target_key: str, payload: Dict[str, Any]) -> None:
+        resolved = None if target_key == "__global__" else target_key
+        _alerts_ensure_storage(resolved)
+        path = alerts_history_file(resolved)
+        tmp_file = f"{path}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, path)
+
+    if project is None:
+        for key, payload in list(_alerts_state_cache.items()):
+            if payload is not None:
+                _write(key, payload)
         return
-    _alerts_ensure_storage()
-    tmp_file = f"{ALERTS_DATA_FILE}.tmp"
-    with open(tmp_file, "w", encoding="utf-8") as fh:
-        json.dump(_alerts_state_cache, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp_file, ALERTS_DATA_FILE)
+    key = _alerts_context_key(project)
+    payload = _alerts_state_cache.get(key)
+    if payload is None:
+        return
+    _write(key, payload)
 
 
 def _alerts_blank_user_state() -> Dict[str, Any]:
     return {}
 
 
-def _alerts_load_users() -> Dict[str, Any]:
-    global _alerts_user_cache
-    if _alerts_user_cache is not None:
-        return _alerts_user_cache
-    _alerts_ensure_storage()
-    if not os.path.exists(ALERTS_USERS_FILE):
-        _alerts_user_cache = _alerts_blank_user_state()
-        _alerts_save_users()
-        return _alerts_user_cache
+def _alerts_load_users(project: Optional[str] = None) -> Dict[str, Any]:
+    key = _alerts_context_key(project)
+    cached = _alerts_user_cache.get(key)
+    if cached is not None:
+        return cached
+    resolved = _alerts_resolve_project(project)
+    _alerts_ensure_storage(resolved)
+    path = alerts_users_file(resolved)
+    if not os.path.exists(path):
+        payload = _alerts_blank_user_state()
+        _alerts_user_cache[key] = payload
+        _alerts_save_users(project)
+        return payload
     try:
-        with open(ALERTS_USERS_FILE, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             payload = json.load(fh)
         if not isinstance(payload, dict):
             raise ValueError("Invalid alerts user state")
     except Exception:
         payload = _alerts_blank_user_state()
-    _alerts_user_cache = payload
-    return _alerts_user_cache
+    _alerts_user_cache[key] = payload
+    return payload
 
 
-def _alerts_save_users() -> None:
-    if _alerts_user_cache is None:
+def _alerts_save_users(project: Optional[str] = None) -> None:
+    def _write(target_key: str, payload: Dict[str, Any]) -> None:
+        resolved = None if target_key == "__global__" else target_key
+        _alerts_ensure_storage(resolved)
+        path = alerts_users_file(resolved)
+        tmp_file = f"{path}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, path)
+
+    if project is None:
+        for key, payload in list(_alerts_user_cache.items()):
+            if payload is not None:
+                _write(key, payload)
         return
-    _alerts_ensure_storage()
-    tmp_file = f"{ALERTS_USERS_FILE}.tmp"
-    with open(tmp_file, "w", encoding="utf-8") as fh:
-        json.dump(_alerts_user_cache, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp_file, ALERTS_USERS_FILE)
+    key = _alerts_context_key(project)
+    payload = _alerts_user_cache.get(key)
+    if payload is None:
+        return
+    _write(key, payload)
 
 
-def _alerts_user_entry(uid: int) -> Dict[str, Any]:
-    store = _alerts_load_users()
+def _alerts_user_entry(uid: int, project: Optional[str] = None) -> Dict[str, Any]:
+    store = _alerts_load_users(project)
     key = str(uid)
     created = key not in store
     entry = store.setdefault(key, {"regions": [], "last_seen": {}})
@@ -4577,7 +4655,7 @@ def _alerts_user_entry(uid: int) -> Dict[str, Any]:
     if not isinstance(entry.get("last_seen"), dict):
         entry["last_seen"] = {}
     if created:
-        _alerts_save_users()
+        _alerts_save_users(project)
     return entry
 
 
@@ -4956,7 +5034,6 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
         active = bucket.setdefault("active", [])
         if event_id not in history:
             history.insert(0, event_id)
-        del history[ALERTS_MAX_HISTORY:]
         if ended_now:
             if event_id in active:
                 active.remove(event_id)
@@ -4992,6 +5069,8 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
         active = bucket.get("active", [])
         bucket["active"] = [eid for eid in active if not events_map.get(eid, {}).get("ended_at")]
 
+    alerts_record_timeline(state, start_notify, "start")
+    alerts_record_timeline(state, end_notify, "end")
     state["last_fetch"] = datetime.now(timezone.utc).isoformat()
     _alerts_save_state()
     return start_notify, end_notify
@@ -5015,6 +5094,44 @@ def _alerts_mark_notified(event_id: str, kind: str) -> None:
     elif kind == "end":
         payload["notified_end"] = True
     _alerts_save_state()
+
+
+def _alerts_timeline_bucket(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    timeline = state.setdefault(ALERTS_TIMELINE_KEY, [])
+    if isinstance(timeline, list):
+        return timeline
+    timeline = []
+    state[ALERTS_TIMELINE_KEY] = timeline
+    return timeline
+
+
+def alerts_record_timeline(state: Dict[str, Any], event_ids: List[str], kind: str) -> None:
+    if not event_ids:
+        return
+    events_map = state.get("events", {})
+    timeline = _alerts_timeline_bucket(state)
+    recorded_at = alerts_now().isoformat()
+    for event_id in event_ids:
+        event = events_map.get(event_id)
+        if not event:
+            continue
+        canonical = alerts_canonical_region(event.get("region") or event.get("region_display"))
+        region_value = canonical or event.get("region") or event.get("region_display") or ""
+        extra = event.get("extra") or {}
+        entry = {
+            "event_id": event_id,
+            "kind": kind,
+            "region": region_value,
+            "type": event.get("type") or "",
+            "severity": extra.get("severity") or "",
+            "started_at": event.get("started_at"),
+            "ended_at": event.get("ended_at"),
+            "cause": extra.get("cause") or "",
+            "details": extra.get("details") or "",
+            "message": event.get("message") or "",
+            "recorded_at": recorded_at,
+        }
+        timeline.append(entry)
 
 
 def alerts_parse_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -5290,20 +5407,47 @@ def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
     return events
 
 
-def alerts_collect_history_for_user(uid: int, limit: int = 20) -> List[Dict[str, Any]]:
+def alerts_collect_history_for_user(uid: int, limit: int = 40) -> List[Dict[str, Any]]:
     state = _alerts_load_state()
     events_map = state.get("events", {})
+    regions_selected = {alerts_canonical_region(r) or r for r in alerts_user_regions(uid)}
     seen: Set[str] = set()
     collected: List[Dict[str, Any]] = []
-    for region in alerts_user_regions(uid):
-        bucket = state.get("regions", {}).get(region) or {}
-        for event_id in bucket.get("history", []):
-            if event_id in seen:
+    timeline = list(_alerts_timeline_bucket(state))
+    if timeline:
+        for entry in reversed(timeline):
+            event_id = str(entry.get("event_id") or "")
+            if not event_id or event_id in seen:
+                continue
+            region_value = alerts_canonical_region(entry.get("region")) or entry.get("region") or ""
+            if regions_selected and region_value and region_value not in regions_selected:
                 continue
             event = events_map.get(event_id)
-            if event:
-                collected.append(dict(event))
-                seen.add(event_id)
+            if not event:
+                continue
+            copy = dict(event)
+            if region_value:
+                copy.setdefault("region", region_value)
+            collected.append(copy)
+            seen.add(event_id)
+            if len(collected) >= limit:
+                break
+    if not collected:
+        fallback_regions = alerts_user_regions(uid)
+        for region in fallback_regions:
+            canonical = alerts_canonical_region(region) or region
+            bucket = state.get("regions", {}).get(canonical) or state.get("regions", {}).get(region) or {}
+            for event_id in bucket.get("history", []):
+                if event_id in seen:
+                    continue
+                event = events_map.get(event_id)
+                if event:
+                    collected.append(dict(event))
+                    seen.add(event_id)
+                if len(collected) >= limit:
+                    break
+            if len(collected) >= limit:
+                break
     collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
     return collected[:limit]
 
@@ -5317,7 +5461,10 @@ def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboa
         project_region = info.get("region") or ""
     canonical_project = alerts_canonical_region(project_region)
     selected = alerts_user_regions(uid)
-    selected_display = ", ".join(selected) if selected else "—"
+    lang = resolve_lang(uid)
+    selected_display = ", ".join(
+        alerts_display_region_name(name, lang, short=True) for name in selected
+    ) if selected else "—"
     lines = [tr(uid, "ALERTS_SUBS_HEADER")]
     if canonical_project:
         lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(canonical_project)))
@@ -5338,15 +5485,17 @@ def alerts_build_subscription_keyboard(uid: int, page: int, project_region: Opti
     chunk = UKRAINE_REGIONS[start:start + per_page]
     selected = {alerts_canonical_region(x) or x for x in alerts.get("regions", [])}
     kb = InlineKeyboardMarkup(row_width=2)
+    lang = resolve_lang(uid)
     for idx, region in enumerate(chunk):
         canonical = alerts_canonical_region(region) or region
+        label_text = alerts_display_region_name(canonical, lang, short=True)
         if project_region and canonical == alerts_canonical_region(project_region):
-            label = f"🔒 {canonical}"
+            label = f"🔒 {label_text}"
             callback = "alerts_locked"
         else:
             is_selected = canonical in selected
             prefix = "✅" if is_selected else "➕"
-            label = f"{prefix} {canonical}"
+            label = f"{prefix} {label_text}"
             callback = f"alerts_toggle:{page}:{start + idx}"
         kb.insert(InlineKeyboardButton(label, callback_data=callback))
     if total_pages > 1:
