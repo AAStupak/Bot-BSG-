@@ -4286,35 +4286,35 @@ ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
 ALERTS_SEVERITY_LABELS: Dict[str, Dict[str, str]] = {
     "low": {
         "icon": "🟢",
-        "uk": "Низький рівень",
-        "en": "Low level",
-        "de": "Niedriges Niveau",
-        "pl": "Niski poziom",
-        "ru": "Низкий уровень",
+        "uk": "Низький",
+        "en": "Low",
+        "de": "Niedrig",
+        "pl": "Niski",
+        "ru": "Низкий",
     },
     "medium": {
         "icon": "🟡",
-        "uk": "Серйозний рівень",
-        "en": "Serious level",
-        "de": "Ernstes Niveau",
-        "pl": "Poważny poziom",
-        "ru": "Серьёзный уровень",
+        "uk": "Серйозний",
+        "en": "Serious",
+        "de": "Ernst",
+        "pl": "Poważny",
+        "ru": "Серьёзный",
     },
     "high": {
         "icon": "🟠",
-        "uk": "Високий рівень",
-        "en": "High level",
-        "de": "Hohes Niveau",
-        "pl": "Wysoki poziom",
-        "ru": "Высокий уровень",
+        "uk": "Високий",
+        "en": "High",
+        "de": "Hoch",
+        "pl": "Wysoki",
+        "ru": "Высокий",
     },
     "critical": {
         "icon": "🔴",
-        "uk": "Небезпечний рівень",
-        "en": "Danger level",
-        "de": "Gefährliches Niveau",
-        "pl": "Niebezpieczny poziom",
-        "ru": "Опасный уровень",
+        "uk": "Небезпечний",
+        "en": "Critical",
+        "de": "Kritisch",
+        "pl": "Krytyczny",
+        "ru": "Опасный",
     },
 }
 
@@ -5480,14 +5480,18 @@ def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
         type_text = alerts_type_label(active_event, lang)
         severity_text = alerts_severity_label(active_event, lang)
         start_clock = alerts_format_clock(active_event.get("started_at"))
+        extra = active_event.get("extra") or {}
+        cause_text = extra.get("cause") or ""
         details: List[str] = []
         if type_text:
             details.append(type_text)
+        if cause_text:
+            details.append(cause_text)
         if severity_text:
             details.append(severity_text)
         if start_clock:
             details.append(start_clock)
-        line = f"🚨 <b>{h(display_region)}</b> — {h(status_labels['alert'])}"
+        line = f"🔴 <b>{h(display_region)}</b> — {h(status_labels['alert'])}"
         if details:
             line += " • " + " • ".join(h(part) for part in details if part)
         return line
@@ -5499,9 +5503,13 @@ def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
             severity_text = alerts_severity_label(last_event, lang)
             start_clock = alerts_format_clock(last_event.get("started_at"))
             end_clock = alerts_format_clock(last_event.get("ended_at"))
+            extra = last_event.get("extra") or {}
+            cause_text = extra.get("cause") or ""
             details: List[str] = []
             if type_text:
                 details.append(type_text)
+            if cause_text:
+                details.append(cause_text)
             if severity_text:
                 details.append(severity_text)
             time_segment = ""
@@ -5521,17 +5529,22 @@ def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
 
 
 def alerts_anchor_section(uid: int) -> str:
+    summary = alerts_active_summary_line(uid)
     regions: List[str] = []
     for region in alerts_user_regions(uid):
         canonical = alerts_canonical_region(region) or region
         if canonical and canonical not in regions:
             regions.append(canonical)
-    lines: List[str] = []
+    lines: List[str] = [summary] if summary else []
     for region in regions:
         block = alerts_anchor_region_block(uid, region)
         if block:
             lines.append(block)
-    return "\n".join(lines[:3])
+    if not lines:
+        return ""
+    head = lines[0]
+    tail = lines[1:4]
+    return "\n".join([head] + tail)
 
 
 def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
