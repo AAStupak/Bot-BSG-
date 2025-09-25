@@ -3911,11 +3911,20 @@ async def alerts_active_view(c: types.CallbackQuery):
         await c.answer()
         return
     lang = resolve_lang(uid)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    labels = alerts_field_labels(lang)
+    indent = "&nbsp;&nbsp;&nbsp;"
     lines = [tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events))]
     for idx, event in enumerate(events[:10], start=1):
-        region_display = event.get("region_display") or event.get("region") or "—"
-        summary = alerts_summarize_event(event, lang)
-        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+        region_display = alerts_display_region_name(event.get("region") or event.get("region_display") or "", lang)
+        start_text = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+        type_text = alerts_type_label(event, lang)
+        severity_text = alerts_severity_label(event, lang)
+        summary_parts = [status_labels["alert"], type_text]
+        if severity_text:
+            summary_parts.append(severity_text)
+        lines.append(f"{idx}. 🔴 <b>{h(region_display)}</b> — {h(' • '.join(summary_parts))}")
+        lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
     await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
     await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
     await c.answer()
@@ -3943,11 +3952,26 @@ async def alerts_history_view(c: types.CallbackQuery):
         await c.answer()
         return
     lang = resolve_lang(uid)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    labels = alerts_field_labels(lang)
+    indent = "&nbsp;&nbsp;&nbsp;"
     lines = [tr(uid, "ALERTS_HISTORY_HEADER", count=len(events))]
     for idx, event in enumerate(events[:10], start=1):
-        region_display = event.get("region_display") or event.get("region") or "—"
-        summary = alerts_summarize_event(event, lang)
-        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+        region_display = alerts_display_region_name(event.get("region") or event.get("region_display") or "", lang)
+        start_text = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+        end_text = alerts_format_timestamp(event.get("ended_at")) if event.get("ended_at") else labels["status_active"]
+        type_text = alerts_type_label(event, lang)
+        severity_text = alerts_severity_label(event, lang)
+        ended = bool(event.get("ended_at"))
+        status_key = "standdown" if ended else "alert"
+        status_icon = "🟡" if ended else "🔴"
+        summary_parts = [status_labels[status_key], type_text]
+        if severity_text:
+            summary_parts.append(severity_text)
+        lines.append(f"{idx}. {status_icon} <b>{h(region_display)}</b> — {h(' • '.join(summary_parts))}")
+        lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
+        if ended:
+            lines.append(f"{indent}🛑 {h(labels['ended'])}: {h(end_text)}")
     await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
     await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
     await c.answer()
@@ -4257,35 +4281,63 @@ ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
 ALERTS_SEVERITY_LABELS: Dict[str, Dict[str, str]] = {
     "low": {
         "icon": "🟢",
-        "uk": "Низький (увага)",
-        "en": "Low (attention)",
-        "de": "Niedrig (Achtung)",
-        "pl": "Niski (uwaga)",
-        "ru": "Низкий (внимание)",
+        "uk": "Низький рівень",
+        "en": "Low level",
+        "de": "Niedriges Niveau",
+        "pl": "Niski poziom",
+        "ru": "Низкий уровень",
     },
     "medium": {
-        "icon": "🟠",
-        "uk": "Середній (підвищена готовність)",
-        "en": "Medium (heightened readiness)",
-        "de": "Mittel (erhöhte Bereitschaft)",
-        "pl": "Średni (podwyższona gotowość)",
-        "ru": "Средний (повышенная готовность)",
+        "icon": "🟡",
+        "uk": "Серйозний рівень",
+        "en": "Serious level",
+        "de": "Ernstes Niveau",
+        "pl": "Poważny poziom",
+        "ru": "Серьёзный уровень",
     },
     "high": {
-        "icon": "🔴",
-        "uk": "Високий (серйозна небезпека)",
-        "en": "High (serious danger)",
-        "de": "Hoch (ernste Gefahr)",
-        "pl": "Wysoki (poważne zagrożenie)",
-        "ru": "Высокий (серьёзная опасность)",
+        "icon": "🟠",
+        "uk": "Високий рівень",
+        "en": "High level",
+        "de": "Hohes Niveau",
+        "pl": "Wysoki poziom",
+        "ru": "Высокий уровень",
     },
     "critical": {
-        "icon": "🟣",
-        "uk": "Критичний (максимальна небезпека)",
-        "en": "Critical (extreme danger)",
-        "de": "Kritisch (äußerste Gefahr)",
-        "pl": "Krytyczny (skrajne zagrożenie)",
-        "ru": "Критический (крайняя опасность)",
+        "icon": "🔴",
+        "uk": "Небезпечний рівень",
+        "en": "Danger level",
+        "de": "Gefährliches Niveau",
+        "pl": "Niebezpieczny poziom",
+        "ru": "Опасный уровень",
+    },
+}
+
+ALERTS_STATUS_TEXT: Dict[str, Dict[str, str]] = {
+    "uk": {
+        "alert": "Тривога",
+        "standdown": "Відбій тривоги",
+        "calm": "Спокійно",
+    },
+    "en": {
+        "alert": "Alert",
+        "standdown": "Alert cleared",
+        "calm": "Calm",
+    },
+    "de": {
+        "alert": "Alarm",
+        "standdown": "Alarm beendet",
+        "calm": "Ruhig",
+    },
+    "pl": {
+        "alert": "Alarm",
+        "standdown": "Alarm odwołано",
+        "calm": "Spokojnie",
+    },
+    "ru": {
+        "alert": "Тревога",
+        "standdown": "Отбой тревоги",
+        "calm": "Спокойно",
     },
 }
 
@@ -4636,7 +4688,7 @@ def alerts_normalize_severity(raw_severity: Optional[str], type_code: str) -> st
             return numeric_map[lowered]
         if lowered in roman_map:
             return roman_map[lowered]
-    return ALERTS_DEFAULT_SEVERITY.get(type_code, "high")
+    return ""
 
 
 def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -4678,27 +4730,18 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     notes_clean = alerts_sanitize_notes(payload.get("notes"))
     extra_payload = {
-        "location": location_title or region_original,
         "severity": severity_code,
         "cause": cause,
         "details": details,
         "severity_note": severity_note,
         "type_raw": raw_type,
-        "location_type": payload.get("location_type"),
-        "location_uid": payload.get("location_uid"),
         "oblast_uid": payload.get("location_oblast_uid") or payload.get("oblast_uid"),
         "oblast_title": oblast_title or region_original,
-        "latitude": payload.get("location_lat") or payload.get("lat") or payload.get("latitude"),
-        "longitude": payload.get("location_lng") or payload.get("lng") or payload.get("longitude"),
-        "coordinates": payload.get("location_coordinates") or payload.get("coordinates"),
         "notes": notes_clean,
     }
 
     clean_extra: Dict[str, Any] = {}
     for key, value in extra_payload.items():
-        if key == "severity":
-            clean_extra[key] = value
-            continue
         if key == "notes":
             if value:
                 clean_extra[key] = value
@@ -4708,7 +4751,8 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if value in (None, "", []):
             continue
         clean_extra[key] = value
-    clean_extra.setdefault("severity", severity_code)
+    if severity_code:
+        clean_extra.setdefault("severity", severity_code)
 
     return {
         "id": event_id,
@@ -4825,12 +4869,6 @@ def alerts_merge_extra(base: Optional[Dict[str, Any]], update: Optional[Dict[str
             if value:
                 merged[key] = value
             continue
-        if key == "severity":
-            if value:
-                merged[key] = value
-            elif "severity" not in merged:
-                merged[key] = value
-            continue
         if isinstance(value, str):
             value = value.strip()
         if value in (None, "", []):
@@ -4854,8 +4892,6 @@ def alerts_enrich_from_history(event: Dict[str, Any]) -> Optional[Dict[str, Any]
         if str(hist_event.get("id")) != event_id:
             continue
         merged_extra = alerts_merge_extra(event.get("extra"), hist_event.get("extra"))
-        if "severity" not in merged_extra:
-            merged_extra["severity"] = alerts_normalize_severity(None, hist_event.get("type") or event.get("type") or "unknown")
         return {
             "ended_at": hist_event.get("ended_at") or event.get("ended_at"),
             "message": hist_event.get("message") or event.get("message"),
@@ -5018,9 +5054,11 @@ def alerts_type_label(event: Dict[str, Any], lang: str) -> str:
 
 def alerts_severity_label(event: Dict[str, Any], lang: str) -> str:
     severity = (event.get("extra") or {}).get("severity") or ""
+    if not severity:
+        return ""
     mapping = ALERTS_SEVERITY_LABELS.get(severity)
     if not mapping:
-        return severity.capitalize() if severity else "—"
+        return severity.capitalize()
     icon = mapping.get("icon", "")
     text = mapping.get(lang) or mapping.get(DEFAULT_LANG) or severity
     return f"{icon} {text}" if icon else text
@@ -5028,58 +5066,6 @@ def alerts_severity_label(event: Dict[str, Any], lang: str) -> str:
 
 def alerts_field_labels(lang: str) -> Dict[str, str]:
     return ALERTS_FIELD_LABELS.get(lang) or ALERTS_FIELD_LABELS[DEFAULT_LANG]
-
-
-def alerts_location_type_label(extra: Optional[Dict[str, Any]], lang: str) -> str:
-    if not isinstance(extra, dict):
-        return ""
-    raw = extra.get("location_type")
-    if not raw:
-        return ""
-    key = str(raw).strip().lower()
-    if not key:
-        return ""
-    mapping = ALERTS_LOCATION_TYPE_LABELS.get(key)
-    if mapping:
-        return mapping.get(lang) or mapping.get(DEFAULT_LANG) or str(raw)
-    return str(raw)
-
-
-def alerts_coordinates_text(extra: Optional[Dict[str, Any]]) -> str:
-    if not isinstance(extra, dict):
-        return ""
-    lat = extra.get("latitude")
-    lon = extra.get("longitude")
-    coords = extra.get("coordinates")
-
-    def _parse(value: Any) -> Optional[float]:
-        if value is None:
-            return None
-        if isinstance(value, (int, float)):
-            return float(value)
-        try:
-            text = str(value).strip()
-            if not text:
-                return None
-            text = text.replace(",", ".")
-            return float(text)
-        except (TypeError, ValueError):
-            return None
-
-    if isinstance(coords, dict):
-        lat = lat or coords.get("lat") or coords.get("latitude")
-        lon = lon or coords.get("lon") or coords.get("lng") or coords.get("longitude")
-    elif isinstance(coords, (list, tuple)) and len(coords) >= 2:
-        lat = lat or coords[0]
-        lon = lon or coords[1]
-    elif isinstance(coords, str) and coords.strip():
-        return coords.strip()
-
-    lat_val = _parse(lat)
-    lon_val = _parse(lon)
-    if lat_val is None or lon_val is None:
-        return ""
-    return f"{lat_val:.4f}, {lon_val:.4f}"
 
 
 def alerts_format_row(icon: str, label: str, value: str) -> List[str]:
@@ -5096,21 +5082,19 @@ def alerts_format_row(icon: str, label: str, value: str) -> List[str]:
 
 def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = None, total: Optional[int] = None) -> str:
     labels = alerts_field_labels(lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
     ended = bool(event.get("ended_at"))
     header = labels["header_ended"] if ended else labels["header_active"]
     lines: List[str] = [header, "━━━━━━━━━━━━━━━━━━━"]
     type_label = alerts_type_label(event, lang)
-    lines.extend(alerts_format_row("🌐", labels["type"], type_label))
-    region_display = event.get("region_display") or event.get("region") or "—"
+    region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
     lines.extend(alerts_format_row("📍", labels["region"], region_display))
+    status_label = status_labels["standdown" if ended else "alert"]
+    lines.extend(alerts_format_row("🚨", status_label, type_label))
+    severity_value = alerts_severity_label(event, lang)
+    if severity_value:
+        lines.extend(alerts_format_row("⚠️", labels["severity"], severity_value))
     extra = event.get("extra") or {}
-    location = extra.get("location") or ""
-    lines.extend(alerts_format_row("🏙️", labels["location"], location))
-    location_type = alerts_location_type_label(extra, lang)
-    lines.extend(alerts_format_row("🏷️", labels["location_type"], location_type))
-    coordinates = alerts_coordinates_text(extra)
-    lines.extend(alerts_format_row("🧭", labels["coordinates"], coordinates))
-    lines.extend(alerts_format_row("🔴", labels["severity"], alerts_severity_label(event, lang)))
     cause = extra.get("cause") or ""
     lines.extend(alerts_format_row("🎯", labels["cause"], cause))
     details = extra.get("details") or ""
@@ -5119,21 +5103,10 @@ def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = 
     end_value = alerts_format_timestamp(event.get("ended_at")) if ended else labels["status_active"]
     lines.extend(alerts_format_row("🛑", labels["ended"], end_value))
     lines.extend(alerts_format_row("📢", labels["message"], event.get("message") or ""))
-    lines.extend(alerts_format_row("🏛️", labels["source"], event.get("source") or ""))
     if index is not None and total:
         lines.append("━━━━━━━━━━━━━━━━━━━")
         lines.append(tr(lang, "ALERTS_CARD_INDEX", index=index + 1, total=total))
     return "\n".join(line for line in lines if line)
-
-
-def alerts_summarize_event(event: Dict[str, Any], lang: str) -> str:
-    started = alerts_format_timestamp(event.get("started_at"))
-    ended = alerts_format_timestamp(event.get("ended_at")) if event.get("ended_at") else ""
-    parts = [part for part in [started, alerts_type_label(event, lang), alerts_severity_label(event, lang)] if part]
-    summary = " • ".join(parts)
-    if ended:
-        summary += f" → {ended}"
-    return summary
 
 
 def alerts_profile_block(profile: dict) -> dict:
@@ -5186,19 +5159,44 @@ def alerts_user_regions(uid: int) -> List[str]:
     return regions
 
 
-def alerts_display_region_name(region: str, lang: str) -> str:
+def alerts_shorten_region_label(name: str, lang: str) -> str:
+    text = str(name or "").strip()
+    lowered = text.lower()
+    suffix_map = [
+        ("область", "обл."),
+        ("oblast", "obl."),
+        ("region", "reg."),
+        ("obwód", "obw."),
+        ("obwod", "obw."),
+    ]
+    for suffix, replacement in suffix_map:
+        if lowered.endswith(suffix):
+            base = text[: -len(suffix)].rstrip(" -")
+            if not base:
+                return text
+            return f"{base} {replacement}".strip()
+    return text
+
+
+def alerts_display_region_name(region: str, lang: str, short: bool = False) -> str:
     canonical = alerts_canonical_region(region) or region
     aliases = ALERTS_REGION_EQUIVALENTS.get(canonical)
     if not aliases:
-        return canonical
-    if lang == "ru":
-        return canonical
-    if lang == "en":
+        result = canonical
+    elif lang == "ru":
+        result = canonical
+    elif lang == "en":
         for alias in aliases:
             if re.search(r"[A-Za-z]", alias):
-                return alias
-        return aliases[-1]
-    return aliases[0]
+                result = alias
+                break
+        else:
+            result = aliases[-1]
+    else:
+        result = aliases[0]
+    if short:
+        return alerts_shorten_region_label(result, lang)
+    return result
 
 
 def alerts_regions_overview_text(uid: int) -> str:
@@ -5206,40 +5204,73 @@ def alerts_regions_overview_text(uid: int) -> str:
     state = _alerts_load_state()
     events_map = state.get("events", {})
     regions_map = state.get("regions", {})
+    labels = alerts_field_labels(lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    indent = "&nbsp;&nbsp;&nbsp;"
     lines: List[str] = [tr(uid, "ALERTS_OVERVIEW_HEADER")]
-    for raw_region in UKRAINE_REGIONS:
+    for index, raw_region in enumerate(UKRAINE_REGIONS, start=1):
         canonical = alerts_canonical_region(raw_region) or raw_region
         bucket = regions_map.get(canonical) or regions_map.get(raw_region) or {}
-        active_ids = []
+        active_event: Optional[Dict[str, Any]] = None
         for event_id in bucket.get("active", []):
             payload = events_map.get(event_id)
             if payload and not payload.get("ended_at"):
-                active_ids.append(payload)
+                if not active_event or (payload.get("started_at") or "") > (active_event.get("started_at") or ""):
+                    active_event = payload
+        last_event: Optional[Dict[str, Any]] = None
+        for event_id in bucket.get("history", []):
+            payload = events_map.get(event_id)
+            if payload:
+                if not last_event or (payload.get("ended_at") or "") > (last_event.get("ended_at") or ""):
+                    last_event = payload
         display_name = alerts_display_region_name(canonical, lang)
-        if active_ids:
-            active_ids.sort(key=lambda ev: ev.get("started_at") or "")
-            started = alerts_format_timestamp(active_ids[0].get("started_at"))
-            if started:
-                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE", region=h(display_name), start=h(started)))
-            else:
-                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE_UNKNOWN", region=h(display_name)))
+        if active_event:
+            type_text = alerts_type_label(active_event, lang)
+            severity_text = alerts_severity_label(active_event, lang)
+            start_text = alerts_format_timestamp(active_event.get("started_at")) or labels["status_unknown"]
+            summary_parts = [status_labels["alert"], type_text]
+            if severity_text:
+                summary_parts.append(severity_text)
+            lines.append(f"{index}. 🔴 <b>{h(display_name)}</b> — {h(' • '.join(summary_parts))}")
+            lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
+        elif last_event and last_event.get("ended_at"):
+            type_text = alerts_type_label(last_event, lang)
+            severity_text = alerts_severity_label(last_event, lang)
+            start_text = alerts_format_timestamp(last_event.get("started_at")) or labels["status_unknown"]
+            end_text = alerts_format_timestamp(last_event.get("ended_at")) or labels["status_unknown"]
+            summary_parts = [status_labels["standdown"], type_text]
+            if severity_text:
+                summary_parts.append(severity_text)
+            lines.append(f"{index}. 🟡 <b>{h(display_name)}</b> — {h(' • '.join(summary_parts))}")
+            lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
+            lines.append(f"{indent}🛑 {h(labels['ended'])}: {h(end_text)}")
         else:
-            lines.append(tr(uid, "ALERTS_OVERVIEW_CALM", region=h(display_name)))
+            lines.append(f"{index}. 🟢 <b>{h(display_name)}</b> — {h(status_labels['calm'])}")
     return "\n".join(lines)
 
 
 def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
     state = _alerts_load_state()
     events_map = state.get("events", {})
-    collected: List[Dict[str, Any]] = []
+    lang = resolve_lang(uid)
+    aggregated: Dict[str, Dict[str, Any]] = {}
     for region in alerts_user_regions(uid):
         bucket = state.get("regions", {}).get(region) or {}
         for event_id in bucket.get("active", []):
             event = events_map.get(event_id)
-            if event and not event.get("ended_at"):
-                collected.append(dict(event))
-    collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
-    return collected
+            if not event or event.get("ended_at"):
+                continue
+            canonical = alerts_canonical_region(event.get("region") or event.get("region_display") or region) or region
+            stored = aggregated.get(canonical)
+            started_at = event.get("started_at") or ""
+            if not stored or (started_at > (stored.get("started_at") or "")):
+                copy = dict(event)
+                copy["region"] = canonical
+                copy["region_display"] = alerts_display_region_name(canonical, lang)
+                aggregated[canonical] = copy
+    events = list(aggregated.values())
+    events.sort(key=lambda item: alerts_display_region_name(item.get("region") or item.get("region_display") or "", lang))
+    return events
 
 
 def alerts_collect_history_for_user(uid: int, limit: int = 20) -> List[Dict[str, Any]]:
@@ -5409,65 +5440,45 @@ def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
     regions_map = state.get("regions", {})
     bucket = regions_map.get(canonical) or regions_map.get(region_key) or {}
     events_map = state.get("events", {})
-    display_region_raw = alerts_display_region_name(canonical, lang)
-    display_region = display_region_raw if isinstance(display_region_raw, str) else str(display_region_raw or canonical or region_key)
+    display_region = alerts_display_region_name(canonical, lang, short=True)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    labels = alerts_field_labels(lang)
     event: Optional[Dict[str, Any]] = None
     for event_id in bucket.get("active", []):
         payload = events_map.get(event_id)
         if payload and not payload.get("ended_at"):
-            event = payload
-            break
+            if not event or (payload.get("started_at") or "") > (event.get("started_at") or ""):
+                event = payload
     context = "active"
     if not event:
         for event_id in bucket.get("history", []):
             payload = events_map.get(event_id)
             if payload:
-                event = payload
-                context = "history"
-                break
+                if not event or (payload.get("ended_at") or "") > (event.get("ended_at") or ""):
+                    event = payload
+                    context = "history"
     if not event:
-        return tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
+        return f"🟢 <b>{h(display_region)}</b> — {h(status_labels['calm'])}"
 
-    extra = event.get("extra") or {}
-    start_text = alerts_format_timestamp(event.get("started_at")) or "—"
-    end_text = alerts_format_timestamp(event.get("ended_at")) or "—"
+    start_text = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+    severity_text = alerts_severity_label(event, lang)
+    type_text = alerts_type_label(event, lang)
+    lines: List[str] = []
     if context == "active" and not event.get("ended_at"):
-        text = tr(
-            uid,
-            "ANCHOR_ALERT_ACTIVE",
-            region=h(display_region),
-            type=h(alerts_type_label(event, lang)),
-            start=h(start_text),
-            severity=h(alerts_severity_label(event, lang)),
-        )
+        lines.append(f"🚨 <b>{h(display_region)}</b> — {h(status_labels['alert'])}")
+        lines.append(f"🔥 {h(type_text)}")
+        if severity_text:
+            lines.append(f"⚠️ {h(severity_text)}")
+        lines.append(f"⏱ {h(labels['started'])}: {h(start_text)}")
     else:
-        text = tr(
-            uid,
-            "ANCHOR_ALERT_RECENT",
-            region=h(display_region),
-            type=h(alerts_type_label(event, lang)),
-            start=h(start_text),
-            end=h(end_text),
-        )
-    extras: List[str] = []
-    location = extra.get("location")
-    if isinstance(location, str):
-        location_clean = location.strip()
-        base_region = display_region.strip().lower()
-        if location_clean and location_clean.lower() != base_region:
-            extras.append(tr(uid, "ANCHOR_ALERT_LOCATION", location=h(location_clean)))
-    coords_text = alerts_coordinates_text(extra)
-    if coords_text:
-        extras.append(tr(uid, "ANCHOR_ALERT_COORDS", coords=h(coords_text)))
-    cause = extra.get("cause")
-    if isinstance(cause, str) and cause.strip():
-        extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause.strip())))
-    details = extra.get("details")
-    if isinstance(details, str) and details.strip():
-        extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details.strip())))
-    if extras:
-        text = "\n".join([text, *extras])
-    return text
+        end_text = alerts_format_timestamp(event.get("ended_at")) or labels["status_unknown"]
+        lines.append(f"🟡 <b>{h(display_region)}</b> — {h(status_labels['standdown'])}")
+        lines.append(f"🔥 {h(type_text)}")
+        if severity_text:
+            lines.append(f"⚠️ {h(severity_text)}")
+        lines.append(f"⏱ {h(labels['started'])}: {h(start_text)}")
+        lines.append(f"🛑 {h(labels['ended'])}: {h(end_text)}")
+    return "\n".join(lines)
 
 
 def alerts_anchor_section(uid: int) -> str:
