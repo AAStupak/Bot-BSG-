@@ -4311,6 +4311,177 @@ ALERTS_REGION_EQUIVALENTS: Dict[str, List[str]] = {
     "Черновицкая область": ["Чернівецька область", "Chernivetska oblast", "Chernivtsi region"],
 }
 
+ALERTS_REGION_SHORT_NAMES: Dict[str, Dict[str, str]] = {
+    "Винницкая область": {
+        "uk": "Вінниця",
+        "ru": "Винница",
+        "en": "Vinnytsia",
+        "de": "Winnyzja",
+        "pl": "Winnica",
+    },
+    "Волынская область": {
+        "uk": "Волинь",
+        "ru": "Волынь",
+        "en": "Volyn",
+        "de": "Wolhynien",
+        "pl": "Wołyń",
+    },
+    "Днепропетровская область": {
+        "uk": "Дніпро",
+        "ru": "Днепр",
+        "en": "Dnipro",
+        "de": "Dnipro",
+        "pl": "Dnipro",
+    },
+    "Донецкая область": {
+        "uk": "Донецьк",
+        "ru": "Донецк",
+        "en": "Donetsk",
+        "de": "Donezk",
+        "pl": "Donieck",
+    },
+    "Житомирская область": {
+        "uk": "Житомир",
+        "ru": "Житомир",
+        "en": "Zhytomyr",
+        "de": "Schytomyr",
+        "pl": "Żytomierz",
+    },
+    "Закарпатская область": {
+        "uk": "Закарпаття",
+        "ru": "Закарпатье",
+        "en": "Zakarpattia",
+        "de": "Transkarpatien",
+        "pl": "Zakarpacie",
+    },
+    "Запорожская область": {
+        "uk": "Запоріжжя",
+        "ru": "Запорожье",
+        "en": "Zaporizhzhia",
+        "de": "Saporischschja",
+        "pl": "Zaporoże",
+    },
+    "Ивано-Франковская область": {
+        "uk": "Івано-Франківськ",
+        "ru": "Ивано-Франковск",
+        "en": "Ivano-Frankivsk",
+        "de": "Iwano-Frankiwsk",
+        "pl": "Iwano-Frankiwsk",
+    },
+    "Киевская область": {
+        "uk": "Київ",
+        "ru": "Киев",
+        "en": "Kyiv",
+        "de": "Kyjiw",
+        "pl": "Kijów",
+    },
+    "Кировоградская область": {
+        "uk": "Кропивницький",
+        "ru": "Кропивницкий",
+        "en": "Kropyvnytskyi",
+        "de": "Kropywnyzkyj",
+        "pl": "Kropywnycki",
+    },
+    "Луганская область": {
+        "uk": "Луганськ",
+        "ru": "Луганск",
+        "en": "Luhansk",
+        "de": "Luhansk",
+        "pl": "Ługańsk",
+    },
+    "Львовская область": {
+        "uk": "Львів",
+        "ru": "Львов",
+        "en": "Lviv",
+        "de": "Lwiw",
+        "pl": "Lwów",
+    },
+    "Николаевская область": {
+        "uk": "Миколаїв",
+        "ru": "Николаев",
+        "en": "Mykolaiv",
+        "de": "Mykolajiw",
+        "pl": "Mikołajów",
+    },
+    "Одесская область": {
+        "uk": "Одеса",
+        "ru": "Одесса",
+        "en": "Odesa",
+        "de": "Odessa",
+        "pl": "Odessa",
+    },
+    "Полтавская область": {
+        "uk": "Полтава",
+        "ru": "Полтава",
+        "en": "Poltava",
+        "de": "Poltawa",
+        "pl": "Połtawa",
+    },
+    "Ровенская область": {
+        "uk": "Рівне",
+        "ru": "Ровно",
+        "en": "Rivne",
+        "de": "Riwne",
+        "pl": "Równe",
+    },
+    "Сумская область": {
+        "uk": "Суми",
+        "ru": "Сумы",
+        "en": "Sumy",
+        "de": "Sumy",
+        "pl": "Sumy",
+    },
+    "Тернопольская область": {
+        "uk": "Тернопіль",
+        "ru": "Тернополь",
+        "en": "Ternopil",
+        "de": "Ternopil",
+        "pl": "Tarnopol",
+    },
+    "Харьковская область": {
+        "uk": "Харків",
+        "ru": "Харьков",
+        "en": "Kharkiv",
+        "de": "Charkiw",
+        "pl": "Charków",
+    },
+    "Херсонская область": {
+        "uk": "Херсон",
+        "ru": "Херсон",
+        "en": "Kherson",
+        "de": "Cherson",
+        "pl": "Chersoń",
+    },
+    "Хмельницкая область": {
+        "uk": "Хмельницький",
+        "ru": "Хмельницкий",
+        "en": "Khmelnytskyi",
+        "de": "Chmelnyzkyj",
+        "pl": "Chmielnicki",
+    },
+    "Черкасская область": {
+        "uk": "Черкаси",
+        "ru": "Черкассы",
+        "en": "Cherkasy",
+        "de": "Tscherkassy",
+        "pl": "Czerkasy",
+    },
+    "Черниговская область": {
+        "uk": "Чернігів",
+        "ru": "Чернигов",
+        "en": "Chernihiv",
+        "de": "Tschernihiw",
+        "pl": "Czernihów",
+    },
+    "Черновицкая область": {
+        "uk": "Чернівці",
+        "ru": "Черновцы",
+        "en": "Chernivtsi",
+        "de": "Tscherniwzi",
+        "pl": "Czerniowce",
+    },
+}
+
 ALERTS_TYPE_ALIASES: Dict[str, str] = {
     "air_raid": "air_raid",
     "air-raid": "air_raid",
@@ -5487,6 +5658,45 @@ def alerts_display_region_name(region: str, lang: str, short: bool = False) -> s
     return result
 
 
+def alerts_trim_region_suffix(name: str) -> str:
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    suffixes = (
+        " область",
+        "область",
+        " обл.",
+        " oblast",
+        " region",
+        " obwód",
+        " obwod",
+        " obw.",
+        " reg.",
+    )
+    for suffix in suffixes:
+        suffix_clean = suffix.strip()
+        if not suffix_clean:
+            continue
+        if lowered.endswith(suffix_clean):
+            candidate = text[: -len(suffix_clean)].rstrip(" -–—,.;:")
+            if candidate:
+                return candidate
+    return text
+
+
+def alerts_overview_region_label(region: str, lang: str) -> str:
+    canonical = alerts_canonical_region(region) or region
+    mapping = ALERTS_REGION_SHORT_NAMES.get(canonical)
+    if mapping:
+        label = mapping.get(lang) or mapping.get(DEFAULT_LANG)
+        if label:
+            return label
+    display = alerts_display_region_name(canonical, lang)
+    trimmed = alerts_trim_region_suffix(display)
+    return trimmed or display
+
+
 def alerts_regions_overview_text(uid: int) -> str:
     lang = resolve_lang(uid)
     status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
@@ -5495,7 +5705,7 @@ def alerts_regions_overview_text(uid: int) -> str:
     max_name_len = 0
     for index, raw_region in enumerate(UKRAINE_REGIONS, start=1):
         canonical, active_event, last_event = alerts_region_snapshot(raw_region)
-        display_name = alerts_display_region_name(canonical, lang)
+        display_name = alerts_overview_region_label(canonical, lang)
         max_name_len = max(max_name_len, len(display_name))
         if active_event:
             status_text = alerts_type_label(active_event, lang) or status_labels.get("alert") or ""
@@ -5774,6 +5984,28 @@ def alerts_region_snapshot(region_key: str) -> Tuple[str, Optional[Dict[str, Any
         if payload:
             if not last_event or (payload.get("ended_at") or "") > (last_event.get("ended_at") or ""):
                 last_event = payload
+    if not last_event or not last_event.get("ended_at"):
+        timeline = list(_alerts_timeline_bucket(state))
+        if timeline:
+            for entry in reversed(timeline):
+                region_value = alerts_canonical_region(entry.get("region")) or entry.get("region") or ""
+                if (region_value or "") != canonical:
+                    continue
+                if entry.get("kind") != "end":
+                    continue
+                event_id = str(entry.get("event_id") or "")
+                payload = dict(events_map.get(event_id) or {})
+                if not payload:
+                    payload = {"id": event_id or f"timeline|{canonical}|{entry.get('recorded_at') or ''}"}
+                payload.setdefault("region", canonical)
+                payload.setdefault("region_display", entry.get("region") or canonical)
+                if entry.get("started_at") and not payload.get("started_at"):
+                    payload["started_at"] = entry["started_at"]
+                end_value = entry.get("ended_at") or entry.get("recorded_at")
+                if end_value:
+                    payload["ended_at"] = end_value
+                last_event = payload
+                break
     return canonical, active_event, last_event
 
 
