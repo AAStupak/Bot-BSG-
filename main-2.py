@@ -40,16 +40,17 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, json, random, re, base64, hashlib, secrets
+import os, sys, json, random, re, base64, hashlib, secrets, asyncio
 from html import escape as html_escape
-from datetime import datetime
-from typing import Dict, Optional, List, Tuple, Any, Set
+from datetime import datetime, timezone
+from typing import Dict, Optional, List, Tuple, Any, Set, Union
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 from PIL import Image, ExifTags
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
+from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     InputFile, ContentType, ReplyKeyboardRemove,
@@ -58,6 +59,12 @@ from aiogram.types import (
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+import requests
+
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 
 
 # ========================== CONFIG ==========================
@@ -74,6 +81,16 @@ BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
+
+ALERTS_API_BASE_URL = "https://api.alerts.in.ua/v1"
+ALERTS_API_ACTIVE_ENDPOINT = "/alerts/active.json"
+ALERTS_API_HISTORY_TEMPLATE = "/regions/{uid}/alerts/{period}.json"
+ALERTS_API_URL = f"{ALERTS_API_BASE_URL}{ALERTS_API_ACTIVE_ENDPOINT}"
+ALERTS_DEFAULT_HISTORY_PERIOD = "week_ago"
+ALERTS_API_TOKEN = "62f89091e56951ef257f763e445c09c1fd9dacd1ab2203"
+ALERTS_API_TIMEOUT = 15
+ALERTS_POLL_INTERVAL = 30  # seconds
+ALERTS_HISTORY_CACHE_TTL = 300  # seconds
 
 UKRAINE_REGIONS = [
     "Винницкая область",
@@ -122,11 +139,60 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Активный объект пока не выбран.\nПопросите администратора включить проект, чтобы открыть рабочие разделы.\n\n📋 <b>Меню действий</b>\nИспользуйте кнопки ниже, чтобы изучить доступные возможности.",
     },
     "ANCHOR_PROJECT": {
-        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
-        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
-        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
-        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
-        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
+        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
+        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
+        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
+        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+    },
+    "ANCHOR_PROJECT_BSG_SUMMARY": {
+        "uk": "🏢 Посилки BSG: усього — <b>{total}</b> • забрати — <b>{pending}</b> • отримано — <b>{delivered}</b>",
+        "en": "🏢 BSG parcels: total — <b>{total}</b> • to collect — <b>{pending}</b> • received — <b>{delivered}</b>",
+        "de": "🏢 BSG-Sendungen: gesamt — <b>{total}</b> • abzuholen — <b>{pending}</b> • erhalten — <b>{delivered}</b>",
+        "pl": "🏢 Przesyłki BSG: łącznie — <b>{total}</b> • do odebrania — <b>{pending}</b> • odebrano — <b>{delivered}</b>",
+        "ru": "🏢 Посылки BSG: всего — <b>{total}</b> • забрать — <b>{pending}</b> • получено — <b>{delivered}</b>",
+    },
+    "ANCHOR_ALERT_SUMMARY": {
+        "uk": "🇺🇦 Активні тривоги: <b>{count}</b> областей",
+        "en": "🇺🇦 Active alerts: <b>{count}</b> oblasts",
+        "de": "🇺🇦 Aktive Alarme: <b>{count}</b> Regionen",
+        "pl": "🇺🇦 Aktywne alarmy: <b>{count}</b> obwodów",
+        "ru": "🇺🇦 Активные тревоги: <b>{count}</b> областей",
+    },
+    "ANCHOR_ALERT_ACTIVE": {
+        "uk": "🚨 Тривога у регіоні <b>{region}</b> • {type} • від {start} • {severity}",
+        "en": "🚨 Alert in <b>{region}</b> • {type} • since {start} • {severity}",
+        "de": "🚨 Alarm in <b>{region}</b> • {type} • seit {start} • {severity}",
+        "pl": "🚨 Alarm w regionie <b>{region}</b> • {type} • od {start} • {severity}",
+        "ru": "🚨 Тревога в регионе <b>{region}</b> • {type} • с {start} • {severity}",
+    },
+    "ANCHOR_ALERT_RECENT": {
+        "uk": "🟡 Остання тривога у <b>{region}</b> • {type} • {start} → {end}",
+        "en": "🟡 Last alert in <b>{region}</b> • {type} • {start} → {end}",
+        "de": "🟡 Letzter Alarm in <b>{region}</b> • {type} • {start} → {end}",
+        "pl": "🟡 Ostatni alarm w <b>{region}</b> • {type} • {start} → {end}",
+        "ru": "🟡 Последняя тревога в <b>{region}</b> • {type} • {start} → {end}",
+    },
+    "ANCHOR_ALERT_CALM": {
+        "uk": "🟢 У регіоні <b>{region}</b> спокійно.",
+        "en": "🟢 <b>{region}</b> is calm.",
+        "de": "🟢 In <b>{region}</b> ist es ruhig.",
+        "pl": "🟢 W regionie <b>{region}</b> jest spokojnie.",
+        "ru": "🟢 В регионе <b>{region}</b> спокойно.",
+    },
+    "ANCHOR_ALERT_CAUSE": {
+        "uk": "🎯 Причина: {cause}",
+        "en": "🎯 Cause: {cause}",
+        "de": "🎯 Ursache: {cause}",
+        "pl": "🎯 Przyczyna: {cause}",
+        "ru": "🎯 Причина: {cause}",
+    },
+    "ANCHOR_ALERT_DETAILS": {
+        "uk": "🔎 Деталі: {details}",
+        "en": "🔎 Details: {details}",
+        "de": "🔎 Details: {details}",
+        "pl": "🔎 Szczegóły: {details}",
+        "ru": "🔎 Детали: {details}",
     },
     "BTN_CHECKS": {
         "uk": "🧾 Чеки",
@@ -149,6 +215,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "💵 Finanse",
         "ru": "💵 Финансы",
     },
+    "BTN_ALERTS": {
+        "uk": "🚨 Тривоги",
+        "en": "🚨 Alerts",
+        "de": "🚨 Alarme",
+        "pl": "🚨 Alarmy",
+        "ru": "🚨 Тревоги",
+    },
     "BTN_SOS": {
         "uk": "🆘 SOS",
         "en": "🆘 SOS",
@@ -170,12 +243,264 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "ℹ️ O bocie",
         "ru": "ℹ️ О боте",
     },
+    "ALERTS_MENU_INTRO": {
+        "uk": "🚨 <b>Повітряні тривоги</b>\n━━━━━━━━━━━━━━━━━━\nПереглядайте активні сигнали, історію та керуйте областями сповіщень.\nВиберіть дію нижче.",
+        "en": "🚨 <b>Air alerts</b>\n━━━━━━━━━━━━━━━━━━\nReview active warnings, browse history, and manage the regions you follow.\nChoose an option below.",
+        "de": "🚨 <b>Luftalarme</b>\n━━━━━━━━━━━━━━━━━━\nSehen Sie aktive Warnungen, den Verlauf und verwalten Sie Ihre Regionen.\nWählen Sie eine Aktion unten.",
+        "pl": "🚨 <b>Alarmy powietrzne</b>\n━━━━━━━━━━━━━━━━━━\nPrzeglądaj aktywne ostrzeżenia, historię i zarządzaj regionami powiadomień.\nWybierz działanie poniżej.",
+        "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
+    },
+    "ALERTS_BTN_ACTIVE": {
+        "uk": "🔥 Поточні тривоги",
+        "en": "🔥 Active alerts",
+        "de": "🔥 Aktive Alarme",
+        "pl": "🔥 Aktywne alarmy",
+        "ru": "🔥 Активные тревоги",
+    },
+    "ALERTS_BTN_OVERVIEW": {
+        "uk": "🗺️ Статус областей",
+        "en": "🗺️ Region status",
+        "de": "🗺️ Regionenstatus",
+        "pl": "🗺️ Status regionów",
+        "ru": "🗺️ Статус областей",
+    },
+    "ALERTS_BTN_HISTORY": {
+        "uk": "📜 Історія",
+        "en": "📜 History",
+        "de": "📜 Verlauf",
+        "pl": "📜 Historia",
+        "ru": "📜 История",
+    },
+    "ALERTS_BTN_SUBSCRIPTIONS": {
+        "uk": "🧭 Керувати областями",
+        "en": "🧭 Manage regions",
+        "de": "🧭 Regionen verwalten",
+        "pl": "🧭 Zarządzaj regionami",
+        "ru": "🧭 Управлять регионами",
+    },
+    "ALERTS_ACTIVE_HEADER": {
+        "uk": "🔥 <b>Поточні тривоги</b> ({count})",
+        "en": "🔥 <b>Active alerts</b> ({count})",
+        "de": "🔥 <b>Aktive Alarme</b> ({count})",
+        "pl": "🔥 <b>Aktywne alarmy</b> ({count})",
+        "ru": "🔥 <b>Активные тревоги</b> ({count})",
+    },
+    "ALERTS_HISTORY_HEADER": {
+        "uk": "📜 <b>Історія тривог</b> ({count})",
+        "en": "📜 <b>Alert history</b> ({count})",
+        "de": "📜 <b>Alarmverlauf</b> ({count})",
+        "pl": "📜 <b>Historia alarmów</b> ({count})",
+        "ru": "📜 <b>История тревог</b> ({count})",
+    },
+    "ALERTS_OVERVIEW_HEADER": {
+        "uk": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
+        "en": "🗺️ <b>Region status</b>\n━━━━━━━━━━━━━━━━━━\nSee which oblasts are under alert right now.",
+        "de": "🗺️ <b>Status der Regionen</b>\n━━━━━━━━━━━━━━━━━━\nÜberblick über aktuelle Alarme nach Oblast.",
+        "pl": "🗺️ <b>Status regionów</b>\n━━━━━━━━━━━━━━━━━━\nSprawdź, w których obwodach trwa alarm.",
+        "ru": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПроверяйте, где сейчас действует тревога.",
+    },
+    "ALERTS_OVERVIEW_ACTIVE": {
+        "uk": "🔴 {region} — тривога з {start}",
+        "en": "🔴 {region} — alert since {start}",
+        "de": "🔴 {region} — Alarm seit {start}",
+        "pl": "🔴 {region} — alarm od {start}",
+        "ru": "🔴 {region} — тревога с {start}",
+    },
+    "ALERTS_OVERVIEW_ACTIVE_UNKNOWN": {
+        "uk": "🔴 {region} — тривога (час уточнюється)",
+        "en": "🔴 {region} — alert (start time pending)",
+        "de": "🔴 {region} — Alarm (Startzeit wird ermittelt)",
+        "pl": "🔴 {region} — alarm (czas ustalany)",
+        "ru": "🔴 {region} — тревога (время уточняется)",
+    },
+    "ALERTS_OVERVIEW_CALM": {
+        "uk": "🟢 {region} — спокійно",
+        "en": "🟢 {region} — calm",
+        "de": "🟢 {region} — ruhig",
+        "pl": "🟢 {region} — spokojnie",
+        "ru": "🟢 {region} — спокойно",
+    },
+    "ALERTS_NO_ACTIVE": {
+        "uk": "✅ Зараз немає активних тривог для вибраних областей.",
+        "en": "✅ There are no active alerts for your selected regions right now.",
+        "de": "✅ Für die ausgewählten Regionen gibt es derzeit keine aktiven Alarme.",
+        "pl": "✅ Brak aktywnych alarmów dla wybranych regionów.",
+        "ru": "✅ Для выбранных регионов сейчас нет активных тревог.",
+    },
+    "ALERTS_NO_HISTORY": {
+        "uk": "ℹ️ Поки що немає збереженої історії для цих областей.",
+        "en": "ℹ️ There is no saved history for these regions yet.",
+        "de": "ℹ️ Für diese Regionen gibt es noch keine gespeicherte Historie.",
+        "pl": "ℹ️ Brak zapisanej historii dla tych regionów.",
+        "ru": "ℹ️ Пока нет сохранённой истории для этих регионов.",
+    },
+    "ALERTS_NO_REGIONS": {
+        "uk": "⚠️ Спершу оберіть хоча б одну область для сповіщень.",
+        "en": "⚠️ Please select at least one region to receive alerts.",
+        "de": "⚠️ Wählen Sie zunächst mindestens eine Region für Benachrichtigungen aus.",
+        "pl": "⚠️ Wybierz co najmniej jeden region, aby otrzymywać alerty.",
+        "ru": "⚠️ Сначала выберите хотя бы один регион для уведомлений.",
+    },
+    "ALERTS_SUBS_HEADER": {
+        "uk": "🧭 <b>Області сповіщень</b>",
+        "en": "🧭 <b>Alert regions</b>",
+        "de": "🧭 <b>Alarm-Regionen</b>",
+        "pl": "🧭 <b>Regiony alertów</b>",
+        "ru": "🧭 <b>Регионы тревог</b>",
+    },
+    "ALERTS_SUBS_NOTE_HAS_PROJECT": {
+        "uk": "Основна область проєкту: <b>{region}</b> — її неможливо вимкнути.",
+        "en": "Project region: <b>{region}</b> — it cannot be disabled.",
+        "de": "Projektregion: <b>{region}</b> — kann nicht deaktiviert werden.",
+        "pl": "Region projektu: <b>{region}</b> — nie można go wyłączyć.",
+        "ru": "Область проекта: <b>{region}</b> — её нельзя отключить.",
+    },
+    "ALERTS_SUBS_NOTE_NO_PROJECT": {
+        "uk": "Наразі активний проєкт не вибрано, ви можете обрати будь-які області вручну.",
+        "en": "No active project region is set; feel free to pick any regions manually.",
+        "de": "Derzeit ist keine Projektregion aktiv; wählen Sie beliebige Regionen manuell aus.",
+        "pl": "Nie ustawiono aktywnego projektu, możesz ręcznie wybrać dowolne regiony.",
+        "ru": "Сейчас активный проект не выбран; можно вручную выбрать любые регионы.",
+    },
+    "ALERTS_SUBS_MANAGE": {
+        "uk": "Додайте або приберіть області за допомогою кнопок нижче.",
+        "en": "Add or remove regions using the buttons below.",
+        "de": "Fügen Sie Regionen über die Schaltflächen unten hinzu oder entfernen Sie sie.",
+        "pl": "Dodaj lub usuń regiony za pomocą przycisków poniżej.",
+        "ru": "Добавляйте или убирайте регионы с помощью кнопок ниже.",
+    },
+    "ALERTS_SUBS_SELECTED": {
+        "uk": "Активні області: {items}",
+        "en": "Selected regions: {items}",
+        "de": "Aktive Regionen: {items}",
+        "pl": "Aktywne regiony: {items}",
+        "ru": "Выбранные регионы: {items}",
+    },
+    "ALERTS_SUBS_ADDED": {
+        "uk": "✅ Додано область: {region}",
+        "en": "✅ Region added: {region}",
+        "de": "✅ Region hinzugefügt: {region}",
+        "pl": "✅ Dodano region: {region}",
+        "ru": "✅ Добавлен регион: {region}",
+    },
+    "ALERTS_SUBS_REMOVED": {
+        "uk": "➖ Видалено область: {region}",
+        "en": "➖ Region removed: {region}",
+        "de": "➖ Region entfernt: {region}",
+        "pl": "➖ Usunięto region: {region}",
+        "ru": "➖ Регион удалён: {region}",
+    },
+    "ALERTS_SUBS_LOCKED": {
+        "uk": "ℹ️ Цю область неможливо вимкнути.",
+        "en": "ℹ️ This region cannot be disabled.",
+        "de": "ℹ️ Diese Region kann nicht deaktiviert werden.",
+        "pl": "ℹ️ Tego regionu nie można wyłączyć.",
+        "ru": "ℹ️ Этот регион нельзя отключить.",
+    },
+    "ALERTS_SUBS_PAGE": {
+        "uk": "📄 Сторінка {current}/{total}",
+        "en": "📄 Page {current}/{total}",
+        "de": "📄 Seite {current}/{total}",
+        "pl": "📄 Strona {current}/{total}",
+        "ru": "📄 Страница {current}/{total}",
+    },
+    "ALERTS_BACK_TO_MENU": {
+        "uk": "⬅️ Меню тривог",
+        "en": "⬅️ Alerts menu",
+        "de": "⬅️ Alarm-Menü",
+        "pl": "⬅️ Menu alarmów",
+        "ru": "⬅️ Меню тревог",
+    },
+    "ALERTS_CLOSE_CARD": {
+        "uk": "✖️ Закрити",
+        "en": "✖️ Close",
+        "de": "✖️ Schließen",
+        "pl": "✖️ Zamknąć",
+        "ru": "✖️ Закрыть",
+    },
+    "ALERTS_NAV_PREV": {
+        "uk": "◀️ Попередня",
+        "en": "◀️ Previous",
+        "de": "◀️ Zurück",
+        "pl": "◀️ Poprzednia",
+        "ru": "◀️ Назад",
+    },
+    "ALERTS_NAV_NEXT": {
+        "uk": "▶️ Наступна",
+        "en": "▶️ Next",
+        "de": "▶️ Weiter",
+        "pl": "▶️ Następna",
+        "ru": "▶️ Далее",
+    },
+    "ALERTS_CARD_INDEX": {
+        "uk": "{index} із {total}",
+        "en": "{index} of {total}",
+        "de": "{index} von {total}",
+        "pl": "{index} z {total}",
+        "ru": "{index} из {total}",
+    },
     "BTN_SETTINGS": {
         "uk": "⚙️ Налаштування",
         "en": "⚙️ Settings",
         "de": "⚙️ Einstellungen",
         "pl": "⚙️ Ustawienia",
         "ru": "⚙️ Настройки",
+    },
+    "BTN_NOVA_POSHTA": {
+        "uk": "📮 Нова пошта",
+        "en": "📮 Nova Poshta",
+        "de": "📮 Nova Poshta",
+        "pl": "📮 Nova Poshta",
+        "ru": "📮 Новая почта",
+    },
+    "BTN_NP_INTERFACE": {
+        "uk": "📋 Інтерфейс",
+        "en": "📋 Overview",
+        "de": "📋 Übersicht",
+        "pl": "📋 Interfejs",
+        "ru": "📋 Интерфейс",
+    },
+    "BTN_NP_SEARCH": {
+        "uk": "🔍 Пошук за ТТН",
+        "en": "🔍 Search by TTN",
+        "de": "🔍 Suche per TTN",
+        "pl": "🔍 Szukaj po TTN",
+        "ru": "🔍 Искать по ТТН",
+    },
+    "BTN_NP_HISTORY": {
+        "uk": "🕓 Історія пошуку",
+        "en": "🕓 Search history",
+        "de": "🕓 Suchverlauf",
+        "pl": "🕓 Historia wyszukiwań",
+        "ru": "🕓 История поисков",
+    },
+    "BTN_NP_BOOKMARKS": {
+        "uk": "⭐ Відзначені",
+        "en": "⭐ Bookmarked",
+        "de": "⭐ Markiert",
+        "pl": "⭐ Oznaczone",
+        "ru": "⭐ Отмеченные",
+    },
+    "BTN_NP_ASSIGNED": {
+        "uk": "🏢 Посилки BSG",
+        "en": "🏢 BSG parcels",
+        "de": "🏢 BSG-Sendungen",
+        "pl": "🏢 Przesyłки BSG",
+        "ru": "🏢 Посылки BSG",
+    },
+    "BTN_NP_RECEIVED": {
+        "uk": "📥 Отримані посилки BSG",
+        "en": "📥 Received BSG parcels",
+        "de": "📥 Erhaltene BSG-Sendungen",
+        "pl": "📥 Odebrane przesyłki BSG",
+        "ru": "📥 Полученные посылки BSG",
+    },
+    "BTN_NP_ASSIGN_SEND": {
+        "uk": "📬 Закріпити ТТН за користувачем",
+        "en": "📬 Assign TTN to user",
+        "de": "📬 TTN einem Nutzer zuordnen",
+        "pl": "📬 Przypisz TTN użytkownikowi",
+        "ru": "📬 Закрепить ТТН за пользователем",
     },
     "BTN_BACK_ROOT": {
         "uk": "⬅️ На головну",
@@ -450,6 +775,251 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "\nNie masz jeszcze żadnych paragonów. Dodaj pierwszy przyciskiem „📷 Dodaj paragon”.",
         "ru": "\nУ вас ещё нет сохранённых чеков. Добавьте первый через кнопку «📷 Добавить чек».",
     },
+    "NP_MENU_TITLE": {
+        "uk": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nЄдине меню для пошуку та супроводу накладних. Скористайтесь кнопками нижче, щоб знайти відправлення, переглянути історію, нотатки чи посилки від компанії.",
+        "en": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nYour central hub for parcel tracking. Use the buttons below to look up TTNs, reopen history, manage notes, and review company deliveries.",
+        "de": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nZentrale Schaltstelle für Sendungsnummern. Verwenden Sie die Schaltflächen unten, um TTN zu suchen, den Verlauf zu öffnen, Notizen zu pflegen und Firmensendungen einzusehen.",
+        "pl": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nPanel do pracy z przesyłkami. Przyciski poniżej umożliwiają wyszukiwanie TTN, podgląd historii, notatek oraz paczek od firmy.",
+        "ru": "📮 <b>Nova Poshta</b>\\n━━━━━━━━━━━━━━━━━━\\nЦентральное меню для работы с накладными. Используйте кнопки ниже, чтобы искать ТТН, открывать историю, заметки и фирменные отправления.",
+    },
+    "NP_INTERFACE_TEXT": {
+        "uk": "📘 <b>Як працювати з розділом</b>\n━━━━━━━━━━━━━━━━━━\n• «🔍 Пошук ТТН» — введіть номер і одразу отримайте квитанцію з оновленим статусом.\n• «🕓 Історія» — швидкий доступ до останніх переглядів.\n• «⭐ Відзначені» — зберігайте важливі накладні під рукою.\n• «🏢 Посилки BSG» — накладні, які передав адміністратор компанії.\n• «📥 Отримані BSG» — підтверджені відправлення, які вже закриті.\n• Додавайте особисті коментарі до ТТН прямо у картці — вони відображаються під квитанцією.\n\nСкористайтесь «❌ Скасувати», щоб повернутися в це меню.",
+        "en": "📘 <b>How to use this section</b>\n━━━━━━━━━━━━━━━━━━\n• “🔍 Search by TTN” — enter a number and get the refreshed receipt.\n• “🕓 History” — reopen your latest lookups with one tap.\n• “⭐ Bookmarked” — keep priority shipments within reach.\n• “🏢 BSG parcels” — TTNs forwarded by the team.\n• “📥 Received BSG” — deliveries already confirmed.\n• Add personal comments to any TTN from its card — they stay under the receipt for quick reference.\n\nTap “❌ Cancel” any time to return here.",
+        "de": "📘 <b>So nutzen Sie den Bereich</b>\n━━━━━━━━━━━━━━━━━━\n• „🔍 TTN suchen“ – Nummer eingeben und aktualisierten Beleg erhalten.\n• „🕓 Verlauf“ – letzte Abfragen sofort erneut öffnen.\n• „⭐ Markiert“ – wichtige Sendungen griffbereit halten.\n• „🏢 BSG-Sendungen“ – Nummern, die das Team zugewiesen hat.\n• „📥 Erhaltene BSG“ – bereits bestätigte Lieferungen.\n• Fügen Sie Kommentare direkt in der Sendungskarte hinzu – sie erscheinen unter dem Beleg.\n\nMit „❌ Abbrechen“ kehren Sie jederzeit zurück.",
+        "pl": "📘 <b>Jak korzystać z panelu</b>\n━━━━━━━━━━━━━━━━━━\n• „🔍 Szukaj TTN” – wpisz numer i otrzymaj odświeżony podgląd.\n• „🕓 Historia” – szybki powrót до ostatnich wyszukiwań.\n• „⭐ Oznaczone” – найważniejsze przesyłki под ręką.\n• „🏢 Przesyłki BSG” – numery przekazane przez administrację.\n• „📥 Odebrane BSG” – przesyłki już потwierдzone.\n• Dodawaj komentarze bezpośrednio w karcie TTN – pojawią się pod potwierdzeniem.\n\nPrzycisk „❌ Anuluj” zawsze wraca до tego меню.",
+        "ru": "📘 <b>Как пользоваться разделом</b>\n━━━━━━━━━━━━━━━━━━\n• «🔍 Поиск ТТН» — введите номер и сразу получите обновлённый чек.\n• «🕓 История» — быстрый доступ к последним запросам.\n• «⭐ Отмеченные» — держите важные отправления под рукой.\n• «🏢 Посылки BSG» — номера, которые передал администратор компании.\n• «📥 Полученные BSG» — уже подтверждённые доставки.\n• Добавляйте личные комментарии прямо в карточке ТТН — они будут показаны под квитанцией.\n\nНажмите «❌ Отменить», чтобы вернуться в это меню.",
+    },
+    "NP_PROMPT_TTN": {
+        "uk": "✉️ Надішліть номер накладної одним повідомленням (допускаються цифри та літери). Кнопка «❌ Скасувати» повертає до меню.",
+        "en": "✉️ Send the TTN as a single message (digits and letters only). Use “❌ Cancel” to return to the menu.",
+        "de": "✉️ Senden Sie die TTN als einzelne Nachricht (Ziffern/Buchstaben). Mit „❌ Abbrechen“ geht es zurück ins Menü.",
+        "pl": "✉️ Wyślij numer TTN w jednej wiadomości (cyfry i litery). „❌ Anuluj” wraca do menu.",
+        "ru": "✉️ Отправьте номер ТТН одним сообщением (цифры и буквы). «❌ Отменить» вернёт в меню.",
+    },
+    "NP_SEARCH_PROGRESS": {
+        "uk": "⏳ Отримую статус накладної, зачекайте кілька секунд…",
+        "en": "⏳ Fetching parcel status, please wait…",
+        "de": "⏳ Der Sendungsstatus wird abgerufen, bitte warten…",
+        "pl": "⏳ Pobieram status przesyłki, proszę czekać…",
+        "ru": "⏳ Получаем статус накладной, подождите…",
+    },
+    "NP_SEARCH_NOT_FOUND": {
+        "uk": "❌ Накладну {ttn} не знайдено. Перевірте номер і спробуйте ще раз.",
+        "en": "❌ TTN {ttn} was not found. Please check the number and try again.",
+        "de": "❌ Die Sendung {ttn} wurde nicht gefunden. Bitte prüfen Sie die Nummer und versuchen Sie es erneut.",
+        "pl": "❌ Nie znaleziono przesyłki {ttn}. Sprawdź numer i spróbuj ponownie.",
+        "ru": "❌ Накладная {ttn} не найдена. Проверьте номер и попробуйте снова.",
+    },
+    "NP_SEARCH_ERROR": {
+        "uk": "⚠️ Не вдалося отримати дані: {error}",
+        "en": "⚠️ Could not retrieve data: {error}",
+        "de": "⚠️ Daten konnten nicht abgerufen werden: {error}",
+        "pl": "⚠️ Nie udało się pobrać danych: {error}",
+        "ru": "⚠️ Не удалось получить данные: {error}",
+    },
+    "NP_REFRESH_NOT_POSSIBLE": {
+        "uk": "⚠️ Неможливо оновити повідомлення. Спробуйте пізніше.",
+        "en": "⚠️ Unable to refresh this message. Please try again later.",
+        "de": "⚠️ Nachricht kann nicht aktualisiert werden. Bitte später erneut versuchen.",
+        "pl": "⚠️ Nie można odświeżyć tej wiadomości. Spróbuj ponownie później.",
+        "ru": "⚠️ Не удалось обновить сообщение. Попробуйте позже.",
+    },
+    "NP_HISTORY_EMPTY": {
+        "uk": "🕓 Історія порожня. Виконайте пошук, щоб побачити останні ТТН.",
+        "en": "🕓 History is empty. Run a search to see recent TTNs.",
+        "de": "🕓 Noch keine Historie. Führen Sie eine Suche aus, um TTN anzuzeigen.",
+        "pl": "🕓 Historia jest pusta. Wykonaj wyszukiwanie, aby zobaczyć TTN.",
+        "ru": "🕓 История пуста. Выполните поиск, чтобы увидеть последние ТТН.",
+    },
+    "NP_HISTORY_HEADER": {
+        "uk": "🕓 <b>Історія пошуку</b>\\n━━━━━━━━━━━━━━━━━━\\nНатисніть номер нижче, щоб відкрити квитанцію та побачити актуальний статус.",
+        "en": "🕓 <b>Search history</b>\\n━━━━━━━━━━━━━━━━━━\\nTap a TTN below to reopen its receipt with the latest status.",
+        "de": "🕓 <b>Suchverlauf</b>\\n━━━━━━━━━━━━━━━━━━\\nTippen Sie auf eine TTN, um den Beleg mit aktuellem Status zu öffnen.",
+        "pl": "🕓 <b>Historia wyszukiwań</b>\\n━━━━━━━━━━━━━━━━━━\\nWybierz TTN, aby otworzyć podgląd ze świeżym statusem.",
+        "ru": "🕓 <b>История поисков</b>\\n━━━━━━━━━━━━━━━━━━\\nНажмите на ТТН ниже, чтобы открыть чек с актуальным статусом.",
+    },
+    "NP_BOOKMARKS_EMPTY": {
+        "uk": "⭐ Ви ще не позначали накладні. Додайте вподобану ТТН під час пошуку.",
+        "en": "⭐ You haven't bookmarked any TTNs yet. Bookmark a result while viewing a search.",
+        "de": "⭐ Sie haben noch keine TTN markiert. Markieren Sie Ergebnisse während der Suche.",
+        "pl": "⭐ Nie oznaczono jeszcze żadnej TTN. Dodaj ją do oznaczonych podczas przeglądania wyników.",
+        "ru": "⭐ У вас ещё нет отмеченных ТТН. Добавьте накладную в избранное во время просмотра результата.",
+    },
+    "NP_BOOKMARKS_HEADER": {
+        "uk": "⭐ <b>Відзначені накладні</b>\n━━━━━━━━━━━━━━━━━━\nОберіть ТТН, щоб миттєво відкрити її квитанцію та нотатки.",
+        "en": "⭐ <b>Bookmarked TTNs</b>\n━━━━━━━━━━━━━━━━━━\nSelect a TTN to instantly open its receipt and notes.",
+        "de": "⭐ <b>Markierte TTN</b>\n━━━━━━━━━━━━━━━━━━\nWählen Sie eine TTN, um Beleg und Notizen sofort zu öffnen.",
+        "pl": "⭐ <b>Oznaczone TTN</b>\n━━━━━━━━━━━━━━━━━━\nWybierz TTN, aby szybko zobaczyć podgląd i notatki.",
+        "ru": "⭐ <b>Отмеченные накладные</b>\n━━━━━━━━━━━━━━━━━━\nВыберите ТТН, чтобы сразу открыть чек и заметки."
+    },
+    "NP_NOTE_PROMPT": {
+        "uk": "💬 Напишіть коментар для ТТН {ttn} та надішліть повідомленням. Щоб скасувати, скористайтесь «❌ Скасувати» або напишіть «відміна».",
+        "en": "💬 Type a comment for TTN {ttn} and send it as a message. Use “❌ Cancel” or type “cancel” to abort.",
+        "de": "💬 Schreiben Sie eine Notiz für TTN {ttn} und senden Sie sie als Nachricht. Mit „❌ Abbrechen“ oder dem Wort „abbrechen“ beenden.",
+        "pl": "💬 Napisz komentarz do TTN {ttn} i wyślij wiadomość. Użyj „❌ Anuluj” lub wpisz „anuluj”, aby przerwać.",
+        "ru": "💬 Напишите комментарий для ТТН {ttn} и отправьте сообщением. Можно отменить через «❌ Отменить» или слово «отмена».",
+    },
+    "NP_NOTE_CANCELLED": {
+        "uk": "ℹ️ Додавання коментаря скасовано.",
+        "en": "ℹ️ Comment cancelled.",
+        "de": "ℹ️ Kommentar verworfen.",
+        "pl": "ℹ️ Dodawanie komentarza przerwano.",
+        "ru": "ℹ️ Комментарий не сохранён.",
+    },
+    "NP_NOTE_SAVED": {
+        "uk": "✅ Коментар збережено.",
+        "en": "✅ Comment saved.",
+        "de": "✅ Kommentar gespeichert.",
+        "pl": "✅ Komentarz zapisano.",
+        "ru": "✅ Комментарий сохранён.",
+    },
+    "NP_COMMENT_SECTION_TITLE": {
+        "uk": "💬 Коментарі ({count})",
+        "en": "💬 Comments ({count})",
+        "de": "💬 Kommentare ({count})",
+        "pl": "💬 Komentarze ({count})",
+        "ru": "💬 Комментарии ({count})",
+    },
+    "NP_BOOKMARK_ADDED": {
+        "uk": "✅ Накладну додано до відзначених.",
+        "en": "✅ TTN added to bookmarks.",
+        "de": "✅ TTN wurde markiert.",
+        "pl": "✅ TTN dodano do oznaczonych.",
+        "ru": "✅ Накладная добавлена в отмеченные.",
+    },
+    "NP_BOOKMARK_REMOVED": {
+        "uk": "✅ Накладну прибрано з відзначених.",
+        "en": "✅ TTN removed from bookmarks.",
+        "de": "✅ Markierung für die TTN entfernt.",
+        "pl": "✅ TTN usunięto z oznaczonych.",
+        "ru": "✅ Накладная удалена из отмеченных.",
+    },
+    "NP_ASSIGN_PROMPT_TTN": {
+        "uk": "📬 Введіть номер ТТН, яку потрібно закріпити за користувачем. «❌ Скасувати» повертає до меню.",
+        "en": "📬 Enter the TTN you want to assign to a user. Press “❌ Cancel” to return.",
+        "de": "📬 Geben Sie die TTN ein, die einem Nutzer zugeordnet werden soll. Mit „❌ Abbrechen“ zurück zum Menü.",
+        "pl": "📬 Podaj numer TTN, który chcesz przypisać użytkownikowi. „❌ Anuluj” wraca do menu.",
+        "ru": "📬 Введите номер ТТН, который нужно закрепить за пользователем. «❌ Отменить» вернёт в меню.",
+    },
+    "NP_ASSIGN_PROMPT_USER": {
+        "uk": "👤 Оберіть отримувача зі списку нижче або введіть його BSU/ID. «❌ Скасувати» зупиняє операцію.",
+        "en": "👤 Pick the recipient from the list below or type their BSU/ID. Use “❌ Cancel” to stop.",
+        "de": "👤 Wählen Sie den Empfänger über die Liste oder geben Sie BSU/ID ein. Mit „❌ Abbrechen“ beenden.",
+        "pl": "👤 Wybierz odbiorcę z listy poniżej lub wpisz jego BSU/ID. „❌ Anuluj” przerywa operację.",
+        "ru": "👤 Выберите получателя кнопкой ниже или введите его BSU/ID. «❌ Отменить» прекращает операцию.",
+    },
+    "NP_ASSIGN_USER_NOT_FOUND": {
+        "uk": "❗ Користувача не знайдено. Перевірте дані та спробуйте ще раз.",
+        "en": "❗ User not found. Please check the details and try again.",
+        "de": "❗ Benutzer nicht gefunden. Bitte prüfen Sie die Angaben und versuchen Sie es erneut.",
+        "pl": "❗ Nie znaleziono użytkownika. Sprawdź dane i spróbuj ponownie.",
+        "ru": "❗ Пользователь не найден. Проверьте данные и попробуйте снова.",
+    },
+    "NP_ASSIGN_PROMPT_NOTE": {
+        "uk": "📝 Додайте коротке повідомлення або натисніть «⏭ Пропустити». «❌ Скасувати» зупиняє передачу.",
+        "en": "📝 Add a short note or tap “⏭ Skip”. “❌ Cancel” stops the handover.",
+        "de": "📝 Fügen Sie eine kurze Notiz hinzu oder tippen Sie auf „⏭ Überspringen“. „❌ Abbrechen“ beendet den Vorgang.",
+        "pl": "📝 Dodaj krótki komentarz albo wybierz „⏭ Pomiń”. „❌ Anuluj” kończy operację.",
+        "ru": "📝 Добавьте короткий комментарий или нажмите «⏭ Пропустить». «❌ Отменить» прекращает передачу.",
+    },
+    "NP_ASSIGN_SKIP_TOAST": {
+        "uk": "Коментар не додано.",
+        "en": "No note attached.",
+        "de": "Keine Notiz hinzugefügt.",
+        "pl": "Notatki nie dodano.",
+        "ru": "Комментарий не добавлен.",
+    },
+    "NP_ASSIGN_CANCELLED": {
+        "uk": "ℹ️ Передача ТТН скасована.",
+        "en": "ℹ️ TTN forwarding cancelled.",
+        "de": "ℹ️ Weitergabe der TTN wurde abgebrochen.",
+        "pl": "ℹ️ Przekazanie TTN zostało przerwane.",
+        "ru": "ℹ️ Передача ТТН отменена.",
+    },
+    "NP_CANCELLED_TOAST": {
+        "uk": "Дію скасовано.",
+        "en": "Action cancelled.",
+        "de": "Aktion abgebrochen.",
+        "pl": "Działanie anulowano.",
+        "ru": "Действие отменено.",
+    },
+    "NP_ASSIGN_DONE": {
+        "uk": "🏢 <b>Передача оформлена</b>\n━━━━━━━━━━━━━━━━━━\n🔖 ТТН: <code>{ttn}</code>\n👤 Отримувач: {user}\n🕒 Призначено: {time}\n\n✅ Повідомлення надіслано.",
+        "en": "🏢 <b>Forwarding complete</b>\n━━━━━━━━━━━━━━━━━━\n🔖 TTN: <code>{ttn}</code>\n👤 Recipient: {user}\n🕒 Assigned: {time}\n\n✅ Notification sent.",
+        "de": "🏢 <b>Weitergabe abgeschlossen</b>\n━━━━━━━━━━━━━━━━━━\n🔖 TTN: <code>{ttn}</code>\n👤 Empfänger: {user}\n🕒 Zugeordnet: {time}\n\n✅ Benachrichtigung gesendet.",
+        "pl": "🏢 <b>Przekazanie zakończone</b>\n━━━━━━━━━━━━━━━━━━\n🔖 TTN: <code>{ttn}</code>\n👤 Odbiorca: {user}\n🕒 Przypisano: {time}\n\n✅ Powiadomienie wysłano.",
+        "ru": "🏢 <b>Передача оформлена</b>\n━━━━━━━━━━━━━━━━━━\n🔖 ТТН: <code>{ttn}</code>\n👤 Получатель: {user}\n🕒 Назначено: {time}\n\n✅ Уведомление отправлено.",
+    },
+    "NP_ASSIGN_DONE_NOTE_LABEL": {
+        "uk": "📝 Коментар адміністратора:\n{note}",
+        "en": "📝 Admin note:\n{note}",
+        "de": "📝 Notiz des Administrators:\n{note}",
+        "pl": "📝 Notatka administratora:\n{note}",
+        "ru": "📝 Комментарий администратора:\n{note}",
+    },
+    "NP_ASSIGN_NOTIFY_USER": {
+        "uk": "📦 Адміністратор {admin} передав вам накладну <b>{ttn}</b>. Відкрийте картку нижче, щоб переглянути статус і підтвердити отримання.",
+        "en": "📦 Administrator {admin} forwarded TTN <b>{ttn}</b> to you. Open the card below to review the status and confirm delivery.",
+        "de": "📦 Administrator {admin} hat Ihnen die TTN <b>{ttn}</b> übergeben. Öffnen Sie die Karte unten, um Status und Empfang zu prüfen.",
+        "pl": "📦 Administrator {admin} przekazał Ci TTN <b>{ttn}</b>. Otwórz kartę poniżej, aby sprawdzić status i potwierdzić odbiór.",
+        "ru": "📦 Администратор {admin} передал вам ТТН <b>{ttn}</b>. Откройте карточку ниже, чтобы проверить статус и подтвердить получение.",
+    },
+    "NP_ASSIGNED_EMPTY": {
+        "uk": "🏢 Нових посилок BSG поки немає. Як тільки адміністратор передасть ТТН, ви отримаєте сповіщення.",
+        "en": "🏢 No BSG parcels right now. You'll be notified as soon as an administrator forwards a TTN.",
+        "de": "🏢 Zurzeit keine BSG-Sendungen. Sie erhalten eine Nachricht, sobald ein Administrator eine TTN weiterleitet.",
+        "pl": "🏢 Obecnie brak przesyłek BSG. Dostaniesz powiadomienie, gdy administrator przekaże TTN.",
+        "ru": "🏢 Новых посылок BSG пока нет. Мы сообщим, как только администратор передаст ТТН.",
+    },
+    "NP_ASSIGNED_HEADER": {
+        "uk": "🏢 <b>Посилки BSG</b>\n━━━━━━━━━━━━━━━━━━\nОберіть накладну, щоб переглянути статус, залишити коментар або підтвердити отримання.",
+        "en": "🏢 <b>BSG parcels</b>\n━━━━━━━━━━━━━━━━━━\nPick a TTN to review its status, add a comment, or confirm delivery.",
+        "de": "🏢 <b>BSG-Sendungen</b>\n━━━━━━━━━━━━━━━━━━\nWählen Sie eine TTN, um Status, Kommentar oder den Empfang zu bestätigen.",
+        "pl": "🏢 <b>Przesyłki BSG</b>\n━━━━━━━━━━━━━━━━━━\nWybierz TTN, aby sprawdzić status, dodać komentarz lub potwierdzić odbiór.",
+        "ru": "🏢 <b>Посылки BSG</b>\n━━━━━━━━━━━━━━━━━━\nВыберите накладную, чтобы посмотреть статус, оставить комментарий или подтвердить получение.",
+    },
+    "NP_ASSIGNED_DETAIL_TITLE": {
+        "uk": "🏢 <b>Посилка BSG</b>",
+        "en": "🏢 <b>BSG parcel</b>",
+        "de": "🏢 <b>BSG-Sendung</b>",
+        "pl": "🏢 <b>Przesyłka BSG</b>",
+        "ru": "🏢 <b>Посылка BSG</b>",
+    },
+    "NP_ASSIGNED_CONFIRM_SENT": {
+        "uk": "✅ Повідомлення відправлено адміністраторам.",
+        "en": "✅ Notification sent to the administrators.",
+        "de": "✅ Benachrichtigung an die Administratoren gesendet.",
+        "pl": "✅ Powiadomienie wysłano administratorom.",
+        "ru": "✅ Уведомление отправлено администраторам.",
+    },
+    "NP_ASSIGNMENT_ALREADY_DONE": {
+        "uk": "ℹ️ Ця посилка вже відмічена як отримана.",
+        "en": "ℹ️ This parcel has already been marked as received.",
+        "de": "ℹ️ Diese Sendung wurde bereits als erhalten markiert.",
+        "pl": "ℹ️ Ta przesyłka została już oznaczona jako odebrana.",
+        "ru": "ℹ️ Эта посылка уже отмечена как полученная.",
+    },
+    "NP_DELIVERY_ACK_RECORDED": {
+        "uk": "✅ Дякуємо! Ми повідомили адміністраторів про отримання.",
+        "en": "✅ Thank you! The administrators have been notified.",
+        "de": "✅ Danke! Die Administratoren wurden informiert.",
+        "pl": "✅ Dziękujemy! Administratorzy zostali poinformowani.",
+        "ru": "✅ Спасибо! Администраторы уведомлены.",
+    },
+    "NP_RECEIVED_EMPTY": {
+        "uk": "📥 Поки що немає підтверджених посилок BSG. Після отримання скористайтеся кнопкою «Посилка отримана» в картці накладної.",
+        "en": "📥 No received BSG parcels yet. Use “Parcel received” on the TTN card once the delivery is in your hands.",
+        "de": "📥 Noch keine bestätigten BSG-Sendungen. Nutzen Sie „Sendung erhalten“ in der Karte, sobald die Lieferung bei Ihnen ist.",
+        "pl": "📥 Brak potwierdzonych przesyłek BSG. Po odebraniu użyj przycisku „Przesyłka odebrana” w karcie TTN.",
+        "ru": "📥 Подтверждённых посылок BSG пока нет. После получения нажмите «Посылка получена» в карточке накладной.",
+    },
+    "NP_RECEIVED_HEADER": {
+        "uk": "📥 <b>Отримані посилки BSG</b>\n━━━━━━━━━━━━━━━━━━\nПерегляньте статуси, коментарі та історію для підтверджених накладних.",
+        "en": "📥 <b>Received BSG parcels</b>\n━━━━━━━━━━━━━━━━━━\nReview statuses, comments, and history for confirmed deliveries.",
+        "de": "📥 <b>Erhaltene BSG-Sendungen</b>\n━━━━━━━━━━━━━━━━━━\nPrüfen Sie Status, Kommentare und Historie bestätigter Lieferungen.",
+        "pl": "📥 <b>Odebrane przesyłki BSG</b>\n━━━━━━━━━━━━━━━━━━\nSprawdź statusy, komentarze i historię potwierdzonych dostaw.",
+        "ru": "📥 <b>Полученные посылки BSG</b>\n━━━━━━━━━━━━━━━━━━\nПросмотрите статусы, комментарии и историю подтверждённых доставок.",
+    },
 }
 
 LANG_CODES = {code for code, _ in LANG_ORDER}
@@ -497,6 +1067,8 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 users_runtime: Dict[int, dict] = {}
 admins: set = set()
 active_project = {"name": None}
+alerts_poll_task: Optional[asyncio.Task] = None
+alerts_history_cache: Dict[str, Dict[str, Any]] = {}
 
 
 # ========================== FSM ==========================
@@ -526,12 +1098,25 @@ class PhotoFSM(StatesGroup):
     collecting = State()
 
 
+class SosFSM(StatesGroup):
+    waiting_location = State()
+
+
+class NovaPoshtaFSM(StatesGroup):
+    waiting_ttn = State()
+    waiting_note = State()
+    waiting_assign_ttn = State()
+    waiting_assign_user = State()
+    waiting_assign_note = State()
+
+
 # ========================== FS HELPERS ==========================
 def ensure_dirs():
     os.makedirs("data", exist_ok=True)
     os.makedirs(BASE_PATH, exist_ok=True)
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
+    os.makedirs(ALERTS_STORAGE_DIR, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -912,6 +1497,97 @@ def load_user(uid: int) -> Optional[dict]:
 
 def save_user(profile: dict):
     json.dump(profile, open(user_file(profile["user_id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+
+def load_all_users() -> List[dict]:
+    ensure_dirs()
+    if not os.path.exists(USERS_PATH):
+        return []
+    profiles: List[dict] = []
+    for name in os.listdir(USERS_PATH):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(USERS_PATH, name)
+        try:
+            profiles.append(json.load(open(path, "r", encoding="utf-8")))
+        except Exception:
+            continue
+    return profiles
+
+
+def normalize_bsu_code(code: str) -> Optional[str]:
+    if not code:
+        return None
+    digits = re.sub(r"[^0-9]", "", code)
+    if len(digits) != 4:
+        return None
+    return f"BSU-{digits}"
+
+
+def find_user_by_bsu(code: str, profiles: Optional[List[dict]] = None) -> Optional[dict]:
+    normalized = normalize_bsu_code(code)
+    if not normalized:
+        return None
+    profiles = profiles or load_all_users()
+    target = normalized.upper()
+    for prof in profiles:
+        bsu = str(prof.get("bsu") or "").upper()
+        if bsu == target:
+            return prof
+    return None
+
+
+def find_user_by_username(username: str, profiles: Optional[List[dict]] = None) -> Optional[dict]:
+    if not username:
+        return None
+    normalized = username.lstrip("@").strip().lower()
+    if not normalized:
+        return None
+    profiles = profiles or load_all_users()
+    for prof in profiles:
+        tg_username = ((prof.get("tg") or {}).get("username") or "").lower()
+        if tg_username == normalized:
+            return prof
+    return None
+
+
+def resolve_user_reference(msg: types.Message) -> Optional[dict]:
+    if msg.forward_from:
+        profile = load_user(msg.forward_from.id)
+        if profile:
+            return profile
+    contact = getattr(msg, "contact", None)
+    if contact and contact.user_id:
+        profile = load_user(contact.user_id)
+        if profile:
+            return profile
+
+    text = (msg.text or "").strip()
+    if not text:
+        return None
+
+    profiles = load_all_users()
+
+    bsu_candidate = find_user_by_bsu(text, profiles=profiles)
+    if bsu_candidate:
+        return bsu_candidate
+
+    digits = re.sub(r"[^0-9]", "", text)
+    if digits:
+        try:
+            profile = load_user(int(digits))
+            if profile:
+                return profile
+        except Exception:
+            pass
+
+    if text.startswith("@"):
+        username_match = find_user_by_username(text, profiles=profiles)
+        if username_match:
+            return username_match
+
+    return None
+
 
 def normalize_profile_receipts(profile: dict) -> bool:
     changed = False
@@ -1517,6 +2193,626 @@ def format_datetime_short(value: Optional[str]) -> str:
         return str(value)
 
 
+def format_day_month(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    try:
+        return datetime.fromisoformat(value).strftime("%d.%m")
+    except Exception:
+        return ""
+
+
+NP_FIELD_LABELS = {
+    "uk": {
+        "ttn": "ТТН",
+        "status": "Статус",
+        "last_update": "Оновлено",
+        "delivery_date": "Планова доставка",
+        "estimated_date": "Орієнтовно",
+        "recipient": "Ім’я",
+        "recipient_city": "Місто",
+        "recipient_warehouse": "Відділення",
+        "sender": "Ім’я",
+        "sender_city": "Місто",
+        "sender_warehouse": "Відділення",
+        "service_type": "Сервіс",
+        "weight": "Вага",
+        "cost": "Оціночна вартість",
+        "section_summary": "СВОДКА",
+        "section_recipient": "ОТРИМУВАЧ",
+        "section_sender": "ВІДПРАВНИК",
+        "section_parcel": "ПОСИЛКА",
+    },
+    "en": {
+        "ttn": "TTN",
+        "status": "Status",
+        "last_update": "Updated",
+        "delivery_date": "Planned delivery",
+        "estimated_date": "Estimated",
+        "recipient": "Name",
+        "recipient_city": "City",
+        "recipient_warehouse": "Branch",
+        "sender": "Name",
+        "sender_city": "City",
+        "sender_warehouse": "Branch",
+        "service_type": "Service",
+        "weight": "Weight",
+        "cost": "Declared value",
+        "section_summary": "Summary",
+        "section_recipient": "Recipient",
+        "section_sender": "Sender",
+        "section_parcel": "Parcel",
+    },
+    "de": {
+        "ttn": "TTN",
+        "status": "Status",
+        "last_update": "Aktualisiert",
+        "delivery_date": "Geplante Zustellung",
+        "estimated_date": "Voraussichtlich",
+        "recipient": "Name",
+        "recipient_city": "Stadt",
+        "recipient_warehouse": "Filiale",
+        "sender": "Name",
+        "sender_city": "Stadt",
+        "sender_warehouse": "Filiale",
+        "service_type": "Service",
+        "weight": "Gewicht",
+        "cost": "Deklarierter Wert",
+        "section_summary": "Übersicht",
+        "section_recipient": "Empfänger",
+        "section_sender": "Absender",
+        "section_parcel": "Sendung",
+    },
+    "pl": {
+        "ttn": "TTN",
+        "status": "Status",
+        "last_update": "Aktualizacja",
+        "delivery_date": "Planowana dostawa",
+        "estimated_date": "Szacunkowo",
+        "recipient": "Imię",
+        "recipient_city": "Miasto",
+        "recipient_warehouse": "Oddział",
+        "sender": "Imię",
+        "sender_city": "Miasto",
+        "sender_warehouse": "Oddział",
+        "service_type": "Usługa",
+        "weight": "Waga",
+        "cost": "Deklarowana wartość",
+        "section_summary": "Podsumowanie",
+        "section_recipient": "Odbiorca",
+        "section_sender": "Nadawca",
+        "section_parcel": "Przesyłka",
+    },
+    "ru": {
+        "ttn": "ТТН",
+        "status": "Статус",
+        "last_update": "Обновлено",
+        "delivery_date": "Плановая доставка",
+        "estimated_date": "Ориентировочно",
+        "recipient": "Имя",
+        "recipient_city": "Город",
+        "recipient_warehouse": "Отделение",
+        "sender": "Имя",
+        "sender_city": "Город",
+        "sender_warehouse": "Отделение",
+        "service_type": "Сервис",
+        "weight": "Вес",
+        "cost": "Оценочная стоимость",
+        "section_summary": "СВОДКА",
+        "section_recipient": "ПОЛУЧАТЕЛЬ",
+        "section_sender": "ОТПРАВИТЕЛЬ",
+        "section_parcel": "ПОСЫЛКА",
+    },
+}
+
+NP_WEIGHT_SUFFIX = {
+    "uk": " кг",
+    "en": " kg",
+    "de": " kg",
+    "pl": " kg",
+    "ru": " кг",
+}
+
+NP_COST_SUFFIX = {
+    "uk": " грн",
+    "en": " UAH",
+    "de": " UAH",
+    "pl": " UAH",
+    "ru": " грн",
+}
+
+NP_SECTION_ICONS = {
+    "section_summary": "📌",
+    "section_recipient": "🎯",
+    "section_sender": "🚚",
+    "section_parcel": "📦",
+}
+
+NP_TTN_TITLE = {
+    "uk": "🧾 <b>Nova Poshta — квитанція</b>\n🔖 ТТН: <code>{ttn}</code>",
+    "en": "🧾 <b>Nova Poshta — receipt</b>\n🔖 TTN: <code>{ttn}</code>",
+    "de": "🧾 <b>Nova Poshta — Beleg</b>\n🔖 TTN: <code>{ttn}</code>",
+    "pl": "🧾 <b>Nova Poshta — potwierdzenie</b>\n🔖 TTN: <code>{ttn}</code>",
+    "ru": "🧾 <b>Nova Poshta — квитанция</b>\n🔖 ТТН: <code>{ttn}</code>",
+}
+
+NP_ASSIGN_INFO_LINE = {
+    "uk": "🏢 Передав адміністратор: {name} • {time}",
+    "en": "🏢 Assigned by admin {name} • {time}",
+    "de": "🏢 Zugewiesen durch Admin {name} • {time}",
+    "pl": "🏢 Przypisane przez admina {name} • {time}",
+    "ru": "🏢 Передал администратор: {name} • {time}",
+}
+
+NP_ASSIGN_DELIVERED_LINE = {
+    "uk": "✅ Отримання підтверджено: {time}",
+    "en": "✅ Delivery confirmed: {time}",
+    "de": "✅ Empfang bestätigt: {time}",
+    "pl": "✅ Odbiór potwierdzony: {time}",
+    "ru": "✅ Получение подтверждено: {time}",
+}
+
+NP_ADMIN_NOTE_PREFIX = {
+    "uk": "💬 Коментар адміністратора: {note}",
+    "en": "💬 Admin note: {note}",
+    "de": "💬 Hinweis des Admins: {note}",
+    "pl": "💬 Notatka administratora: {note}",
+    "ru": "💬 Комментарий администратора: {note}",
+}
+
+NP_COMMENT_SECTION_TITLE = {
+    "uk": "💬 Коментарі ({count})",
+    "en": "💬 Comments ({count})",
+    "de": "💬 Kommentare ({count})",
+    "pl": "💬 Komentarze ({count})",
+    "ru": "💬 Комментарии ({count})",
+}
+
+NP_DELIVERY_RECEIPT_TITLE = {
+    "uk": "📦 Посилка отримана",
+    "en": "📦 Parcel received",
+    "de": "📦 Sendung erhalten",
+    "pl": "📦 Przesyłka odebrana",
+    "ru": "📦 Посылка получена",
+}
+
+NP_DELIVERY_STATUS_CONFIRMED = {
+    "uk": "Підтверджено",
+    "en": "Confirmed",
+    "de": "Bestätigt",
+    "pl": "Potwierdzono",
+    "ru": "Подтверждено",
+}
+
+NP_DELIVERY_RECEIPT_LABELS = {
+    "uk": {"ttn": "ТТН", "recipient": "Отримувач", "date": "Дата", "status": "Статус"},
+    "en": {"ttn": "TTN", "recipient": "Recipient", "date": "Date", "status": "Status"},
+    "de": {"ttn": "TTN", "recipient": "Empfänger", "date": "Datum", "status": "Status"},
+    "pl": {"ttn": "TTN", "recipient": "Odbiorca", "date": "Data", "status": "Status"},
+    "ru": {"ttn": "ТТН", "recipient": "Получатель", "date": "Дата", "status": "Статус"},
+}
+
+NP_DATETIME_CARD_FORMATS = {
+    "uk": "%d.%m.%Y • %H:%M",
+    "en": "%d.%m.%Y • %H:%M",
+    "de": "%d.%m.%Y • %H:%M",
+    "pl": "%d.%m.%Y • %H:%M",
+    "ru": "%d.%m.%Y • %H:%M",
+}
+
+NP_REFRESH_BUTTON_LABEL = {
+    "uk": "🔄 Оновити",
+    "en": "🔄 Refresh",
+    "de": "🔄 Aktualisieren",
+    "pl": "🔄 Odśwież",
+    "ru": "🔄 Обновить",
+}
+
+NP_NOTE_BUTTON_LABEL = {
+    "uk": "💬 Додати коментар",
+    "en": "💬 Add comment",
+    "de": "💬 Kommentar hinzufügen",
+    "pl": "💬 Dodaj komentarz",
+    "ru": "💬 Добавить комментарий",
+}
+
+NP_CLOSE_BUTTON_LABEL = {
+    "uk": "❌ Закрити",
+    "en": "❌ Close",
+    "de": "❌ Schließen",
+    "pl": "❌ Zamknij",
+    "ru": "❌ Закрыть",
+}
+
+NP_BOOKMARK_ADD_BUTTON = {
+    "uk": "⭐ Додати в обране",
+    "en": "⭐ Bookmark",
+    "de": "⭐ Merken",
+    "pl": "⭐ Oznacz",
+    "ru": "⭐ Отметить",
+}
+
+NP_BOOKMARK_REMOVE_BUTTON = {
+    "uk": "⭐ Прибрати з обраного",
+    "en": "⭐ Remove bookmark",
+    "de": "⭐ Entfernen",
+    "pl": "⭐ Usuń oznaczenie",
+    "ru": "⭐ Удалить отметку",
+}
+
+NP_MARK_RECEIVED_LABEL = {
+    "uk": "✅ Посилку отримано",
+    "en": "✅ Parcel received",
+    "de": "✅ Sendung erhalten",
+    "pl": "✅ Przesyłka odebrana",
+    "ru": "✅ Посылка получена",
+}
+
+NP_CANCEL_BUTTON_LABEL = {
+    "uk": "❌ Скасувати",
+    "en": "❌ Cancel",
+    "de": "❌ Abbrechen",
+    "pl": "❌ Anuluj",
+    "ru": "❌ Отменить",
+}
+
+NP_ASSIGN_SKIP_BUTTON_LABEL = {
+    "uk": "⏭ Пропустити",
+    "en": "⏭ Skip",
+    "de": "⏭ Überspringen",
+    "pl": "⏭ Pomiń",
+    "ru": "⏭ Пропустить",
+}
+
+NP_CANCEL_WORDS = {"отмена", "cancel", "скасувати", "відміна", "anuluj", "abbrechen", "stop"}
+
+
+def _np_pick(lang: str, mapping: Dict[str, str]) -> str:
+    return mapping.get(lang) or mapping.get(DEFAULT_LANG) or next(iter(mapping.values()))
+
+
+def _np_format_weight(lang: str, value: Any) -> str:
+    try:
+        num = float(str(value).replace(",", "."))
+        if abs(num - round(num)) < 0.01:
+            num_disp = str(int(round(num)))
+        else:
+            num_disp = f"{num:.2f}".rstrip("0").rstrip(".")
+    except Exception:
+        return str(value)
+    return f"{num_disp}{_np_pick(lang, NP_WEIGHT_SUFFIX)}"
+
+
+def _np_format_cost(lang: str, value: Any) -> str:
+    try:
+        num = float(str(value).replace(",", "."))
+    except Exception:
+        return str(value)
+    return f"{fmt_money(num)}{_np_pick(lang, NP_COST_SUFFIX)}"
+
+
+def format_np_short_entry(payload: Optional[dict]) -> str:
+    if not payload:
+        return ""
+    status = str(payload.get("Status") or payload.get("StatusCode") or payload.get("StatusDescription") or "").strip()
+    city = str(payload.get("CityRecipient") or payload.get("CitySender") or "").strip()
+    if status and city:
+        return f"{status} · {city}"
+    return status or city
+
+
+def _np_extract_value(payload: Optional[dict], *keys: str) -> str:
+    if not payload:
+        return ""
+    for key in keys:
+        if key is None:
+            continue
+        raw = payload.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, (int, float)):
+            value = f"{raw}"
+        else:
+            value = str(raw)
+        value = value.strip()
+        if value:
+            return value
+    return ""
+
+
+def _np_render_receipt_block(entries: List[Tuple[str, ...]]) -> str:
+    items: List[Dict[str, Any]] = []
+    for entry in entries:
+        if not entry:
+            continue
+        kind = entry[0]
+        if kind == "sep":
+            if items and items[-1]["type"] != "sep":
+                items.append({"type": "sep"})
+            continue
+        if kind == "section":
+            title = str(entry[1]).strip()
+            if title:
+                items.append({"type": "section", "text": title})
+            continue
+        label = str(entry[1]).strip()
+        value = ""
+        if len(entry) > 2 and entry[2] is not None:
+            value = str(entry[2]).strip()
+        if not value and kind == "kv_opt":
+            continue
+        if not value:
+            value = "—"
+        items.append({"type": "kv", "label": label or "—", "value": value})
+
+    while items and items[-1]["type"] == "sep":
+        items.pop()
+
+    if not items:
+        return "—"
+
+    kv_items = [item for item in items if item["type"] == "kv"]
+    label_width = max((len(item["label"]) for item in kv_items), default=0)
+    value_column = max(20, min(40, label_width + 4))
+
+    lines: List[str] = []
+    for item in items:
+        if item["type"] == "sep":
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        if item["type"] == "section":
+            if lines and lines[-1] != "":
+                lines.append("")
+            lines.append(item["text"])
+            continue
+        label = item["label"].strip()
+        prefix = f"{label}:" if label else ""
+        gap = value_column - len(prefix)
+        if gap < 2:
+            gap = 2
+        spaces = " " * gap
+        raw_value = item["value"]
+        value_lines = [line.strip() for line in raw_value.splitlines()] or ["—"]
+        first_line = value_lines[0] or "—"
+        line_prefix = prefix + spaces
+        lines.append(line_prefix + first_line)
+        indent = " " * len(line_prefix)
+        for extra in value_lines[1:]:
+            extra_line = extra or "—"
+            lines.append(indent + extra_line)
+
+    while lines and lines[-1] == "":
+        lines.pop()
+
+    return "\n".join(lines)
+
+
+def np_format_delivery_timestamp(value: Optional[str], lang: str) -> str:
+    if not value:
+        return ""
+    raw = str(value)
+    try:
+        dt = datetime.fromisoformat(raw)
+    except Exception:
+        try:
+            dt = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+        except Exception:
+            return raw
+    fmt = NP_DATETIME_CARD_FORMATS.get(lang) or NP_DATETIME_CARD_FORMATS.get(DEFAULT_LANG) or "%d.%m.%Y • %H:%M"
+    try:
+        return dt.strftime(fmt)
+    except Exception:
+        return raw
+
+
+def np_render_delivery_receipt(lang: str, ttn: Any, recipient: Any, delivered_at: Optional[str]) -> str:
+    labels = (
+        NP_DELIVERY_RECEIPT_LABELS.get(lang)
+        or NP_DELIVERY_RECEIPT_LABELS.get(DEFAULT_LANG)
+        or next(iter(NP_DELIVERY_RECEIPT_LABELS.values()))
+    )
+    entries: List[Tuple[str, ...]] = [
+        ("kv", labels.get("ttn", "TTN"), str(ttn) if ttn is not None else ""),
+        ("kv", labels.get("recipient", "Recipient"), str(recipient) if recipient is not None else ""),
+        ("kv", labels.get("date", "Date"), np_format_delivery_timestamp(delivered_at, lang)),
+        ("kv", labels.get("status", "Status"), _np_pick(lang, NP_DELIVERY_STATUS_CONFIRMED)),
+    ]
+    block_plain = _np_render_receipt_block(entries)
+    header = _np_pick(lang, NP_DELIVERY_RECEIPT_TITLE)
+    return f"{header}\n━━━━━━━━━━━━━━━━━━\n<pre>{html_escape(block_plain)}</pre>"
+
+
+def format_np_status(uid: int, ttn: str, payload: Optional[dict],
+                     note_entries: Optional[List[Dict[str, Any]]] = None,
+                     assignment: Optional[dict] = None) -> str:
+    lang = resolve_lang(uid)
+    labels = NP_FIELD_LABELS.get(lang) or NP_FIELD_LABELS[DEFAULT_LANG]
+    header = _np_pick(lang, NP_TTN_TITLE).format(ttn=h(ttn))
+
+    def field_label(key: str) -> str:
+        return labels.get(key, key)
+
+    def section_title(key: str) -> str:
+        base = labels.get(key, key)
+        icon = NP_SECTION_ICONS.get(key)
+        title = base.strip().upper()
+        if icon and not title.startswith(icon):
+            return f"{icon} {title}"
+        return title
+
+    summary_rows: List[Tuple[str, ...]] = [
+        ("section", section_title("section_summary")),
+        ("kv", field_label("ttn"), str(ttn)),
+        ("kv", field_label("status"), _np_extract_value(payload, "Status", "StatusDescription", "StatusCode") or "—"),
+    ]
+
+    last_update = _np_extract_value(payload, "LastUpdatedDate")
+    if last_update:
+        summary_rows.append(("kv_opt", field_label("last_update"), last_update))
+    delivery_date = _np_extract_value(payload, "ScheduledDeliveryDate")
+    if delivery_date:
+        summary_rows.append(("kv_opt", field_label("delivery_date"), delivery_date))
+    estimated_date = _np_extract_value(payload, "EstimatedDeliveryDate")
+    if estimated_date:
+        summary_rows.append(("kv_opt", field_label("estimated_date"), estimated_date))
+
+    recipient_section: List[Tuple[str, ...]] = []
+    recipient_name = _np_extract_value(payload, "RecipientFullName", "RecipientDescription", "RecipientName")
+    if recipient_name:
+        recipient_section.append(("kv", field_label("recipient"), recipient_name))
+    recipient_city = _np_extract_value(payload, "CityRecipient")
+    if recipient_city:
+        recipient_section.append(("kv_opt", field_label("recipient_city"), recipient_city))
+    recipient_branch = _np_extract_value(payload, "WarehouseRecipient")
+    if recipient_branch:
+        recipient_section.append(("kv_opt", field_label("recipient_warehouse"), recipient_branch))
+
+    sender_section: List[Tuple[str, ...]] = []
+    sender_name = _np_extract_value(payload, "SenderFullNameEW", "SenderFullName", "SenderName")
+    if sender_name:
+        sender_section.append(("kv", field_label("sender"), sender_name))
+    sender_city = _np_extract_value(payload, "CitySender")
+    if sender_city:
+        sender_section.append(("kv_opt", field_label("sender_city"), sender_city))
+    sender_branch = _np_extract_value(payload, "WarehouseSender")
+    if sender_branch:
+        sender_section.append(("kv_opt", field_label("sender_warehouse"), sender_branch))
+
+    parcel_section: List[Tuple[str, ...]] = []
+    service_type = _np_extract_value(payload, "ServiceType")
+    if service_type:
+        parcel_section.append(("kv_opt", field_label("service_type"), service_type))
+    weight_raw = _np_extract_value(payload, "DocumentWeight", "FactualWeight")
+    if weight_raw:
+        parcel_section.append(("kv", field_label("weight"), _np_format_weight(lang, weight_raw)))
+    cost_raw = _np_extract_value(payload, "DocumentCost", "EstimatedDeliveryCost")
+    if cost_raw:
+        parcel_section.append(("kv", field_label("cost"), _np_format_cost(lang, cost_raw)))
+
+    receipt_entries: List[Tuple[str, ...]] = list(summary_rows)
+
+    def push_section(title_key: str, rows: List[Tuple[str, ...]]):
+        if not rows:
+            return
+        if receipt_entries:
+            receipt_entries.append(("sep",))
+        receipt_entries.append(("section", section_title(title_key)))
+        receipt_entries.extend(rows)
+
+    push_section("section_recipient", recipient_section)
+    push_section("section_sender", sender_section)
+    push_section("section_parcel", parcel_section)
+
+    block_plain = _np_render_receipt_block(receipt_entries)
+    block_html = f"<pre>{html_escape(block_plain)}</pre>"
+
+    note_entries = list(note_entries or [])
+
+    parts: List[str] = [header, block_html]
+
+    footer_lines: List[str] = []
+    comment_lines: List[str] = []
+    if note_entries:
+        comment_lines.append(_np_pick(lang, NP_COMMENT_SECTION_TITLE).format(count=len(note_entries)))
+        for note in note_entries[:3]:
+            timestamp_raw = note.get("timestamp") if isinstance(note, dict) else None
+            timestamp = format_datetime_short(timestamp_raw) or (timestamp_raw or "")
+            timestamp_disp = h(timestamp) if timestamp else "—"
+            note_text = (note.get("text") if isinstance(note, dict) else "") or ""
+            snippet = _np_trim_label(note_text.strip(), 220) if note_text else "—"
+            comment_lines.append(f"• {timestamp_disp} — {h(snippet)}")
+        if len(note_entries) > 3:
+            comment_lines.append("…")
+    if comment_lines:
+        footer_lines.extend(comment_lines)
+
+    assignment_lines: List[str] = []
+    if assignment:
+        admin_id = assignment.get("assigned_by")
+        admin_name = None
+        if admin_id:
+            prof = load_user(admin_id) or {}
+            admin_name = prof.get("fullname") or prof.get("tg", {}).get("first_name")
+        admin_display = admin_name or (f"ID {admin_id}" if admin_id else "—")
+        assigned_time = format_datetime_short(assignment.get("created_at")) or assignment.get("created_at") or "—"
+        assignment_lines.append(
+            _np_pick(lang, NP_ASSIGN_INFO_LINE).format(name=h(admin_display), time=h(assigned_time))
+        )
+        note_text = assignment.get("note")
+        if note_text:
+            assignment_lines.append(_np_pick(lang, NP_ADMIN_NOTE_PREFIX).format(note=h(note_text)))
+        delivered_at = assignment.get("delivered_at")
+        if delivered_at:
+            delivered_time = format_datetime_short(delivered_at) or delivered_at or "—"
+            assignment_lines.append(
+                _np_pick(lang, NP_ASSIGN_DELIVERED_LINE).format(time=h(delivered_time))
+            )
+
+    if assignment_lines:
+        if footer_lines:
+            footer_lines.append("")
+        footer_lines.extend(assignment_lines)
+
+    if footer_lines:
+        parts.append("\n".join(footer_lines))
+
+    return "\n\n".join(part for part in parts if part)
+
+
+async def np_send_card(uid: int, chat_id: int, text: str,
+                       kb: Optional[InlineKeyboardMarkup] = None) -> types.Message:
+    runtime = users_runtime.setdefault(uid, {})
+    previous = runtime.get("np_last_card")
+    if isinstance(previous, (list, tuple)) and len(previous) == 2:
+        prev_chat, prev_mid = previous
+        try:
+            await bot.delete_message(prev_chat, prev_mid)
+        except Exception:
+            pass
+        flow_items = runtime.get("flow_msgs", [])
+        runtime["flow_msgs"] = [item for item in flow_items if not (item[0] == prev_chat and item[1] == prev_mid)]
+    msg = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+    flow_track(uid, msg)
+    runtime["np_last_card"] = (msg.chat.id, msg.message_id)
+    return msg
+
+
+def np_prepare_view(uid: int, ttn: str, payload: Optional[dict] = None,
+                    force_fetch: bool = False,
+                    allow_bookmark: bool = True) -> Tuple[Optional[str], Optional[InlineKeyboardMarkup], Optional[dict], Optional[dict], Optional[str]]:
+    actual_payload = payload or np_get_cached_status(uid, ttn)
+    error_message = None
+    if force_fetch or actual_payload is None:
+        success, fetched_payload, error_message = np_fetch_tracking(ttn)
+        if not success:
+            return None, None, None, None, error_message
+        actual_payload = fetched_payload
+        np_remember_search(uid, ttn, actual_payload)
+
+    assignment = np_get_assignment(ttn)
+    if actual_payload and assignment:
+        np_refresh_assignment_status(ttn, actual_payload)
+
+    if assignment and not (assignment.get("assigned_to") == uid or uid in admins):
+        assignment_display = None
+    else:
+        assignment_display = assignment
+
+    notes_map = np_list_notes(uid, ttn)
+    note_entries = notes_map.get(ttn, [])
+    text = format_np_status(uid, ttn, actual_payload, note_entries=note_entries, assignment=assignment_display)
+    kb = kb_np_result(
+        uid,
+        ttn,
+        bookmarked=np_has_bookmark(uid, ttn),
+        allow_assign=(uid in admins),
+        assignment=assignment_display,
+        allow_bookmark=allow_bookmark,
+    )
+    return text, kb, actual_payload, assignment_display, None
+
+
 def receipt_status_text(paid, target: Any = DEFAULT_LANG) -> str:
     if paid is True:
         return tr(target, "STATUS_PAID")
@@ -1766,6 +3062,18 @@ def project_status_text(uid: int) -> str:
         return tr(uid, "ANCHOR_NO_PROJECT", bot=h(BOT_NAME))
     info = load_project_info(active_project["name"])
     photo_total = project_photo_count(active_project["name"])
+    assignments = np_list_assignments(uid)
+    total_assigned = len(assignments)
+    pending_assigned = sum(1 for item in assignments if not item.get("delivered_at"))
+    delivered_count = max(0, total_assigned - pending_assigned)
+    bsg_section = tr(
+        uid,
+        "ANCHOR_PROJECT_BSG_SUMMARY",
+        total=total_assigned,
+        pending=pending_assigned,
+        delivered=delivered_count,
+    )
+    alerts_section = alerts_anchor_section(uid)
     name = h(info.get("name", "—")) or "—"
     region = h(info.get("region") or "—")
     location = h(info.get("location", "—")) or "—"
@@ -1783,6 +3091,8 @@ def project_status_text(uid: int) -> str:
         photos=photo_total,
         start=start,
         end=end,
+        bsg_section=bsg_section,
+        alerts_section=alerts_section,
     )
 
 
@@ -1797,12 +3107,26 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
     kb.add(InlineKeyboardButton(tr(uid, "BTN_PHOTO_TIMELINE"), callback_data="menu_photos"))
     kb.row(
         InlineKeyboardButton(tr(uid, "BTN_FINANCE"), callback_data="menu_finance"),
+        InlineKeyboardButton(tr(uid, "BTN_ALERTS"), callback_data="menu_alerts"),
+    )
+    kb.row(
         InlineKeyboardButton(tr(uid, "BTN_SOS"), callback_data="menu_sos"),
+        InlineKeyboardButton(tr(uid, "BTN_NOVA_POSHTA"), callback_data="menu_np"),
     )
     kb.add(InlineKeyboardButton(tr(uid, "BTN_SETTINGS"), callback_data="menu_settings"))
     if uid in admins:
         kb.add(InlineKeyboardButton(tr(uid, "BTN_ADMIN"), callback_data="menu_admin"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_ABOUT"), callback_data="menu_about"))
+    return kb
+
+
+def kb_alerts(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_OVERVIEW"), callback_data="alerts_overview"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
     return kb
 
 
@@ -1824,14 +3148,86 @@ def kb_photos(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
-def kb_photo_session_controls() -> InlineKeyboardMarkup:
+def kb_photo_session_controls(has_uploads: bool) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if has_uploads:
+        kb.row(
+            InlineKeyboardButton("🗂 Посмотреть загруженное", callback_data="photo_session_preview"),
+            InlineKeyboardButton("✅ Завершить загрузку", callback_data="photo_finish"),
+        )
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="photo_cancel"))
+    return kb
+
+
+def kb_photo_view_actions() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.row(
-        InlineKeyboardButton("✅ Завершить загрузку", callback_data="photo_finish"),
-        InlineKeyboardButton("❌ Отменить", callback_data="photo_cancel"),
+        InlineKeyboardButton("❌ Закрыть", callback_data="photo_view_close"),
+        InlineKeyboardButton("🏠 На главную", callback_data="photo_view_root"),
     )
-    kb.add(InlineKeyboardButton("❌ Закрыть сообщение", callback_data="broadcast_close"))
     return kb
+
+
+def _format_photo_session_entry(idx: int, entry: dict) -> str:
+    original = entry.get("original") or entry.get("file") or "—"
+    uploaded_at = entry.get("uploaded_at")
+    if isinstance(uploaded_at, str):
+        try:
+            dt = datetime.fromisoformat(uploaded_at)
+            uploaded_at = dt.strftime("%d.%m.%Y %H:%M")
+        except ValueError:
+            uploaded_at = uploaded_at.replace("T", " ")
+    return f"{idx}. {h(original)} — {h(uploaded_at or '—')}"
+
+
+def _build_photo_session_text(info: dict, uploaded: List[dict], last_entry: Optional[dict] = None) -> str:
+    name = h(info.get("name", "—"))
+    code = h(info.get("code") or "—")
+    lines = [
+        "📤 <b>Загрузка фотографий объекта</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📂 Проект: <b>{name}</b> ({code})",
+        "",
+        "Отправляйте одно или несколько изображений: можно прикреплять фото напрямую или документом без сжатия.",
+        "Каждый файл сохраняется в хронологию вместе с вашим именем и временем загрузки.",
+        "",
+    ]
+    if uploaded:
+        lines.append(f"📸 Уже загружено: <b>{len(uploaded)}</b>")
+        lines.append("Список файлов:")
+        lines.extend(_format_photo_session_entry(idx + 1, entry) for idx, entry in enumerate(uploaded))
+        if last_entry:
+            marker = last_entry.get("original") or last_entry.get("file")
+            if marker:
+                lines.append("")
+                lines.append(f"🆕 Последнее добавление: <b>{h(marker)}</b>")
+        lines.append("")
+        lines.append("Используйте кнопку «🗂 Посмотреть загруженное», чтобы пересмотреть файлы без повторной загрузки.")
+    else:
+        lines.append("Пока нет загруженных файлов. Отправьте первое фото, чтобы начать список.")
+    lines.append("")
+    lines.append("Продолжайте отправлять фото или используйте кнопки ниже для завершения или отмены сессии.")
+    return "\n".join(lines)
+
+
+async def _photo_refresh_session_message(chat_id: int, uid: int, state: FSMContext, info: dict,
+                                         uploaded: List[dict], last_entry: Optional[dict] = None):
+    data = await state.get_data()
+    target = data.get("photo_session_message")
+    text = _build_photo_session_text(info, uploaded, last_entry)
+    kb = kb_photo_session_controls(bool(uploaded))
+    if isinstance(target, (list, tuple)) and len(target) == 2:
+        tgt_chat, tgt_id = target
+        try:
+            await bot.edit_message_text(text, tgt_chat, tgt_id, reply_markup=kb)
+            return
+        except MessageNotModified:
+            return
+        except Exception:
+            await _delete_message_safe(tgt_chat, tgt_id)
+    msg = await bot.send_message(chat_id, text, reply_markup=kb)
+    flow_track(uid, msg)
+    await state.update_data(photo_session_message=(msg.chat.id, msg.message_id))
 
 
 def kb_finance_root(user_has_pending_confirm: bool=False) -> InlineKeyboardMarkup:
@@ -1842,6 +3238,78 @@ def kb_finance_root(user_has_pending_confirm: bool=False) -> InlineKeyboardMarku
     kb.add(InlineKeyboardButton("📨 Запросить выплату", callback_data="fin_request_payout"))
     kb.add(InlineKeyboardButton("📚 История выплат", callback_data="fin_history"))
     kb.add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
+    return kb
+
+
+def kb_novaposhta(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_INTERFACE"), callback_data="np_interface"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_SEARCH"), callback_data="np_search"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_HISTORY"), callback_data="np_history"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_BOOKMARKS"), callback_data="np_bookmarks"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_ASSIGNED"), callback_data="np_assigned"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_RECEIVED"), callback_data="np_received"))
+    if uid in admins:
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_ASSIGN_SEND"), callback_data="np_assign_start"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def kb_np_cancel(uid: int) -> InlineKeyboardMarkup:
+    lang = resolve_lang(uid)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_CANCEL_BUTTON_LABEL), callback_data="np_cancel"))
+    return kb
+
+
+def kb_np_assign_note(uid: int) -> InlineKeyboardMarkup:
+    lang = resolve_lang(uid)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_ASSIGN_SKIP_BUTTON_LABEL), callback_data="np_assign_skip"))
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_CANCEL_BUTTON_LABEL), callback_data="np_cancel"))
+    return kb
+
+
+def kb_np_result(uid: int, ttn: str, *, bookmarked: bool,
+                 allow_assign: bool = False,
+                 assignment: Optional[dict] = None,
+                 allow_bookmark: bool = True) -> InlineKeyboardMarkup:
+    lang = resolve_lang(uid)
+    kb = InlineKeyboardMarkup()
+
+    refresh_btn = InlineKeyboardButton(
+        _np_pick(lang, NP_REFRESH_BUTTON_LABEL),
+        callback_data=f"np_refresh:{ttn}"
+    )
+
+    if allow_bookmark:
+        bookmark_label = _np_pick(
+            lang,
+            NP_BOOKMARK_REMOVE_BUTTON if bookmarked else NP_BOOKMARK_ADD_BUTTON
+        )
+        bookmark_btn = InlineKeyboardButton(bookmark_label, callback_data=f"np_bookmark:{ttn}")
+        kb.row(refresh_btn, bookmark_btn)
+    else:
+        kb.add(refresh_btn)
+
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_NOTE_BUTTON_LABEL), callback_data=f"np_note:{ttn}"))
+
+    if assignment and not assignment.get("delivered_at"):
+        kb.add(InlineKeyboardButton(_np_pick(lang, NP_MARK_RECEIVED_LABEL), callback_data=f"np_assigned_received:{ttn}"))
+
+    if allow_assign:
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_ASSIGN_SEND"), callback_data=f"np_assign_quick:{ttn}"))
+
+    kb.add(InlineKeyboardButton(_np_pick(lang, NP_CLOSE_BUTTON_LABEL), callback_data="np_close"))
+    return kb
+
+
+def np_build_list_keyboard(uid: int, options: List[Tuple[str, str]], prefix: str,
+                           back_callback: str = "menu_np") -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    for value, label in options:
+        kb.add(InlineKeyboardButton(label, callback_data=f"{prefix}:{value}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_SETTINGS"), callback_data=back_callback))
     return kb
 
 
@@ -1896,7 +3364,20 @@ def kb_preview() -> InlineKeyboardMarkup:
     return kb
 
 
-def kb_choose_paid(ask_later: bool=True, allow_cancel: bool=False) -> InlineKeyboardMarkup:
+def kb_receipt_cancel() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
+    return kb
+
+
+def kb_desc_prompt() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("Пропустить", callback_data="desc_skip"))
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
+    return kb
+
+
+def kb_choose_paid(ask_later: bool=True, allow_cancel: bool=False, flow_cancel: bool=False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.row(
         InlineKeyboardButton("✅ Оплачено", callback_data="paid_yes"),
@@ -1906,6 +3387,8 @@ def kb_choose_paid(ask_later: bool=True, allow_cancel: bool=False) -> InlineKeyb
         kb.add(InlineKeyboardButton("⏭ Указать позже", callback_data="paid_later"))
     if allow_cancel:
         kb.add(InlineKeyboardButton("❌ Отменить изменение", callback_data="edit_cancel"))
+    if flow_cancel:
+        kb.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
     return kb
 
 
@@ -1966,8 +3449,13 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
             await bot.edit_message_text(text, chat_id, anchor, reply_markup=kb)
             ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
             return
+        except MessageNotModified:
+            return
         except Exception:
-            pass
+            try:
+                await bot.delete_message(chat_id, anchor)
+            except Exception:
+                pass
 
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     ur["anchor"] = msg.message_id
@@ -1995,10 +3483,20 @@ def flow_track(uid: int, msg: types.Message):
 
 
 async def flow_clear(uid: int):
-    for chat_id, mid in users_runtime.get(uid, {}).get("flow_msgs", []):
-        try: await bot.delete_message(chat_id, mid)
-        except Exception: pass
-    users_runtime.setdefault(uid, {})["flow_msgs"] = []
+    runtime = users_runtime.setdefault(uid, {})
+    tracked = list(runtime.get("flow_msgs", []))
+    runtime["flow_msgs"] = []
+    tasks = [
+        _delete_message_safe(chat_id, mid)
+        for chat_id, mid in tracked
+        if chat_id and mid
+    ]
+    last_card = runtime.pop("np_last_card", None)
+    if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
+        tasks.append(_delete_message_safe(last_card[0], last_card[1]))
+    runtime.pop("alerts_cards", None)
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def clear_then_anchor(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -2149,9 +3647,13 @@ def kb_language_picker(prefix: str = "lang_select") -> InlineKeyboardMarkup:
 
 
 async def launch_intro(uid: int, chat_id: int, registered: bool):
+    runtime = users_runtime.setdefault(uid, {})
+    previous_intro = runtime.get("intro_flow", {}).get("message")
+    if previous_intro and isinstance(previous_intro, (list, tuple)) and len(previous_intro) == 2:
+        await _delete_message_safe(previous_intro[0], previous_intro[1])
     text_key = "INTRO_GREETING_REGISTERED" if registered else "INTRO_GREETING_NEW"
     msg = await bot.send_message(chat_id, tr(uid, text_key), reply_markup=kb_next_step(uid, "intro_next:1"))
-    users_runtime.setdefault(uid, {})["intro_flow"] = {
+    runtime["intro_flow"] = {
         "registered": registered,
         "chat_id": chat_id,
         "message": (msg.chat.id, msg.message_id),
@@ -2177,6 +3679,10 @@ async def start_cmd(m: types.Message, state: FSMContext):
         "last_name": m.from_user.last_name,
         "last_seen": datetime.now().isoformat(),
     }
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
     prof = ensure_user(uid, runtime["tg"])
     registered = bool(prof.get("fullname") and prof.get("phone"))
 
@@ -2330,7 +3836,7 @@ async def become_admin(m: types.Message):
     await anchor_show_root(uid)
 
 
-@dp.message_handler(content_types=ContentType.ANY, state="*")
+@dp.message_handler(content_types=ContentType.ANY, state=None)
 async def fallback_message(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     text = m.text or ""
@@ -2370,12 +3876,2608 @@ async def menu_about(c: types.CallbackQuery):
     await c.answer()
 
 
+@dp.callback_query_handler(lambda c: c.data == "menu_alerts")
+async def menu_alerts(c: types.CallbackQuery):
+    uid = c.from_user.id
+    await clear_then_anchor(uid, tr(uid, "ALERTS_MENU_INTRO"), kb_alerts(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_active")
+async def alerts_active_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    regions = alerts_user_regions(uid)
+    if not regions:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid))
+        await c.answer()
+        return
+    events = alerts_collect_active_for_user(uid)
+    if not events:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_ACTIVE"), kb_alerts(uid))
+        await c.answer()
+        return
+    lang = resolve_lang(uid)
+    lines = [tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events))]
+    for idx, event in enumerate(events[:10], start=1):
+        region_display = event.get("region_display") or event.get("region") or "—"
+        summary = alerts_summarize_event(event, lang)
+        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+    await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
+    await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_overview")
+async def alerts_overview_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    text = alerts_regions_overview_text(uid)
+    await clear_then_anchor(uid, text, kb_alerts(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_history")
+async def alerts_history_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    regions = alerts_user_regions(uid)
+    if not regions:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid))
+        await c.answer()
+        return
+    events = alerts_collect_history_for_user(uid)
+    if not events:
+        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_HISTORY"), kb_alerts(uid))
+        await c.answer()
+        return
+    lang = resolve_lang(uid)
+    lines = [tr(uid, "ALERTS_HISTORY_HEADER", count=len(events))]
+    for idx, event in enumerate(events[:10], start=1):
+        region_display = event.get("region_display") or event.get("region") or "—"
+        summary = alerts_summarize_event(event, lang)
+        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+    await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
+    await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_subscriptions")
+async def alerts_subscriptions_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    text, kb = alerts_subscription_view(uid, page=0)
+    await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_sub_page:"))
+async def alerts_subscriptions_page(c: types.CallbackQuery):
+    uid = c.from_user.id
+    try:
+        page = int(c.data.split(":", 1)[1])
+    except ValueError:
+        page = 0
+    text, kb = alerts_subscription_view(uid, page=page)
+    await anchor_show_text(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_toggle:"))
+async def alerts_toggle_subscription(c: types.CallbackQuery):
+    uid = c.from_user.id
+    try:
+        _, page_raw, idx_raw = c.data.split(":", 2)
+        page = int(page_raw)
+        region_index = int(idx_raw)
+    except Exception:
+        await c.answer("", show_alert=False)
+        return
+    profile = load_user(uid) or {"user_id": uid}
+    alerts = alerts_profile_block(profile)
+    region = alerts_canonical_region(UKRAINE_REGIONS[region_index]) or UKRAINE_REGIONS[region_index]
+    items = alerts.get("regions", [])
+    add = region not in items
+    alerts_update_subscription(uid, region_index, add)
+    text, kb = alerts_subscription_view(uid, page=page)
+    await anchor_show_text(uid, text, kb)
+    key = "ALERTS_SUBS_ADDED" if add else "ALERTS_SUBS_REMOVED"
+    await c.answer(tr(uid, key, region=h(region)), show_alert=False)
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_locked")
+async def alerts_locked_info(c: types.CallbackQuery):
+    uid = c.from_user.id
+    await c.answer(tr(uid, "ALERTS_SUBS_LOCKED"), show_alert=True)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_index:"))
+async def alerts_card_index_stub(c: types.CallbackQuery):
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_nav:"))
+async def alerts_card_nav(c: types.CallbackQuery):
+    uid = c.from_user.id
+    parts = c.data.split(":", 2)
+    if len(parts) != 3:
+        await c.answer()
+        return
+    context = parts[1]
+    try:
+        target_index = int(parts[2])
+    except ValueError:
+        await c.answer()
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    cards = runtime.get("alerts_cards", {})
+    card = cards.get(context)
+    if not card:
+        await c.answer()
+        return
+    event_ids: List[str] = card.get("events", [])
+    events: List[Dict[str, Any]] = []
+    for event_id in event_ids:
+        event = _alerts_get_event(event_id)
+        if event:
+            events.append(event)
+    if not events:
+        await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
+        return
+    target_index = max(0, min(target_index, len(events) - 1))
+    current_index = max(0, min(int(card.get("index", 0)), len(events) - 1))
+    if target_index == current_index:
+        await c.answer()
+        return
+    card["index"] = target_index
+    lang = resolve_lang(uid)
+    text = alerts_format_card(events[target_index], lang, index=target_index, total=len(events))
+    kb = alerts_card_keyboard(uid, context, len(events), target_index)
+    try:
+        await bot.edit_message_text(text, c.message.chat.id, c.message.message_id, reply_markup=kb, disable_web_page_preview=True)
+    except MessageNotModified:
+        pass
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_close:"))
+async def alerts_close_card(c: types.CallbackQuery):
+    uid = c.from_user.id
+    context = c.data.split(":", 1)[1]
+    runtime = users_runtime.setdefault(uid, {})
+    cards = runtime.setdefault("alerts_cards", {})
+    cards.pop(context, None)
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_close_push")
+async def alerts_close_push(c: types.CallbackQuery):
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "back_root")
 async def back_root(c: types.CallbackQuery):
     uid = c.from_user.id
     await clear_then_anchor(uid, project_status_text(uid), kb_root(uid))
     await c.answer()
 
+
+# ========================== ALERTS STORAGE ==========================
+ALERTS_STORAGE_DIR = os.path.join("data", "alerts")
+ALERTS_DATA_FILE = os.path.join(ALERTS_STORAGE_DIR, "events.json")
+ALERTS_USERS_FILE = os.path.join(ALERTS_STORAGE_DIR, "users.json")
+ALERTS_MAX_HISTORY = 100
+_alerts_state_cache: Optional[Dict[str, Any]] = None
+_alerts_user_cache: Optional[Dict[str, Any]] = None
+
+if ZoneInfo:
+    try:
+        ALERTS_TIMEZONE = ZoneInfo("Europe/Kiev")
+    except Exception:
+        ALERTS_TIMEZONE = timezone.utc
+else:
+    ALERTS_TIMEZONE = timezone.utc
+
+ALERTS_REGION_EQUIVALENTS: Dict[str, List[str]] = {
+    "Винницкая область": ["Вінницька область", "Vinnytska oblast", "Vinnytsia region"],
+    "Волынская область": ["Волинська область", "Volynska oblast", "Volyn region"],
+    "Днепропетровская область": ["Дніпропетровська область", "Dnipropetrovska oblast", "Dnipropetrovsk region"],
+    "Донецкая область": ["Донецька область", "Donetska oblast", "Donetsk region"],
+    "Житомирская область": ["Житомирська область", "Zhytomyrska oblast", "Zhytomyr region"],
+    "Закарпатская область": ["Закарпатська область", "Zakarpatska oblast", "Zakarpattia region"],
+    "Запорожская область": ["Запорізька область", "Zaporizka oblast", "Zaporizhzhia region"],
+    "Ивано-Франковская область": ["Івано-Франківська область", "Ivano-Frankivska oblast", "Ivano-Frankivsk region"],
+    "Киевская область": ["Київська область", "Kyivska oblast", "Kyiv region"],
+    "г. Киев": ["м. Київ", "Київ", "Kyiv", "Kiev"],
+    "Кировоградская область": ["Кіровоградська область", "Kirovohradska oblast", "Kirovohrad region"],
+    "Луганская область": ["Луганська область", "Luhanska oblast", "Luhansk region"],
+    "Львовская область": ["Львівська область", "Lvivska oblast", "Lviv region"],
+    "Николаевская область": ["Миколаївська область", "Mykolaivska oblast", "Mykolaiv region"],
+    "Одесская область": ["Одеська область", "Odeska oblast", "Odesa region"],
+    "Полтавская область": ["Полтавська область", "Poltavska oblast", "Poltava region"],
+    "Ровенская область": ["Рівненська область", "Rivnenska oblast", "Rivne region"],
+    "Сумская область": ["Сумська область", "Sumska oblast", "Sumy region"],
+    "Тернопольская область": ["Тернопільська область", "Ternopilska oblast", "Ternopil region"],
+    "Харьковская область": ["Харківська область", "Kharkivska oblast", "Kharkiv region"],
+    "Херсонская область": ["Херсонська область", "Khersonska oblast", "Kherson region"],
+    "Хмельницкая область": ["Хмельницька область", "Khmelnytska oblast", "Khmelnytskyi region"],
+    "Черкасская область": ["Черкаська область", "Cherkaska oblast", "Cherkasy region"],
+    "Черниговская область": ["Чернігівська область", "Chernihivska oblast", "Chernihiv region"],
+    "Черновицкая область": ["Чернівецька область", "Chernivetska oblast", "Chernivtsi region"],
+}
+
+ALERTS_TYPE_ALIASES: Dict[str, str] = {
+    "air_raid": "air_raid",
+    "air-raid": "air_raid",
+    "airalert": "air_raid",
+    "air alert": "air_raid",
+    "air_raid_alert": "air_raid",
+    "artillery": "artillery",
+    "artillery_shelling": "artillery",
+    "shelling": "artillery",
+    "missile": "missile",
+    "missile_attack": "missile",
+    "rocket": "missile",
+    "rocket_attack": "missile",
+    "ballistic": "missile",
+    "ballistic_missile": "missile",
+    "drone": "drone",
+    "drone_attack": "drone",
+    "uav": "drone",
+    "nuclear": "nuclear",
+    "nuclear_threat": "nuclear",
+    "chemical": "chemical",
+    "chemical_threat": "chemical",
+    "urban_fights": "urban_fights",
+    "urban": "urban_fights",
+    "ground_assault": "urban_fights",
+    "unknown": "unknown",
+}
+
+ALERTS_DEFAULT_SEVERITY: Dict[str, str] = {
+    "air_raid": "high",
+    "artillery": "high",
+    "missile": "critical",
+    "drone": "medium",
+    "nuclear": "critical",
+    "chemical": "critical",
+    "urban_fights": "high",
+    "unknown": "high",
+}
+
+ALERTS_SEVERITY_KEYWORDS: Dict[str, str] = {
+    "critical": "critical",
+    "extreme": "critical",
+    "highest": "critical",
+    "max": "critical",
+    "максим": "critical",
+    "крит": "critical",
+    "violet": "critical",
+    "purple": "critical",
+    "фіолет": "critical",
+    "червон": "high",
+    "red": "high",
+    "висок": "high",
+    "high": "high",
+    "повітряна": "high",
+    "жовт": "medium",
+    "yellow": "medium",
+    "orange": "medium",
+    "помаран": "medium",
+    "середн": "medium",
+    "medium": "medium",
+    "elevated": "medium",
+    "зел": "low",
+    "green": "low",
+    "низ": "low",
+    "low": "low",
+    "мінім": "low",
+    "none": "low",
+    "відсут": "low",
+    "без": "low",
+}
+
+ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
+    "air_raid": {
+        "uk": "Повітряна тривога",
+        "en": "Air raid alert",
+        "de": "Luftalarm",
+        "pl": "Alarm lotniczy",
+        "ru": "Воздушная тревога",
+    },
+    "artillery": {
+        "uk": "Артобстріл",
+        "en": "Artillery shelling",
+        "de": "Artilleriebeschuss",
+        "pl": "Ostrzał artyleryjski",
+        "ru": "Артобстрел",
+    },
+    "missile": {
+        "uk": "Ракетна небезпека",
+        "en": "Missile threat",
+        "de": "Raketenbedrohung",
+        "pl": "Zagrożenie rakietowe",
+        "ru": "Ракетная опасность",
+    },
+    "drone": {
+        "uk": "Небезпека БпЛА",
+        "en": "UAV threat",
+        "de": "Drohnengefahr",
+        "pl": "Zagrożenie dronami",
+        "ru": "Опасность БПЛА",
+    },
+    "nuclear": {
+        "uk": "Ядерна небезпека",
+        "en": "Nuclear threat",
+        "de": "Atomare Gefahr",
+        "pl": "Zagrożenie nuklearne",
+        "ru": "Ядерная опасность",
+    },
+    "chemical": {
+        "uk": "Хімічна небезпека",
+        "en": "Chemical threat",
+        "de": "Chemische Gefahr",
+        "pl": "Zagrożenie chemiczne",
+        "ru": "Химическая опасность",
+    },
+    "urban_fights": {
+        "uk": "Вуличні бої",
+        "en": "Urban fights",
+        "de": "Straßenkämpfe",
+        "pl": "Walki uliczne",
+        "ru": "Уличные бои",
+    },
+    "unknown": {
+        "uk": "Тривога",
+        "en": "Alert",
+        "de": "Alarm",
+        "pl": "Alarm",
+        "ru": "Тревога",
+    },
+}
+
+ALERTS_SEVERITY_LABELS: Dict[str, Dict[str, str]] = {
+    "low": {
+        "icon": "🟢",
+        "uk": "Низький (увага)",
+        "en": "Low (attention)",
+        "de": "Niedrig (Achtung)",
+        "pl": "Niski (uwaga)",
+        "ru": "Низкий (внимание)",
+    },
+    "medium": {
+        "icon": "🟠",
+        "uk": "Середній (підвищена готовність)",
+        "en": "Medium (heightened readiness)",
+        "de": "Mittel (erhöhte Bereitschaft)",
+        "pl": "Średni (podwyższona gotowość)",
+        "ru": "Средний (повышенная готовность)",
+    },
+    "high": {
+        "icon": "🔴",
+        "uk": "Високий (серйозна небезпека)",
+        "en": "High (serious danger)",
+        "de": "Hoch (ernste Gefahr)",
+        "pl": "Wysoki (poważne zagrożenie)",
+        "ru": "Высокий (серьёзная опасность)",
+    },
+    "critical": {
+        "icon": "🟣",
+        "uk": "Критичний (максимальна небезпека)",
+        "en": "Critical (extreme danger)",
+        "de": "Kritisch (äußerste Gefahr)",
+        "pl": "Krytyczny (skrajne zagrożenie)",
+        "ru": "Критический (крайняя опасность)",
+    },
+}
+
+ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
+    "uk": {
+        "header_active": "🚨 УВАГА! ТРИВОГА 🚨",
+        "header_ended": "🟢 ВІДБІЙ ТРИВОГИ",
+        "type": "Тип",
+        "region": "Регіон",
+        "location": "Локація",
+        "severity": "Рівень",
+        "cause": "Причина",
+        "details": "Деталі",
+        "started": "Початок",
+        "ended": "Відбій",
+        "message": "Повідомлення",
+        "source": "Джерело",
+        "status_active": "ще триває",
+        "status_unknown": "—",
+    },
+    "en": {
+        "header_active": "🚨 ALERT IN PROGRESS 🚨",
+        "header_ended": "🟢 ALERT ENDED",
+        "type": "Type",
+        "region": "Region",
+        "location": "Location",
+        "severity": "Severity",
+        "cause": "Cause",
+        "details": "Details",
+        "started": "Start",
+        "ended": "End",
+        "message": "Message",
+        "source": "Source",
+        "status_active": "still active",
+        "status_unknown": "—",
+    },
+    "de": {
+        "header_active": "🚨 ALARM AKTIV 🚨",
+        "header_ended": "🟢 ALARM BEENDET",
+        "type": "Art",
+        "region": "Region",
+        "location": "Ort",
+        "severity": "Stufe",
+        "cause": "Ursache",
+        "details": "Details",
+        "started": "Beginn",
+        "ended": "Ende",
+        "message": "Meldung",
+        "source": "Quelle",
+        "status_active": "läuft noch",
+        "status_unknown": "—",
+    },
+    "pl": {
+        "header_active": "🚨 TRWA ALARM 🚨",
+        "header_ended": "🟢 ALARM ODWOŁANY",
+        "type": "Typ",
+        "region": "Region",
+        "location": "Lokalizacja",
+        "severity": "Poziom",
+        "cause": "Przyczyna",
+        "details": "Szczegóły",
+        "started": "Początek",
+        "ended": "Zakończenie",
+        "message": "Komunikat",
+        "source": "Źródło",
+        "status_active": "wciąż trwa",
+        "status_unknown": "—",
+    },
+    "ru": {
+        "header_active": "🚨 ТРЕВОГА! 🚨",
+        "header_ended": "🟢 ОТБОЙ ТРЕВОГИ",
+        "type": "Тип",
+        "region": "Регион",
+        "location": "Локация",
+        "severity": "Уровень",
+        "cause": "Причина",
+        "details": "Детали",
+        "started": "Начало",
+        "ended": "Отбой",
+        "message": "Сообщение",
+        "source": "Источник",
+        "status_active": "ещё продолжается",
+        "status_unknown": "—",
+    },
+}
+
+
+def _alerts_ensure_storage() -> None:
+    os.makedirs(os.path.dirname(ALERTS_DATA_FILE), exist_ok=True)
+
+
+def _alerts_blank_state() -> Dict[str, Any]:
+    return {"events": {}, "regions": {}, "last_fetch": None}
+
+
+def _alerts_load_state() -> Dict[str, Any]:
+    global _alerts_state_cache
+    if _alerts_state_cache is not None:
+        return _alerts_state_cache
+    _alerts_ensure_storage()
+    if not os.path.exists(ALERTS_DATA_FILE):
+        _alerts_state_cache = _alerts_blank_state()
+        _alerts_save_state()
+        return _alerts_state_cache
+    try:
+        with open(ALERTS_DATA_FILE, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid alerts state")
+    except Exception:
+        payload = _alerts_blank_state()
+    payload.setdefault("events", {})
+    payload.setdefault("regions", {})
+    payload.setdefault("last_fetch", None)
+    _alerts_state_cache = payload
+    return _alerts_state_cache
+
+
+def _alerts_save_state() -> None:
+    if _alerts_state_cache is None:
+        return
+    _alerts_ensure_storage()
+    tmp_file = f"{ALERTS_DATA_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(_alerts_state_cache, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, ALERTS_DATA_FILE)
+
+
+def _alerts_blank_user_state() -> Dict[str, Any]:
+    return {}
+
+
+def _alerts_load_users() -> Dict[str, Any]:
+    global _alerts_user_cache
+    if _alerts_user_cache is not None:
+        return _alerts_user_cache
+    _alerts_ensure_storage()
+    if not os.path.exists(ALERTS_USERS_FILE):
+        _alerts_user_cache = _alerts_blank_user_state()
+        _alerts_save_users()
+        return _alerts_user_cache
+    try:
+        with open(ALERTS_USERS_FILE, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid alerts user state")
+    except Exception:
+        payload = _alerts_blank_user_state()
+    _alerts_user_cache = payload
+    return _alerts_user_cache
+
+
+def _alerts_save_users() -> None:
+    if _alerts_user_cache is None:
+        return
+    _alerts_ensure_storage()
+    tmp_file = f"{ALERTS_USERS_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(_alerts_user_cache, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, ALERTS_USERS_FILE)
+
+
+def _alerts_user_entry(uid: int) -> Dict[str, Any]:
+    store = _alerts_load_users()
+    key = str(uid)
+    created = key not in store
+    entry = store.setdefault(key, {"regions": [], "last_seen": {}})
+    if not isinstance(entry.get("regions"), list):
+        entry["regions"] = []
+    if not isinstance(entry.get("last_seen"), dict):
+        entry["last_seen"] = {}
+    if created:
+        _alerts_save_users()
+    return entry
+
+
+def _alerts_region_state(region: str) -> Dict[str, Any]:
+    state = _alerts_load_state()
+    bucket = state.setdefault("regions", {}).setdefault(region, {})
+    bucket.setdefault("active", [])
+    bucket.setdefault("history", [])
+    return bucket
+
+
+def alerts_canonical_region(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    cleaned = str(name).strip()
+    if not cleaned:
+        return None
+    lower = cleaned.lower()
+    for canonical, aliases in ALERTS_REGION_EQUIVALENTS.items():
+        if lower == canonical.lower():
+            return canonical
+        for alias in aliases:
+            if lower == alias.lower():
+                return canonical
+    return cleaned
+
+
+def alerts_sanitize_notes(notes: Any) -> List[Dict[str, str]]:
+    sanitized: List[Dict[str, str]] = []
+    if isinstance(notes, list):
+        for entry in notes:
+            if isinstance(entry, dict):
+                note_type = str(entry.get("type") or "").strip()
+                title = str(entry.get("title") or "").strip()
+                text = str(entry.get("text") or entry.get("value") or entry.get("note") or "").strip()
+                cleaned: Dict[str, str] = {}
+                if note_type:
+                    cleaned["type"] = note_type
+                if title:
+                    cleaned["title"] = title
+                if text:
+                    cleaned["text"] = text
+                if cleaned:
+                    sanitized.append(cleaned)
+            elif isinstance(entry, str):
+                text = entry.strip()
+                if text:
+                    sanitized.append({"text": text})
+    return sanitized
+
+
+def alerts_extract_note_fields(payload: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
+    severity_raw = ""
+    cause = ""
+    details_parts: List[str] = []
+    message = ""
+    source = ""
+
+    for note in alerts_sanitize_notes(payload.get("notes")):
+        text = str(note.get("text") or "").strip()
+        if not text:
+            continue
+        note_type = str(note.get("type") or "").lower()
+        title_lower = str(note.get("title") or "").lower()
+
+        def matches(keyword: str) -> bool:
+            return keyword in note_type or keyword in title_lower
+
+        if not severity_raw and (matches("severity") or matches("level") or matches("рів") or matches("статус")):
+            severity_raw = text
+            continue
+        if not cause and (matches("cause") or matches("reason") or matches("прич")):
+            cause = text
+            continue
+        if not source and (matches("source") or matches("issuer") or matches("джерел")):
+            source = text
+            continue
+        if not message and (matches("message") or matches("status") or matches("опис") or matches("повідом") or note_type in ("message", "status")):
+            message = text
+            continue
+        if matches("detail") or matches("детал") or matches("info") or note_type in ("details", "description"):
+            details_parts.append(text)
+            continue
+        if not message:
+            message = text
+        else:
+            details_parts.append(text)
+
+    details = " • ".join(part for part in details_parts if part)
+    return severity_raw, cause, details, message, source
+
+
+def alerts_normalize_type_code(raw_type: str) -> str:
+    base = (raw_type or "").strip().lower()
+    if not base:
+        return "unknown"
+    mapped = ALERTS_TYPE_ALIASES.get(base, base)
+    if mapped not in ALERTS_TYPE_LABELS:
+        return "unknown"
+    return mapped
+
+
+def alerts_normalize_severity(raw_severity: Optional[str], type_code: str) -> str:
+    candidate = str(raw_severity or "").strip()
+    lowered = candidate.lower()
+    if lowered:
+        for keyword, mapped in ALERTS_SEVERITY_KEYWORDS.items():
+            if keyword in lowered:
+                return mapped
+        numeric_map = {"4": "critical", "3": "high", "2": "medium", "1": "low", "0": "low"}
+        roman_map = {"iv": "critical", "iii": "high", "ii": "medium", "i": "low"}
+        if lowered in numeric_map:
+            return numeric_map[lowered]
+        if lowered in roman_map:
+            return roman_map[lowered]
+    return ALERTS_DEFAULT_SEVERITY.get(type_code, "high")
+
+
+def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw, dict):
+        return None
+    payload = dict(raw)
+    event_id = payload.get("id") or payload.get("alert_id") or ""
+    if not event_id:
+        region_hint = str(
+            payload.get("location_oblast")
+            or payload.get("region")
+            or payload.get("area")
+            or payload.get("location_title")
+            or ""
+        ).strip()
+        started_hint = str(payload.get("started_at") or payload.get("start") or payload.get("timestamp") or "")
+        event_id = f"{region_hint}|{payload.get('alert_type') or payload.get('type') or 'alert'}|{started_hint}"
+    event_id = str(event_id)
+
+    raw_type = str(payload.get("alert_type") or payload.get("type") or "").strip()
+    type_code = alerts_normalize_type_code(raw_type)
+
+    oblast_title = str(payload.get("location_oblast") or payload.get("region") or payload.get("area") or "").strip()
+    location_title = str(payload.get("location_title") or payload.get("location") or payload.get("city") or "").strip()
+    if not oblast_title and location_title:
+        oblast_title = location_title
+    region_original = oblast_title or location_title or str(payload.get("region") or payload.get("area") or "").strip()
+    region_canonical = alerts_canonical_region(region_original)
+
+    started_at = payload.get("started_at") or payload.get("start") or payload.get("timestamp") or ""
+    ended_at = payload.get("finished_at") or payload.get("ended_at") or payload.get("end") or ""
+    updated_at = payload.get("updated_at") or payload.get("last_updated_at") or datetime.now(timezone.utc).isoformat()
+
+    severity_note, cause, details, message_note, source_note = alerts_extract_note_fields(payload)
+    message = str(payload.get("message") or payload.get("text") or message_note or cause or details or "").strip()
+    source = str(payload.get("source") or payload.get("issuer") or source_note or "alerts.in.ua").strip()
+
+    severity_code = alerts_normalize_severity(payload.get("severity") or severity_note, type_code)
+
+    notes_clean = alerts_sanitize_notes(payload.get("notes"))
+    extra_payload = {
+        "location": location_title or region_original,
+        "severity": severity_code,
+        "cause": cause,
+        "details": details,
+        "severity_note": severity_note,
+        "type_raw": raw_type,
+        "location_type": payload.get("location_type"),
+        "location_uid": payload.get("location_uid"),
+        "oblast_uid": payload.get("location_oblast_uid") or payload.get("oblast_uid"),
+        "oblast_title": oblast_title or region_original,
+        "notes": notes_clean,
+    }
+
+    clean_extra: Dict[str, Any] = {}
+    for key, value in extra_payload.items():
+        if key == "severity":
+            clean_extra[key] = value
+            continue
+        if key == "notes":
+            if value:
+                clean_extra[key] = value
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, "", []):
+            continue
+        clean_extra[key] = value
+    clean_extra.setdefault("severity", severity_code)
+
+    return {
+        "id": event_id,
+        "type": type_code or "unknown",
+        "type_raw": raw_type or "unknown",
+        "region": region_canonical or region_original,
+        "region_display": region_original or region_canonical or "",
+        "started_at": str(started_at) if started_at else "",
+        "ended_at": str(ended_at) if ended_at else "",
+        "message": message,
+        "source": source or "alerts.in.ua",
+        "extra": clean_extra,
+        "updated_at": str(updated_at) if updated_at else datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _alerts_user_agent() -> str:
+    base = "Bot.BSG-alerts/1.0 (+https://alerts.in.ua)"
+    token = ALERTS_API_TOKEN or ""
+    if len(token) >= 5:
+        return f"{base} token:{token[:5]}"
+    return base
+
+
+def _alerts_request_headers() -> Dict[str, str]:
+    if not ALERTS_API_TOKEN:
+        return {}
+    return {
+        "Authorization": f"Bearer {ALERTS_API_TOKEN}",
+        "X-API-Key": ALERTS_API_TOKEN,
+        "Accept": "application/json",
+        "Accept-Language": "uk-UA",
+        "User-Agent": _alerts_user_agent(),
+    }
+
+
+def _alerts_api_get(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Tuple[bool, str, Any]:
+    if not ALERTS_API_TOKEN:
+        return False, "API token is empty", None
+    endpoint = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+    url = f"{ALERTS_API_BASE_URL}{endpoint}"
+    headers = _alerts_request_headers()
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=ALERTS_API_TIMEOUT)
+    except requests.RequestException as exc:
+        return False, str(exc), None
+    try:
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return False, str(exc), None
+    if response.status_code == 204:
+        return True, "", {}
+    try:
+        data = response.json()
+    except ValueError:
+        return False, "Некорректный ответ тревог", None
+    return True, "", data
+
+
+def alerts_fetch_remote() -> Tuple[bool, str, List[Dict[str, Any]]]:
+    ok, error, data = _alerts_api_get(ALERTS_API_ACTIVE_ENDPOINT)
+    if not ok:
+        return False, f"Запрос тревог не удался: {error}", []
+    if not isinstance(data, dict):
+        return True, "", []
+    items = data.get("alerts")
+    if not isinstance(items, list):
+        items = data.get("data") if isinstance(data.get("data"), list) else []
+    events: List[Dict[str, Any]] = []
+    for item in items:
+        normalized = alerts_normalize_event(item)
+        if normalized:
+            events.append(normalized)
+    return True, "", events
+
+
+def alerts_fetch_history_by_oblast(oblast_uid: Union[int, str], period: str = ALERTS_DEFAULT_HISTORY_PERIOD) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    if not oblast_uid:
+        return False, "Порожній ідентифікатор області", []
+    endpoint = ALERTS_API_HISTORY_TEMPLATE.format(uid=oblast_uid, period=period or ALERTS_DEFAULT_HISTORY_PERIOD)
+    ok, error, data = _alerts_api_get(endpoint)
+    if not ok:
+        return False, error, []
+    if isinstance(data, dict):
+        items = data.get("alerts") or data.get("data") or []
+    else:
+        items = data if isinstance(data, list) else []
+    events: List[Dict[str, Any]] = []
+    for item in items:
+        normalized = alerts_normalize_event(item)
+        if normalized:
+            events.append(normalized)
+    return True, "", events
+
+
+def alerts_history_events(oblast_uid: Union[int, str]) -> Tuple[bool, str, List[Dict[str, Any]]]:
+    key = str(oblast_uid)
+    now = datetime.now(timezone.utc)
+    cached = alerts_history_cache.get(key)
+    if cached:
+        fetched_at = cached.get("fetched_at")
+        if isinstance(fetched_at, datetime) and (now - fetched_at).total_seconds() < ALERTS_HISTORY_CACHE_TTL:
+            return True, "", cached.get("events", [])
+    ok, error, events = alerts_fetch_history_by_oblast(oblast_uid)
+    if ok:
+        alerts_history_cache[key] = {"fetched_at": now, "events": events}
+    return ok, error, events
+
+
+def alerts_merge_extra(base: Optional[Dict[str, Any]], update: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = dict(base or {})
+    for key, value in (update or {}).items():
+        if key == "notes":
+            if value:
+                merged[key] = value
+            continue
+        if key == "severity":
+            if value:
+                merged[key] = value
+            elif "severity" not in merged:
+                merged[key] = value
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, "", []):
+            continue
+        merged[key] = value
+    return merged
+
+
+def alerts_enrich_from_history(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    extra = event.get("extra") or {}
+    oblast_uid = extra.get("oblast_uid")
+    if not oblast_uid:
+        return None
+    ok, error, history_events = alerts_history_events(oblast_uid)
+    if not ok:
+        if error:
+            print(f"[alerts] history fetch failed for oblast {oblast_uid}: {error}")
+        return None
+    event_id = str(event.get("id"))
+    for hist_event in history_events:
+        if str(hist_event.get("id")) != event_id:
+            continue
+        merged_extra = alerts_merge_extra(event.get("extra"), hist_event.get("extra"))
+        if "severity" not in merged_extra:
+            merged_extra["severity"] = alerts_normalize_severity(None, hist_event.get("type") or event.get("type") or "unknown")
+        return {
+            "ended_at": hist_event.get("ended_at") or event.get("ended_at"),
+            "message": hist_event.get("message") or event.get("message"),
+            "source": hist_event.get("source") or event.get("source"),
+            "extra": merged_extra,
+            "region": hist_event.get("region") or event.get("region"),
+            "region_display": hist_event.get("region_display") or event.get("region_display"),
+            "started_at": hist_event.get("started_at") or event.get("started_at"),
+            "updated_at": hist_event.get("updated_at") or event.get("updated_at"),
+        }
+    return None
+
+
+def alerts_refresh_once() -> Tuple[List[str], List[str]]:
+    ok, error, events = alerts_fetch_remote()
+    if not ok:
+        print(f"[alerts] {error}")
+        return [], []
+    state = _alerts_load_state()
+    events_map = state.setdefault("events", {})
+    regions_map = state.setdefault("regions", {})
+
+    previous_active_ids: Set[str] = {str(eid) for eid, payload in events_map.items() if not payload.get("ended_at")}
+    start_notify: List[str] = []
+    end_notify: List[str] = []
+    seen_ids: Set[str] = set()
+
+    for event in events:
+        event_id = str(event["id"])
+        seen_ids.add(event_id)
+        stored = events_map.get(event_id)
+        ended_now = bool(event.get("ended_at"))
+        if stored:
+            previously_ended = bool(stored.get("ended_at"))
+            merged_extra = alerts_merge_extra(stored.get("extra"), event.get("extra"))
+            stored.update(event)
+            if merged_extra:
+                stored["extra"] = merged_extra
+            if not previously_ended and ended_now:
+                stored.setdefault("notified_end", False)
+                if event_id not in end_notify:
+                    end_notify.append(event_id)
+        else:
+            event["notified_start"] = bool(ended_now)
+            event["notified_end"] = False
+            events_map[event_id] = event
+            if ended_now:
+                if event_id not in end_notify:
+                    end_notify.append(event_id)
+            else:
+                if event_id not in start_notify:
+                    start_notify.append(event_id)
+
+        region_key = event.get("region") or ""
+        bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+        history = bucket.setdefault("history", [])
+        active = bucket.setdefault("active", [])
+        if event_id not in history:
+            history.insert(0, event_id)
+        del history[ALERTS_MAX_HISTORY:]
+        if ended_now:
+            if event_id in active:
+                active.remove(event_id)
+        else:
+            if event_id not in active:
+                active.append(event_id)
+
+    missing_active = previous_active_ids - seen_ids
+    if missing_active:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for event_id in list(missing_active):
+            stored = events_map.get(event_id)
+            if not stored or stored.get("ended_at"):
+                continue
+            enriched = alerts_enrich_from_history(stored)
+            if enriched:
+                merged_extra = alerts_merge_extra(stored.get("extra"), enriched.get("extra"))
+                stored.update({k: v for k, v in enriched.items() if k != "extra"})
+                if merged_extra:
+                    stored["extra"] = merged_extra
+            else:
+                stored["ended_at"] = now_iso
+            stored.setdefault("notified_end", False)
+            if event_id not in end_notify:
+                end_notify.append(event_id)
+            region_key = stored.get("region") or ""
+            bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+            active = bucket.setdefault("active", [])
+            if event_id in active:
+                active.remove(event_id)
+
+    for region_key, bucket in regions_map.items():
+        active = bucket.get("active", [])
+        bucket["active"] = [eid for eid in active if not events_map.get(eid, {}).get("ended_at")]
+
+    state["last_fetch"] = datetime.now(timezone.utc).isoformat()
+    _alerts_save_state()
+    return start_notify, end_notify
+
+
+def _alerts_get_event(event_id: str) -> Optional[Dict[str, Any]]:
+    state = _alerts_load_state()
+    payload = state.get("events", {}).get(event_id)
+    if payload:
+        return dict(payload)
+    return None
+
+
+def _alerts_mark_notified(event_id: str, kind: str) -> None:
+    state = _alerts_load_state()
+    payload = state.get("events", {}).get(event_id)
+    if not payload:
+        return
+    if kind == "start":
+        payload["notified_start"] = True
+    elif kind == "end":
+        payload["notified_end"] = True
+    _alerts_save_state()
+
+
+def alerts_parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                dt = datetime.strptime(raw, fmt)
+                dt = dt.replace(tzinfo=timezone.utc)
+                break
+            except ValueError:
+                continue
+        else:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        return dt.astimezone(ALERTS_TIMEZONE)
+    except Exception:
+        return dt
+
+
+def alerts_format_timestamp(value: Optional[str]) -> str:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return value or ""
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def alerts_type_label(event: Dict[str, Any], lang: str) -> str:
+    mapping = ALERTS_TYPE_LABELS.get(event.get("type")) or ALERTS_TYPE_LABELS.get("unknown")
+    return mapping.get(lang) or mapping.get(DEFAULT_LANG) or event.get("type") or "Alert"
+
+
+def alerts_severity_label(event: Dict[str, Any], lang: str) -> str:
+    severity = (event.get("extra") or {}).get("severity") or ""
+    mapping = ALERTS_SEVERITY_LABELS.get(severity)
+    if not mapping:
+        return severity.capitalize() if severity else "—"
+    icon = mapping.get("icon", "")
+    text = mapping.get(lang) or mapping.get(DEFAULT_LANG) or severity
+    return f"{icon} {text}" if icon else text
+
+
+def alerts_field_labels(lang: str) -> Dict[str, str]:
+    return ALERTS_FIELD_LABELS.get(lang) or ALERTS_FIELD_LABELS[DEFAULT_LANG]
+
+
+def alerts_format_row(icon: str, label: str, value: str) -> List[str]:
+    if not value:
+        return []
+    text = str(value)
+    prefix = f"{icon} {label}: "
+    indent = " " * len(prefix)
+    rows = [prefix + text.splitlines()[0]]
+    for part in text.splitlines()[1:]:
+        rows.append(indent + part)
+    return rows
+
+
+def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = None, total: Optional[int] = None) -> str:
+    labels = alerts_field_labels(lang)
+    ended = bool(event.get("ended_at"))
+    header = labels["header_ended"] if ended else labels["header_active"]
+    lines: List[str] = [header, "━━━━━━━━━━━━━━━━━━━"]
+    type_label = alerts_type_label(event, lang)
+    lines.extend(alerts_format_row("🌐", labels["type"], type_label))
+    region_display = event.get("region_display") or event.get("region") or "—"
+    lines.extend(alerts_format_row("📍", labels["region"], region_display))
+    location = (event.get("extra") or {}).get("location") or ""
+    lines.extend(alerts_format_row("🏙️", labels["location"], location))
+    lines.extend(alerts_format_row("🔴", labels["severity"], alerts_severity_label(event, lang)))
+    cause = (event.get("extra") or {}).get("cause") or ""
+    lines.extend(alerts_format_row("🎯", labels["cause"], cause))
+    details = (event.get("extra") or {}).get("details") or ""
+    lines.extend(alerts_format_row("🔎", labels["details"], details))
+    lines.extend(alerts_format_row("⏱️", labels["started"], alerts_format_timestamp(event.get("started_at"))))
+    end_value = alerts_format_timestamp(event.get("ended_at")) if ended else labels["status_active"]
+    lines.extend(alerts_format_row("🛑", labels["ended"], end_value))
+    lines.extend(alerts_format_row("📢", labels["message"], event.get("message") or ""))
+    lines.extend(alerts_format_row("🏛️", labels["source"], event.get("source") or ""))
+    if index is not None and total:
+        lines.append("━━━━━━━━━━━━━━━━━━━")
+        lines.append(tr(lang, "ALERTS_CARD_INDEX", index=index + 1, total=total))
+    return "\n".join(line for line in lines if line)
+
+
+def alerts_summarize_event(event: Dict[str, Any], lang: str) -> str:
+    started = alerts_format_timestamp(event.get("started_at"))
+    ended = alerts_format_timestamp(event.get("ended_at")) if event.get("ended_at") else ""
+    parts = [part for part in [started, alerts_type_label(event, lang), alerts_severity_label(event, lang)] if part]
+    summary = " • ".join(parts)
+    if ended:
+        summary += f" → {ended}"
+    return summary
+
+
+def alerts_profile_block(profile: dict) -> dict:
+    uid = profile.get("user_id")
+    if not uid:
+        return {"regions": [], "last_seen": {}}
+    entry = _alerts_user_entry(uid)
+    legacy = profile.get("alerts")
+    migrated = False
+    if isinstance(legacy, dict):
+        legacy_regions = legacy.get("regions", [])
+        if isinstance(legacy_regions, list):
+            for region in legacy_regions:
+                canonical = alerts_canonical_region(region) or region
+                if canonical and canonical not in entry["regions"]:
+                    entry["regions"].append(canonical)
+                    migrated = True
+        legacy_seen = legacy.get("last_seen")
+        if isinstance(legacy_seen, dict):
+            entry["last_seen"].update({str(k): v for k, v in legacy_seen.items()})
+            migrated = True
+        if migrated:
+            _alerts_save_users()
+        profile.pop("alerts", None)
+        try:
+            save_user(profile)
+        except Exception:
+            pass
+    return entry
+
+
+def alerts_user_regions(uid: int) -> List[str]:
+    regions: List[str] = []
+    if active_project.get("name"):
+        info = load_project_info(active_project["name"])
+        project_region = info.get("region")
+        canonical = alerts_canonical_region(project_region)
+        if canonical:
+            regions.append(canonical)
+        elif project_region:
+            regions.append(project_region)
+    profile = load_user(uid) or {"user_id": uid}
+    alerts = alerts_profile_block(profile)
+    for region in alerts.get("regions", []):
+        canonical = alerts_canonical_region(region)
+        if canonical and canonical not in regions:
+            regions.append(canonical)
+        elif region not in regions:
+            regions.append(region)
+    return regions
+
+
+def alerts_display_region_name(region: str, lang: str) -> str:
+    canonical = alerts_canonical_region(region) or region
+    aliases = ALERTS_REGION_EQUIVALENTS.get(canonical)
+    if not aliases:
+        return canonical
+    if lang == "ru":
+        return canonical
+    if lang == "en":
+        for alias in aliases:
+            if re.search(r"[A-Za-z]", alias):
+                return alias
+        return aliases[-1]
+    return aliases[0]
+
+
+def alerts_regions_overview_text(uid: int) -> str:
+    lang = resolve_lang(uid)
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    regions_map = state.get("regions", {})
+    lines: List[str] = [tr(uid, "ALERTS_OVERVIEW_HEADER")]
+    for raw_region in UKRAINE_REGIONS:
+        canonical = alerts_canonical_region(raw_region) or raw_region
+        bucket = regions_map.get(canonical) or regions_map.get(raw_region) or {}
+        active_ids = []
+        for event_id in bucket.get("active", []):
+            payload = events_map.get(event_id)
+            if payload and not payload.get("ended_at"):
+                active_ids.append(payload)
+        display_name = alerts_display_region_name(canonical, lang)
+        if active_ids:
+            active_ids.sort(key=lambda ev: ev.get("started_at") or "")
+            started = alerts_format_timestamp(active_ids[0].get("started_at"))
+            if started:
+                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE", region=h(display_name), start=h(started)))
+            else:
+                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE_UNKNOWN", region=h(display_name)))
+        else:
+            lines.append(tr(uid, "ALERTS_OVERVIEW_CALM", region=h(display_name)))
+    return "\n".join(lines)
+
+
+def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    collected: List[Dict[str, Any]] = []
+    for region in alerts_user_regions(uid):
+        bucket = state.get("regions", {}).get(region) or {}
+        for event_id in bucket.get("active", []):
+            event = events_map.get(event_id)
+            if event and not event.get("ended_at"):
+                collected.append(dict(event))
+    collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
+    return collected
+
+
+def alerts_collect_history_for_user(uid: int, limit: int = 20) -> List[Dict[str, Any]]:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    seen: Set[str] = set()
+    collected: List[Dict[str, Any]] = []
+    for region in alerts_user_regions(uid):
+        bucket = state.get("regions", {}).get(region) or {}
+        for event_id in bucket.get("history", []):
+            if event_id in seen:
+                continue
+            event = events_map.get(event_id)
+            if event:
+                collected.append(dict(event))
+                seen.add(event_id)
+    collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
+    return collected[:limit]
+
+
+def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboardMarkup]:
+    profile = load_user(uid) or {}
+    alerts = alerts_profile_block(profile)
+    project_region = None
+    if active_project.get("name"):
+        info = load_project_info(active_project["name"])
+        project_region = info.get("region") or ""
+    canonical_project = alerts_canonical_region(project_region)
+    selected = alerts_user_regions(uid)
+    selected_display = ", ".join(selected) if selected else "—"
+    lines = [tr(uid, "ALERTS_SUBS_HEADER")]
+    if canonical_project:
+        lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(canonical_project)))
+    else:
+        lines.append(tr(uid, "ALERTS_SUBS_NOTE_NO_PROJECT"))
+    lines.append(tr(uid, "ALERTS_SUBS_SELECTED", items=h(selected_display)))
+    lines.append(tr(uid, "ALERTS_SUBS_MANAGE"))
+    kb = alerts_build_subscription_keyboard(uid, page, canonical_project, alerts)
+    return "\n".join(lines), kb
+
+
+def alerts_build_subscription_keyboard(uid: int, page: int, project_region: Optional[str], alerts: dict) -> InlineKeyboardMarkup:
+    per_page = 6
+    total = len(UKRAINE_REGIONS)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    start = page * per_page
+    chunk = UKRAINE_REGIONS[start:start + per_page]
+    selected = {alerts_canonical_region(x) or x for x in alerts.get("regions", [])}
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(chunk):
+        canonical = alerts_canonical_region(region) or region
+        if project_region and canonical == alerts_canonical_region(project_region):
+            label = f"🔒 {canonical}"
+            callback = "alerts_locked"
+        else:
+            is_selected = canonical in selected
+            prefix = "✅" if is_selected else "➕"
+            label = f"{prefix} {canonical}"
+            callback = f"alerts_toggle:{page}:{start + idx}"
+        kb.insert(InlineKeyboardButton(label, callback_data=callback))
+    if total_pages > 1:
+        nav: List[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("◀️", callback_data=f"alerts_sub_page:{page - 1}"))
+        nav.append(InlineKeyboardButton(tr(uid, "ALERTS_SUBS_PAGE", current=page + 1, total=total_pages), callback_data=f"alerts_sub_page:{page}"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton("▶️", callback_data=f"alerts_sub_page:{page + 1}"))
+        kb.row(*nav)
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def alerts_update_subscription(uid: int, region_index: int, add: bool) -> bool:
+    if region_index < 0 or region_index >= len(UKRAINE_REGIONS):
+        return False
+    region = alerts_canonical_region(UKRAINE_REGIONS[region_index]) or UKRAINE_REGIONS[region_index]
+    profile = load_user(uid) or {"user_id": uid}
+    alerts = alerts_profile_block(profile)
+    items = alerts.setdefault("regions", [])
+    changed = False
+    if add:
+        if region not in items:
+            items.append(region)
+            changed = True
+    else:
+        if region in items:
+            items.remove(region)
+            changed = True
+    if changed:
+        _alerts_save_users()
+    return changed
+
+
+def alerts_card_keyboard(uid: int, context: str, total: int, index: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if total > 1:
+        row: List[InlineKeyboardButton] = []
+        if index > 0:
+            row.append(InlineKeyboardButton("◀️", callback_data=f"alerts_nav:{context}:{index - 1}"))
+        row.append(
+            InlineKeyboardButton(
+                tr(uid, "ALERTS_CARD_INDEX", index=index + 1, total=total),
+                callback_data=f"alerts_index:{context}:{index}",
+            )
+        )
+        if index < total - 1:
+            row.append(InlineKeyboardButton("▶️", callback_data=f"alerts_nav:{context}:{index + 1}"))
+        kb.row(*row)
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data=f"alerts_close:{context}"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
+    return kb
+
+
+async def alerts_send_card(uid: int, chat_id: int, events: List[Dict[str, Any]], context: str, index: int = 0) -> Optional[types.Message]:
+    if not events:
+        return None
+    runtime = users_runtime.setdefault(uid, {})
+    cards = runtime.setdefault("alerts_cards", {})
+    previous = cards.get(context, {}).get("message")
+    if isinstance(previous, (list, tuple)) and len(previous) == 2:
+        await _delete_message_safe(previous[0], previous[1])
+    index = max(0, min(index, len(events) - 1))
+    lang = resolve_lang(uid)
+    text = alerts_format_card(events[index], lang, index=index, total=len(events))
+    kb = alerts_card_keyboard(uid, context, len(events), index)
+    msg = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+    flow_track(uid, msg)
+    cards[context] = {
+        "events": [event["id"] for event in events],
+        "index": index,
+        "message": (msg.chat.id, msg.message_id),
+    }
+    return msg
+
+
+def alerts_active_oblast_count() -> int:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    oblasts: Set[str] = set()
+    for payload in events_map.values():
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("ended_at"):
+            continue
+        region_name = payload.get("region") or payload.get("region_display") or ""
+        canonical = alerts_canonical_region(region_name)
+        normalized = (canonical or region_name or "").strip()
+        if not normalized:
+            continue
+        lower = normalized.lower()
+        if any(token in lower for token in ("област", "oblast")):
+            oblasts.add(normalized)
+    return len(oblasts)
+
+
+def alerts_active_summary_line(uid: int) -> str:
+    count = alerts_active_oblast_count()
+    return tr(uid, "ANCHOR_ALERT_SUMMARY", count=count)
+
+
+def alerts_anchor_section(uid: int) -> str:
+    summary_line = alerts_active_summary_line(uid)
+    if not active_project.get("name"):
+        return summary_line
+    info = load_project_info(active_project["name"])
+    project_region = info.get("region") or ""
+    if not project_region:
+        return summary_line
+    canonical = alerts_canonical_region(project_region)
+    display_region = canonical or project_region
+    state = _alerts_load_state()
+    bucket = state.get("regions", {}).get(canonical or project_region) or {}
+    events_map = state.get("events", {})
+    lang = resolve_lang(uid)
+    region_text = ""
+    for event_id in bucket.get("active", []):
+        event = events_map.get(event_id)
+        if not event or event.get("ended_at"):
+            continue
+        text = tr(
+            uid,
+            "ANCHOR_ALERT_ACTIVE",
+            region=h(display_region),
+            type=h(alerts_type_label(event, lang)),
+            start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
+            severity=h(alerts_severity_label(event, lang)),
+        )
+        extras: List[str] = []
+        cause = (event.get("extra") or {}).get("cause") or ""
+        details = (event.get("extra") or {}).get("details") or ""
+        if cause:
+            extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
+        if details:
+            extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
+        if extras:
+            text = "\n".join([text, *extras])
+        region_text = text
+        break
+    if not region_text:
+        for event_id in bucket.get("history", []):
+            event = events_map.get(event_id)
+            if not event:
+                continue
+            text = tr(
+                uid,
+                "ANCHOR_ALERT_RECENT",
+                region=h(display_region),
+                type=h(alerts_type_label(event, lang)),
+                start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
+                end=h(alerts_format_timestamp(event.get("ended_at")) or "—"),
+            )
+            extras: List[str] = []
+            cause = (event.get("extra") or {}).get("cause") or ""
+            details = (event.get("extra") or {}).get("details") or ""
+            if cause:
+                extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
+            if details:
+                extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
+            if extras:
+                text = "\n".join([text, *extras])
+            region_text = text
+            break
+    if not region_text:
+        region_text = tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
+    lines: List[str] = []
+    if summary_line:
+        lines.append(summary_line)
+    if region_text:
+        lines.append(region_text)
+    return "\n".join(lines)
+
+
+def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
+    recipients: List[Tuple[int, Dict[str, Any]]] = []
+    target_region = alerts_canonical_region(event.get("region") or event.get("region_display")) or event.get("region")
+    if not target_region:
+        return recipients
+    for profile in load_all_users():
+        uid = profile.get("user_id")
+        if not uid:
+            continue
+        regions = alerts_user_regions(uid)
+        canonical_regions = {alerts_canonical_region(r) or r for r in regions}
+        if target_region not in canonical_regions:
+            continue
+        recipients.append((uid, profile))
+    return recipients
+
+
+def alerts_notification_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+    lang = resolve_lang(uid)
+    return alerts_format_card(event, lang)
+
+
+async def alerts_broadcast(event_id: str, kind: str) -> None:
+    event = _alerts_get_event(event_id)
+    if not event:
+        return
+    if kind == "start" and event.get("notified_start"):
+        return
+    if kind == "end" and event.get("notified_end"):
+        return
+    recipients = alerts_recipients_for_event(event)
+    if not recipients:
+        _alerts_mark_notified(event_id, kind)
+        return
+    for uid, profile in recipients:
+        chat_id = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+        if not chat_id:
+            chat_id = (profile.get("tg") or {}).get("chat_id")
+        if not chat_id:
+            continue
+        try:
+            text = alerts_notification_text(uid, event, kind)
+            kb = InlineKeyboardMarkup().add(
+                InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data="alerts_close_push")
+            )
+            await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+        except Exception:
+            continue
+    _alerts_mark_notified(event_id, kind)
+
+
+async def alerts_dispatch_updates(start_ids: List[str], end_ids: List[str]) -> None:
+    changed = False
+    for event_id in start_ids:
+        event = _alerts_get_event(event_id)
+        if not event:
+            continue
+        await alerts_broadcast(event_id, "start")
+        changed = True
+    for event_id in end_ids:
+        event = _alerts_get_event(event_id)
+        if not event:
+            continue
+        await alerts_broadcast(event_id, "end")
+        changed = True
+    if changed:
+        await update_all_anchors()
+
+
+async def alerts_poll_loop() -> None:
+    global alerts_poll_task
+    try:
+        await asyncio.sleep(5)
+        while True:
+            try:
+                start_ids, end_ids = await asyncio.to_thread(alerts_refresh_once)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[alerts] refresh error: {exc}")
+                start_ids, end_ids = [], []
+            if start_ids or end_ids:
+                await alerts_dispatch_updates(start_ids, end_ids)
+            await asyncio.sleep(ALERTS_POLL_INTERVAL)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        alerts_poll_task = None
+
+
+async def alerts_bootstrap() -> None:
+    try:
+        start_ids, end_ids = await asyncio.to_thread(alerts_refresh_once)
+    except Exception as exc:
+        print(f"[alerts] initial refresh error: {exc}")
+        await update_all_anchors()
+        return
+    if start_ids or end_ids:
+        await alerts_dispatch_updates(start_ids, end_ids)
+    else:
+        await update_all_anchors()
+
+
+async def alerts_start_polling() -> None:
+    global alerts_poll_task
+    if alerts_poll_task and not alerts_poll_task.done():
+        return
+    alerts_poll_task = asyncio.create_task(alerts_poll_loop())
+
+
+# ========================== NOVA POSHTA STORAGE ==========================
+
+NP_API_URL = "https://api.novaposhta.ua/v2.0/json/"
+NOVA_POSHTA_API_KEY = "2b7d39d126d56e60cfc61d00cd0b452c"
+NP_DATA_FILE = os.path.join("data", "nova_poshta.json")
+
+_np_state_cache: Optional[Dict[str, Any]] = None
+
+
+def _np_utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _np_ensure_storage() -> None:
+    os.makedirs(os.path.dirname(NP_DATA_FILE), exist_ok=True)
+
+
+def _np_blank_state() -> Dict[str, Any]:
+    return {"users": {}, "assignments": {}}
+
+
+def _np_load_state() -> Dict[str, Any]:
+    global _np_state_cache
+    if _np_state_cache is not None:
+        return _np_state_cache
+    _np_ensure_storage()
+    if not os.path.exists(NP_DATA_FILE):
+        _np_state_cache = _np_blank_state()
+        _np_save_state()
+        return _np_state_cache
+    try:
+        with open(NP_DATA_FILE, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid payload")
+        payload.setdefault("users", {})
+        payload.setdefault("assignments", {})
+        _np_state_cache = payload
+    except Exception:
+        _np_state_cache = _np_blank_state()
+        _np_save_state()
+    return _np_state_cache
+
+
+def _np_save_state() -> None:
+    if _np_state_cache is None:
+        return
+    _np_ensure_storage()
+    tmp_file = f"{NP_DATA_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(_np_state_cache, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, NP_DATA_FILE)
+
+
+def _np_user_bucket(uid: int) -> Dict[str, Any]:
+    state = _np_load_state()
+    user = state["users"].setdefault(str(uid), {})
+    user.setdefault("history", [])
+    user.setdefault("bookmarks", {})
+    user.setdefault("notes", {})
+    user.setdefault("assigned", {})
+    return user
+
+
+def np_fetch_tracking(ttn: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    number = (ttn or "").strip()
+    if not number:
+        return False, None, "Пустой номер ТТН"
+    if not re.fullmatch(r"[0-9A-Za-z-]{5,40}", number):
+        return False, None, "Некорректный формат ТТН"
+
+    payload = {
+        "apiKey": NOVA_POSHTA_API_KEY,
+        "modelName": "TrackingDocument",
+        "calledMethod": "getStatusDocuments",
+        "methodProperties": {
+            "Documents": [{"DocumentNumber": number}],
+        },
+    }
+    try:
+        response = requests.post(NP_API_URL, json=payload, timeout=15)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        return False, None, f"Ошибка запроса: {exc}"
+
+    try:
+        data = response.json()
+    except ValueError:
+        return False, None, "Не удалось разобрать ответ API"
+
+    docs = data.get("data") or []
+    if docs:
+        doc = docs[0]
+        if isinstance(doc, dict):
+            doc = dict(doc)
+            doc.setdefault("Number", number)
+            doc.setdefault("DocumentNumber", number)
+            return True, doc, ""
+
+    errors = data.get("errors") or data.get("message") or data.get("error")
+    if isinstance(errors, list):
+        msg = "; ".join(str(e) for e in errors if e)
+    else:
+        msg = str(errors or "Номер не найден")
+    if not msg:
+        msg = "Номер не найден"
+    return False, None, msg
+
+
+def np_remember_search(uid: int, ttn: str, status_payload: Optional[Dict[str, Any]]) -> None:
+    user = _np_user_bucket(uid)
+    status_payload = status_payload or {}
+    history = [entry for entry in user["history"] if entry.get("ttn") != ttn]
+    history.insert(0, {
+        "ttn": ttn,
+        "timestamp": _np_utcnow(),
+        "status_payload": status_payload,
+    })
+    user["history"] = history[:25]
+    _np_save_state()
+
+
+def np_get_history(uid: int) -> List[Dict[str, Any]]:
+    user = _np_user_bucket(uid)
+    return list(user["history"])
+
+
+def np_get_cached_status(uid: int, ttn: str) -> Optional[Dict[str, Any]]:
+    user = _np_user_bucket(uid)
+    for entry in user["history"]:
+        if entry.get("ttn") == ttn:
+            return entry.get("status_payload")
+    bookmark = user["bookmarks"].get(ttn)
+    if isinstance(bookmark, dict):
+        return bookmark.get("status_payload")
+    assignment = _np_load_state()["assignments"].get(ttn)
+    if isinstance(assignment, dict) and (
+        assignment.get("assigned_to") == uid or assignment.get("assigned_by") == uid
+    ):
+        return assignment.get("status_payload")
+    return None
+
+
+def _np_set_bookmark(uid: int, ttn: str, status_payload: Optional[Dict[str, Any]]) -> None:
+    user = _np_user_bucket(uid)
+    user["bookmarks"][ttn] = {
+        "added_at": _np_utcnow(),
+        "status_payload": status_payload or {},
+    }
+    _np_save_state()
+
+
+def np_remove_bookmark(uid: int, ttn: str) -> None:
+    user = _np_user_bucket(uid)
+    user["bookmarks"].pop(ttn, None)
+    _np_save_state()
+
+
+def np_toggle_bookmark(uid: int, ttn: str, status_payload: Optional[Dict[str, Any]] = None) -> bool:
+    user = _np_user_bucket(uid)
+    if ttn in user["bookmarks"]:
+        np_remove_bookmark(uid, ttn)
+        return False
+    if status_payload is None:
+        status_payload = np_get_cached_status(uid, ttn) or {}
+    _np_set_bookmark(uid, ttn, status_payload)
+    return True
+
+
+def np_list_bookmarks(uid: int) -> List[Tuple[str, Dict[str, Any]]]:
+    user = _np_user_bucket(uid)
+    items = []
+    for ttn, payload in user["bookmarks"].items():
+        entry = dict(payload)
+        entry["ttn"] = ttn
+        items.append((ttn, entry))
+    items.sort(key=lambda x: x[1].get("added_at", ""), reverse=True)
+    return items
+
+
+def np_has_bookmark(uid: int, ttn: str) -> bool:
+    return ttn in _np_user_bucket(uid)["bookmarks"]
+
+
+def np_add_note(uid: int, ttn: str, text: str) -> Dict[str, Any]:
+    user = _np_user_bucket(uid)
+    bucket = user["notes"].setdefault(ttn, [])
+    note = {
+        "note_id": secrets.token_hex(6),
+        "ttn": ttn,
+        "text": text,
+        "timestamp": _np_utcnow(),
+    }
+    bucket.insert(0, note)
+    user["notes"][ttn] = bucket[:20]
+    _np_save_state()
+    return note
+
+
+def np_list_notes(uid: int, ttn: Optional[str] = None) -> Dict[str, List[Dict[str, Any]]]:
+    user = _np_user_bucket(uid)
+    notes = user["notes"]
+    if ttn is not None:
+        return {ttn: list(notes.get(ttn, []))}
+    return {key: list(value) for key, value in notes.items() if value}
+
+
+def np_assign_parcel(admin_uid: int, target_uid: int, ttn: str,
+                     status_payload: Optional[Dict[str, Any]], note: Optional[str] = None) -> Dict[str, Any]:
+    state = _np_load_state()
+    now = _np_utcnow()
+    assignment = state["assignments"].get(ttn, {})
+    assignment.update({
+        "ttn": ttn,
+        "assigned_to": target_uid,
+        "assigned_by": admin_uid,
+        "note": note or "",
+        "created_at": assignment.get("created_at") or now,
+        "updated_at": now,
+        "status_payload": status_payload or assignment.get("status_payload") or {},
+        "delivered_at": assignment.get("delivered_at"),
+        "delivery_note": assignment.get("delivery_note", ""),
+    })
+    state["assignments"][ttn] = assignment
+    user = _np_user_bucket(target_uid)
+    user["assigned"][ttn] = {
+        "assigned_at": assignment.get("created_at") or now,
+        "assigned_by": admin_uid,
+    }
+    _np_save_state()
+    return dict(assignment)
+
+
+def np_get_assignment(ttn: str) -> Optional[Dict[str, Any]]:
+    state = _np_load_state()
+    assignment = state["assignments"].get(ttn)
+    if assignment:
+        return dict(assignment)
+    return None
+
+
+def np_list_assignments(uid: int) -> List[Dict[str, Any]]:
+    state = _np_load_state()
+    result: List[Dict[str, Any]] = []
+    for ttn, assignment in state["assignments"].items():
+        if assignment.get("assigned_to") == uid:
+            entry = dict(assignment)
+            entry["ttn"] = ttn
+            result.append(entry)
+    result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return result
+
+
+def np_list_admin_assignments(admin_uid: int) -> List[Dict[str, Any]]:
+    state = _np_load_state()
+    result: List[Dict[str, Any]] = []
+    for ttn, assignment in state["assignments"].items():
+        if assignment.get("assigned_by") == admin_uid:
+            entry = dict(assignment)
+            entry["ttn"] = ttn
+            result.append(entry)
+    result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return result
+
+
+def np_mark_assignment_received(uid: int, ttn: str, delivery_note: str = "") -> Optional[Dict[str, Any]]:
+    state = _np_load_state()
+    assignment = state["assignments"].get(ttn)
+    if not assignment or assignment.get("assigned_to") != uid:
+        return None
+    assignment["delivered_at"] = _np_utcnow()
+    assignment["delivery_note"] = delivery_note or ""
+    assignment["updated_at"] = assignment["delivered_at"]
+    user = _np_user_bucket(uid)
+    bucket = user["assigned"].setdefault(ttn, {})
+    bucket["delivered_at"] = assignment["delivered_at"]
+    _np_save_state()
+    return dict(assignment)
+
+
+def np_refresh_assignment_status(ttn: str, status_payload: Optional[Dict[str, Any]]) -> None:
+    state = _np_load_state()
+    assignment = state["assignments"].get(ttn)
+    if not assignment:
+        return
+    assignment["status_payload"] = status_payload or {}
+    assignment["updated_at"] = _np_utcnow()
+    _np_save_state()
+
+
+# ========================== NOVA POSHTA ==========================
+
+def _np_clean_ttn(raw: str) -> str:
+    return re.sub(r"[^0-9A-Za-z-]", "", (raw or "").strip())
+
+
+def _np_trim_label(text: str, limit: int = 48) -> str:
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 1)] + "…"
+
+
+@dp.callback_query_handler(lambda c: c.data == "menu_np")
+async def menu_np(c: types.CallbackQuery):
+    uid = c.from_user.id
+    await clear_then_anchor(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_interface")
+async def np_interface_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    await clear_then_anchor(uid, tr(uid, "NP_INTERFACE_TEXT"), kb_novaposhta(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_search")
+async def np_search_start(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear(uid)
+    await state.set_state(NovaPoshtaFSM.waiting_ttn.state)
+    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
+    flow_track(uid, prompt)
+    await c.answer()
+
+
+@dp.message_handler(state=NovaPoshtaFSM.waiting_ttn, content_types=ContentType.TEXT)
+async def np_receive_ttn(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    if not text:
+        return
+    if text.lower() in NP_CANCEL_WORDS:
+        await state.finish()
+        await flow_clear(uid)
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        return
+
+    ttn = _np_clean_ttn(text) or text
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+
+    progress = await bot.send_message(m.chat.id, tr(uid, "NP_SEARCH_PROGRESS"))
+    flow_track(uid, progress)
+
+    text_body, kb, payload, assignment_display, error_message = np_prepare_view(uid, ttn, force_fetch=True)
+    await flow_clear(uid)
+
+    if not text_body:
+        warn_text = tr(uid, "NP_SEARCH_ERROR", error=error_message or "—")
+        lowered = (error_message or "").lower()
+        if any(token in lowered for token in ("не найден", "не знайден", "not found", "невірн", "неверн")):
+            warn_text = tr(uid, "NP_SEARCH_NOT_FOUND", ttn=h(ttn))
+        warn = await bot.send_message(m.chat.id, warn_text)
+        flow_track(uid, warn)
+        prompt = await bot.send_message(m.chat.id, tr(uid, "NP_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
+        flow_track(uid, prompt)
+        return
+
+    await state.finish()
+    await np_send_card(uid, m.chat.id, text_body, kb)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_refresh:"))
+async def np_refresh_detail(c: types.CallbackQuery):
+    uid = c.from_user.id
+    ttn = c.data.split(":", 1)[1]
+    text_body, kb, _, _, error_message = np_prepare_view(uid, ttn, force_fetch=True)
+    if not text_body:
+        await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
+        return
+    try:
+        await bot.edit_message_text(
+            text_body,
+            c.message.chat.id,
+            c.message.message_id,
+            reply_markup=kb,
+            disable_web_page_preview=True,
+        )
+    except MessageNotModified:
+        pass
+    except MessageCantBeEdited:
+        await c.answer(tr(uid, "NP_REFRESH_NOT_POSSIBLE"), show_alert=True)
+        return
+    except Exception:
+        await c.answer(tr(uid, "NP_REFRESH_NOT_POSSIBLE"), show_alert=True)
+        return
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_bookmark:"))
+async def np_toggle_bookmark_cb(c: types.CallbackQuery):
+    uid = c.from_user.id
+    ttn = c.data.split(":", 1)[1]
+    payload = np_get_cached_status(uid, ttn)
+    if payload is None:
+        success, payload, error_message = np_fetch_tracking(ttn)
+        if not success:
+            await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
+            return
+        np_remember_search(uid, ttn, payload)
+    added = np_toggle_bookmark(uid, ttn, status_payload=payload)
+    text_body, kb, _, _, _ = np_prepare_view(uid, ttn, payload=payload)
+    if text_body and kb:
+        try:
+            await bot.edit_message_text(text_body, c.message.chat.id, c.message.message_id, reply_markup=kb)
+        except Exception:
+            pass
+    await c.answer(tr(uid, "NP_BOOKMARK_ADDED" if added else "NP_BOOKMARK_REMOVED"))
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_note:"))
+async def np_note_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    ttn = c.data.split(":", 1)[1]
+    await state.set_state(NovaPoshtaFSM.waiting_note.state)
+    await state.update_data(note_ttn=ttn, note_message=(c.message.chat.id, c.message.message_id))
+    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_NOTE_PROMPT", ttn=h(ttn)), reply_markup=kb_np_cancel(uid))
+    flow_track(uid, prompt)
+    await c.answer()
+
+
+@dp.message_handler(state=NovaPoshtaFSM.waiting_note, content_types=ContentType.TEXT)
+async def np_note_receive(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    data = await state.get_data()
+    ttn = data.get("note_ttn")
+    if not ttn:
+        await state.finish()
+        return
+    text = (m.text or "").strip()
+    if not text:
+        return
+    if text.lower() in NP_CANCEL_WORDS:
+        await state.finish()
+        await flow_clear(uid)
+        notice = await bot.send_message(m.chat.id, tr(uid, "NP_NOTE_CANCELLED"))
+        flow_track(uid, notice)
+        return
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    np_add_note(uid, ttn, text)
+    await state.finish()
+    await flow_clear(uid)
+    chat_id, message_id = data.get("note_message", (None, None))
+    text_body, kb, _, _, _ = np_prepare_view(uid, ttn)
+    if text_body and kb and chat_id and message_id:
+        try:
+            await bot.edit_message_text(text_body, chat_id, message_id, reply_markup=kb)
+        except Exception:
+            await bot.send_message(chat_id, text_body, reply_markup=kb)
+    ack = await bot.send_message(m.chat.id, tr(uid, "NP_NOTE_SAVED"))
+    flow_track(uid, ack)
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_history")
+async def np_history_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    history = np_get_history(uid)
+    if not history:
+        await clear_then_anchor(uid, tr(uid, "NP_HISTORY_EMPTY"), kb_novaposhta(uid))
+        await c.answer()
+        return
+    lines = [tr(uid, "NP_HISTORY_HEADER")]
+    options: List[Tuple[str, str]] = []
+    for idx, entry in enumerate(history[:10], start=1):
+        ttn = entry.get("ttn")
+        if not ttn:
+            continue
+        timestamp = format_datetime_short(entry.get("timestamp")) or entry.get("timestamp") or ""
+        summary = format_np_short_entry(entry.get("status_payload"))
+        line = f"{idx}. <b>{h(ttn)}</b>"
+        if summary:
+            line += f" — {h(summary)}"
+        if timestamp:
+            line += f" ({h(timestamp)})"
+        lines.append(line)
+        label_parts = [ttn]
+        if timestamp:
+            label_parts.append(timestamp)
+        options.append((ttn, _np_trim_label(" • ".join(label_parts))))
+    if not options:
+        await clear_then_anchor(uid, tr(uid, "NP_HISTORY_EMPTY"), kb_novaposhta(uid))
+    else:
+        kb = np_build_list_keyboard(uid, options, "np_history_show")
+        await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_history_show:"))
+async def np_history_show_cb(c: types.CallbackQuery):
+    uid = c.from_user.id
+    ttn = c.data.split(":", 1)[1]
+    text_body, kb, _, _, error_message = np_prepare_view(uid, ttn)
+    if not text_body:
+        await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
+        return
+    await np_send_card(uid, c.message.chat.id, text_body, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_bookmarks")
+async def np_bookmarks_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    bookmarks = np_list_bookmarks(uid)
+    if not bookmarks:
+        await clear_then_anchor(uid, tr(uid, "NP_BOOKMARKS_EMPTY"), kb_novaposhta(uid))
+        await c.answer()
+        return
+    lines = [tr(uid, "NP_BOOKMARKS_HEADER")]
+    options: List[Tuple[str, str]] = []
+    for idx, (ttn, entry) in enumerate(bookmarks[:10], start=1):
+        timestamp = format_datetime_short(entry.get("added_at")) or entry.get("added_at") or ""
+        summary = format_np_short_entry(entry.get("status_payload"))
+        line = f"{idx}. <b>{h(ttn)}</b>"
+        if summary:
+            line += f" — {h(summary)}"
+        if timestamp:
+            line += f" ({h(timestamp)})"
+        lines.append(line)
+        label_parts = [ttn]
+        if timestamp:
+            label_parts.append(timestamp)
+        options.append((ttn, _np_trim_label(" • ".join(label_parts))))
+    kb = np_build_list_keyboard(uid, options, "np_bookmark_show")
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_bookmark_show:"))
+async def np_bookmark_show_cb(c: types.CallbackQuery):
+    uid = c.from_user.id
+    ttn = c.data.split(":", 1)[1]
+    text_body, kb, _, _, error_message = np_prepare_view(uid, ttn)
+    if not text_body:
+        await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
+        return
+    await np_send_card(uid, c.message.chat.id, text_body, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_assigned")
+async def np_assigned_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    assignments = np_list_assignments(uid)
+    if not assignments:
+        await clear_then_anchor(uid, tr(uid, "NP_ASSIGNED_EMPTY"), kb_novaposhta(uid))
+        await c.answer()
+        return
+    lines = [tr(uid, "NP_ASSIGNED_HEADER")]
+    options: List[Tuple[str, str]] = []
+    for idx, assignment in enumerate(assignments[:10], start=1):
+        ttn = assignment.get("ttn")
+        status_short = format_np_short_entry(assignment.get("status_payload"))
+        assigned_time = format_datetime_short(assignment.get("created_at")) or assignment.get("created_at") or ""
+        delivered_time = format_datetime_short(assignment.get("delivered_at")) if assignment.get("delivered_at") else ""
+        line = f"{idx}. <b>{h(ttn)}</b>"
+        if status_short:
+            line += f" — {h(status_short)}"
+        if assigned_time:
+            line += f" ({h(assigned_time)})"
+        if delivered_time:
+            line += f" ✔️ {h(delivered_time)}"
+        lines.append(line)
+        label_parts = [ttn]
+        if delivered_time:
+            label_parts.append("✔")
+        elif assigned_time:
+            label_parts.append(assigned_time)
+        options.append((ttn, _np_trim_label(" • ".join(label_parts))))
+    kb = np_build_list_keyboard(uid, options, "np_assigned_detail")
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_received")
+async def np_received_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    assignments = [a for a in np_list_assignments(uid) if a.get("delivered_at")]
+    if not assignments:
+        await clear_then_anchor(uid, tr(uid, "NP_RECEIVED_EMPTY"), kb_novaposhta(uid))
+        await c.answer()
+        return
+    lines = [tr(uid, "NP_RECEIVED_HEADER")]
+    options: List[Tuple[str, str]] = []
+    for idx, assignment in enumerate(assignments[:10], start=1):
+        ttn = assignment.get("ttn")
+        status_short = format_np_short_entry(assignment.get("status_payload"))
+        delivered_time = format_datetime_short(assignment.get("delivered_at")) or assignment.get("delivered_at") or ""
+        line = f"{idx}. <b>{h(ttn)}</b>"
+        if status_short:
+            line += f" — {h(status_short)}"
+        if delivered_time:
+            line += f" ✔️ {h(delivered_time)}"
+        lines.append(line)
+        label_parts = [ttn]
+        if delivered_time:
+            label_parts.append(delivered_time)
+        options.append((ttn, _np_trim_label(" • ".join(label_parts))))
+    kb = np_build_list_keyboard(uid, options, "np_assigned_detail")
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assigned_detail:"))
+async def np_assigned_detail_cb(c: types.CallbackQuery):
+    uid = c.from_user.id
+    ttn = c.data.split(":", 1)[1]
+    assignment = np_get_assignment(ttn)
+    payload = assignment.get("status_payload") if assignment else None
+    text_body, kb, _, _, error_message = np_prepare_view(uid, ttn, payload=payload)
+    if not text_body:
+        await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
+        return
+    await np_send_card(uid, c.message.chat.id, text_body, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assigned_received:"))
+async def np_assigned_received_cb(c: types.CallbackQuery):
+    uid = c.from_user.id
+    ttn = c.data.split(":", 1)[1]
+    assignment = np_mark_assignment_received(uid, ttn)
+    if not assignment:
+        await c.answer(tr(uid, "NP_ASSIGNMENT_ALREADY_DONE"), show_alert=True)
+        return
+    text_body, kb, _, _, error_message = np_prepare_view(uid, ttn, payload=assignment.get("status_payload"))
+    if text_body and kb:
+        try:
+            await bot.edit_message_text(text_body, c.message.chat.id, c.message.message_id, reply_markup=kb)
+        except Exception:
+            pass
+    await c.answer(tr(uid, "NP_DELIVERY_ACK_RECORDED"))
+
+    user_profile = load_user(uid) or {"user_id": uid}
+    user_name = user_profile.get("fullname") or (user_profile.get("tg") or {}).get("first_name") or f"User {uid}"
+    delivered_at = assignment.get("delivered_at")
+
+    await anchor_show_root(uid)
+    assigned_by = assignment.get("assigned_by")
+    if assigned_by and assigned_by != uid:
+        await anchor_show_root(assigned_by)
+
+    user_lang = resolve_lang(uid)
+    user_receipt = np_render_delivery_receipt(user_lang, ttn, user_name, delivered_at)
+    user_kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton(_np_pick(user_lang, NP_CLOSE_BUTTON_LABEL), callback_data="np_close")
+    )
+    try:
+        receipt_msg = await bot.send_message(
+            c.message.chat.id,
+            user_receipt,
+            reply_markup=user_kb,
+            disable_web_page_preview=True,
+        )
+        flow_track(uid, receipt_msg)
+    except Exception:
+        pass
+
+    for admin_id in admins:
+        chat_id = users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id") or (load_user(admin_id) or {}).get("tg", {}).get("chat_id")
+        if not chat_id:
+            continue
+        admin_lang = resolve_lang(admin_id)
+        alert = np_render_delivery_receipt(admin_lang, ttn, user_name, delivered_at)
+        kb_admin = InlineKeyboardMarkup().add(
+            InlineKeyboardButton(_np_pick(admin_lang, NP_CLOSE_BUTTON_LABEL), callback_data="np_close")
+        )
+        try:
+            await bot.send_message(chat_id, alert, reply_markup=kb_admin, disable_web_page_preview=True)
+        except Exception:
+            continue
+
+
+def np_assign_candidate_profiles() -> List[dict]:
+    profiles = load_all_users()
+    def sort_key(profile: dict) -> Tuple[str, int]:
+        name = (profile.get("fullname") or (profile.get("tg") or {}).get("first_name") or "").strip().lower()
+        return name, profile.get("user_id", 0)
+    return sorted(profiles, key=sort_key)
+
+
+def np_assign_format_label(profile: dict) -> str:
+    name = profile.get("fullname") or (profile.get("tg") or {}).get("first_name") or f"ID {profile.get('user_id')}"
+    bsu = profile.get("bsu") or f"ID {profile.get('user_id')}"
+    label = f"{name} • {bsu}"
+    return _np_trim_label(label, 36)
+
+
+async def np_assign_show_picker(uid: int, state: FSMContext, chat_id: int, page: int = 0) -> None:
+    profiles = np_assign_candidate_profiles()
+    per_page = 6
+    total = len(profiles)
+    if total == 0:
+        warn = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_USER_NOT_FOUND"))
+        flow_track(uid, warn)
+        return
+    max_page = max(0, (total - 1) // per_page)
+    page = max(0, min(page, max_page))
+    start = page * per_page
+    chunk = profiles[start:start + per_page]
+    kb = InlineKeyboardMarkup()
+    for profile in chunk:
+        user_id = profile.get("user_id")
+        if user_id is None:
+            continue
+        kb.add(InlineKeyboardButton(np_assign_format_label(profile), callback_data=f"np_assign_pick:{user_id}"))
+    nav_buttons: List[InlineKeyboardButton] = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"np_assign_page:{page-1}"))
+    if page < max_page:
+        nav_buttons.append(InlineKeyboardButton("➡️", callback_data=f"np_assign_page:{page+1}"))
+    if nav_buttons:
+        kb.row(*nav_buttons)
+    kb.add(InlineKeyboardButton(_np_pick(resolve_lang(uid), NP_CANCEL_BUTTON_LABEL), callback_data="np_cancel"))
+    text = tr(uid, "NP_ASSIGN_PROMPT_USER")
+    if max_page:
+        text += f"\n\n{page + 1}/{max_page + 1}"
+    data = await state.get_data()
+    picker_info = data.get("assign_picker")
+    message_id = None
+    if isinstance(picker_info, (list, tuple)) and len(picker_info) >= 2:
+        stored_chat, stored_mid = picker_info[0], picker_info[1]
+        if stored_chat == chat_id:
+            message_id = stored_mid
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=kb)
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=kb)
+            flow_track(uid, msg)
+            await state.update_data(assign_picker=(msg.chat.id, msg.message_id, page))
+        else:
+            await state.update_data(assign_picker=(chat_id, message_id, page))
+    else:
+        msg = await bot.send_message(chat_id, text, reply_markup=kb)
+        flow_track(uid, msg)
+        await state.update_data(assign_picker=(msg.chat.id, msg.message_id, page))
+
+
+async def np_assign_clear_picker(state: FSMContext):
+    data = await state.get_data()
+    picker_info = data.get("assign_picker")
+    if isinstance(picker_info, (list, tuple)) and len(picker_info) >= 2:
+        chat_id, message_id = picker_info[0], picker_info[1]
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+    await state.update_data(assign_picker=None)
+
+
+async def np_assign_user_selected(uid: int, profile: dict, state: FSMContext, chat_id: int):
+    await np_assign_clear_picker(state)
+    await flow_clear(uid)
+    fullname = profile.get("fullname") or (profile.get("tg") or {}).get("first_name") or f"User {profile.get('user_id')}"
+    bsu = profile.get("bsu", "—")
+    summary = await bot.send_message(chat_id, f"👤 <b>{h(fullname)}</b> — BSU {h(bsu)}")
+    flow_track(uid, summary)
+    prompt = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_PROMPT_NOTE"), reply_markup=kb_np_assign_note(uid))
+    flow_track(uid, prompt)
+    await state.set_state(NovaPoshtaFSM.waiting_assign_note.state)
+
+
+async def np_assign_finalize(uid: int, state: FSMContext, chat_id: int, note_text: str) -> None:
+    data = await state.get_data()
+    ttn = data.get("assign_ttn")
+    payload = data.get("assign_payload")
+    target_id = data.get("assign_user_id")
+    note_text = (note_text or "").strip()
+
+    await np_assign_clear_picker(state)
+    await state.finish()
+    await flow_clear(uid)
+
+    if not target_id or not ttn or not payload:
+        warn = await bot.send_message(chat_id, tr(uid, "NP_ASSIGN_CANCELLED"))
+        flow_track(uid, warn)
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+        return
+
+    target_profile = load_user(target_id) or {"user_id": target_id}
+    assignment = np_assign_parcel(uid, target_id, ttn, payload, note=note_text)
+    await anchor_show_root(target_id)
+    admin_profile = load_user(uid) or {"user_id": uid}
+    admin_name = admin_profile.get("fullname") or (admin_profile.get("tg") or {}).get("first_name") or f"ID {uid}"
+    target_name = target_profile.get("fullname") or (target_profile.get("tg") or {}).get("first_name") or f"User {target_id}"
+    lang = resolve_lang(uid)
+    assigned_time = format_datetime_short(assignment.get("updated_at")) or assignment.get("updated_at") or "—"
+
+    confirm_text = tr(uid, "NP_ASSIGN_DONE", ttn=h(ttn), user=h(target_name), time=h(assigned_time))
+    note_display = (assignment.get("note") or "").strip()
+    if note_display:
+        confirm_text = f"{confirm_text}\n\n{_np_pick(lang, NP_ASSIGN_DONE_NOTE_LABEL).format(note=h(note_display))}"
+
+    confirm_kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton(_np_pick(lang, NP_CLOSE_BUTTON_LABEL), callback_data="np_close")
+    )
+    confirm = await bot.send_message(chat_id, confirm_text, reply_markup=confirm_kb)
+    flow_track(uid, confirm)
+    await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+
+    target_chat = users_runtime.get(target_id, {}).get("tg", {}).get("chat_id") or (target_profile.get("tg") or {}).get("chat_id")
+    if target_chat:
+        target_text, target_kb, _, _, _ = np_prepare_view(target_id, ttn, payload=payload)
+        notify_prefix = tr(target_id, "NP_ASSIGN_NOTIFY_USER", admin=h(admin_name), ttn=h(ttn))
+        body = f"{notify_prefix}\n\n{target_text}" if target_text else notify_prefix
+        try:
+            await bot.send_message(target_chat, body, reply_markup=target_kb)
+        except Exception:
+            pass
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_assign_start")
+async def np_assign_start_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        await c.answer("⛔", show_alert=True)
+        return
+    await flow_clear(uid)
+    await state.set_state(NovaPoshtaFSM.waiting_assign_ttn.state)
+    prompt = await bot.send_message(c.message.chat.id, tr(uid, "NP_ASSIGN_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
+    flow_track(uid, prompt)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_quick:"), state="*")
+async def np_assign_quick_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        await c.answer("⛔", show_alert=True)
+        return
+    ttn = c.data.split(":", 1)[1]
+    payload = np_get_cached_status(uid, ttn)
+    if payload is None:
+        success, payload, error_message = np_fetch_tracking(ttn)
+        if not success:
+            await c.answer(tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"), show_alert=True)
+            return
+        np_remember_search(uid, ttn, payload)
+    await flow_clear(uid)
+    await state.set_state(NovaPoshtaFSM.waiting_assign_user.state)
+    await state.update_data(assign_ttn=ttn, assign_payload=payload)
+    await np_assign_show_picker(uid, state, c.message.chat.id, page=0)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_page:"), state="*")
+async def np_assign_page_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        await c.answer("⛔", show_alert=True)
+        return
+    current = await state.get_state()
+    if current != NovaPoshtaFSM.waiting_assign_user.state:
+        await c.answer()
+        return
+    try:
+        page = int(c.data.split(":", 1)[1])
+    except ValueError:
+        await c.answer()
+        return
+    await np_assign_show_picker(uid, state, c.message.chat.id, page=page)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("np_assign_pick:"), state="*")
+async def np_assign_pick_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        await c.answer("⛔", show_alert=True)
+        return
+    current = await state.get_state()
+    if current != NovaPoshtaFSM.waiting_assign_user.state:
+        await c.answer()
+        return
+    try:
+        target_id = int(c.data.split(":", 1)[1])
+    except ValueError:
+        await c.answer()
+        return
+    profile = load_user(target_id)
+    if not profile:
+        await c.answer(tr(uid, "NP_ASSIGN_USER_NOT_FOUND"), show_alert=True)
+        return
+    await state.update_data(assign_user_id=target_id)
+    await np_assign_user_selected(uid, profile, state, c.message.chat.id)
+    await c.answer()
+
+
+@dp.message_handler(state=NovaPoshtaFSM.waiting_assign_ttn, content_types=ContentType.TEXT)
+async def np_assign_receive_ttn(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        await state.finish()
+        return
+    text = (m.text or "").strip()
+    if not text:
+        return
+    if text.lower() in NP_CANCEL_WORDS:
+        await np_assign_clear_picker(state)
+        await state.finish()
+        await flow_clear(uid)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+        return
+    ttn = _np_clean_ttn(text) or text
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    text_body, kb, payload, _, error_message = np_prepare_view(uid, ttn, force_fetch=True)
+    await flow_clear(uid)
+    if not text_body:
+        warn = await bot.send_message(m.chat.id, tr(uid, "NP_SEARCH_ERROR", error=error_message or "—"))
+        flow_track(uid, warn)
+        prompt = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_PROMPT_TTN"), reply_markup=kb_np_cancel(uid))
+        flow_track(uid, prompt)
+        return
+    await state.set_state(NovaPoshtaFSM.waiting_assign_user.state)
+    await state.update_data(assign_ttn=ttn, assign_payload=payload)
+    preview = await bot.send_message(m.chat.id, text_body, reply_markup=kb)
+    flow_track(uid, preview)
+    await np_assign_show_picker(uid, state, m.chat.id, page=0)
+
+
+@dp.message_handler(state=NovaPoshtaFSM.waiting_assign_user, content_types=ContentType.ANY)
+async def np_assign_receive_user(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        await state.finish()
+        return
+    if m.text and m.text.strip().lower() in NP_CANCEL_WORDS:
+        await np_assign_clear_picker(state)
+        await state.finish()
+        await flow_clear(uid)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+        return
+    profile = resolve_user_reference(m)
+    if not profile:
+        warn = await bot.send_message(m.chat.id, tr(uid, "NP_ASSIGN_USER_NOT_FOUND"))
+        flow_track(uid, warn)
+        return
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    await state.update_data(assign_user_id=profile.get("user_id"))
+    await np_assign_user_selected(uid, profile, state, m.chat.id)
+
+
+@dp.message_handler(state=NovaPoshtaFSM.waiting_assign_note, content_types=ContentType.TEXT)
+async def np_assign_receive_note(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        await state.finish()
+        return
+    note_text = (m.text or "").strip()
+    if note_text.lower() in NP_CANCEL_WORDS:
+        await np_assign_clear_picker(state)
+        await state.finish()
+        await flow_clear(uid)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+        return
+    if note_text == "-":
+        note_text = ""
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    await np_assign_finalize(uid, state, m.chat.id, note_text)
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_assign_skip", state="*")
+async def np_assign_skip_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        await c.answer("⛔", show_alert=True)
+        return
+    current = await state.get_state()
+    if current != NovaPoshtaFSM.waiting_assign_note.state:
+        await c.answer()
+        return
+    await np_assign_finalize(uid, state, c.message.chat.id, "")
+    await c.answer(tr(uid, "NP_ASSIGN_SKIP_TOAST"))
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_close", state="*")
+async def np_close_message(c: types.CallbackQuery):
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "np_cancel", state="*")
+async def np_cancel_flow(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    current = await state.get_state()
+    if current and current.startswith("NovaPoshtaFSM"):
+        await np_assign_clear_picker(state)
+        await state.finish()
+    await flow_clear(uid)
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await anchor_show_text(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
+    await c.answer(tr(uid, "NP_CANCELLED_TOAST"))
 
 # ========================== CHECKS ==========================
 @dp.callback_query_handler(lambda c: c.data == "menu_checks")
@@ -2688,7 +6790,7 @@ async def check_add(c: types.CallbackQuery, state: FSMContext):
             "Пришлите один чёткий снимок чека. После загрузки мы попросим указать сумму, описание и статус оплаты.\n\n"
             "Если передумали — нажмите «Отменить»."
         ),
-        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_receipt"))
+        reply_markup=kb_receipt_cancel()
     )
     flow_track(uid, tip)
     await state.update_data(tmp_img=None, amount=None, photo_set=False, replace_photo=False, desc="", paid=None)
@@ -2770,18 +6872,29 @@ async def rcp_photo(m: types.Message, state: FSMContext):
     if data.get("amount") is None:
         ask = await bot.send_message(
             m.chat.id,
-            "💰 <b>Шаг 2 из 4.</b> Укажите сумму чека в гривнах (пример: 123.45). Используйте точку в качестве разделителя копеек."
+            "💰 <b>Шаг 2 из 4.</b> Укажите сумму чека в гривнах (пример: 123.45). Используйте точку в качестве разделителя копеек.",
+            reply_markup=kb_receipt_cancel(),
         )
         flow_track(uid, ask)
         await remember_step_prompt(state, ask)
         await ReceiptFSM.waiting_amount.set()
     else:
-        tip = await bot.send_message(m.chat.id,
+        tip = await bot.send_message(
+            m.chat.id,
             "📝 Хотите добавить описание к чеку? Отправьте текст или нажмите «Пропустить».",
-            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("Пропустить", callback_data="desc_skip")))
+            reply_markup=kb_desc_prompt(),
+        )
         flow_track(uid, tip)
         await remember_step_prompt(state, tip)
         await ReceiptFSM.waiting_description.set()
+
+
+@dp.message_handler(lambda m: m.content_type != ContentType.PHOTO, state=ReceiptFSM.waiting_photo, content_types=ContentType.ANY)
+async def rcp_photo_reject(m: types.Message, state: FSMContext):
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
 
 
 @dp.message_handler(state=ReceiptFSM.waiting_amount, content_types=ContentType.TEXT)
@@ -2818,7 +6931,7 @@ async def rcp_amount(m: types.Message, state: FSMContext):
     tip = await bot.send_message(
         m.chat.id,
         "📝 <b>Шаг 3 из 4.</b> Добавьте краткое описание (например, цель покупки) или нажмите «Пропустить».",
-        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("Пропустить", callback_data="desc_skip"))
+        reply_markup=kb_desc_prompt(),
     )
     flow_track(uid, tip)
     await remember_step_prompt(state, tip)
@@ -2829,7 +6942,7 @@ async def rcp_amount(m: types.Message, state: FSMContext):
 async def desc_skip(c: types.CallbackQuery, state: FSMContext):
     await clear_step_prompt(state)
     await state.update_data(desc="")
-    kb = kb_choose_paid(ask_later=True)
+    kb = kb_choose_paid(ask_later=True, flow_cancel=True)
     msg = await bot.send_message(
         c.message.chat.id,
         "🔖 <b>Шаг 4 из 4.</b> Укажите статус оплаты для этого чека.",
@@ -2856,7 +6969,7 @@ async def rcp_desc(m: types.Message, state: FSMContext):
         await send_receipt_preview(uid, m.chat.id, state)
         await ReceiptFSM.preview.set()
         return
-    kb = kb_choose_paid(ask_later=True)
+    kb = kb_choose_paid(ask_later=True, flow_cancel=True)
     msg = await bot.send_message(
         m.chat.id,
         "🔖 <b>Шаг 4 из 4.</b> Выберите статус оплаты для этого чека.",
@@ -3015,18 +7128,8 @@ async def photo_upload(c: types.CallbackQuery, state: FSMContext):
     info = load_project_info(project)
     await flow_clear(uid)
     await state.finish()
-    await state.update_data(photo_project=project, uploaded=[])
-    intro = (
-        "📤 <b>Загрузка фотографий объекта</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📂 Проект: <b>{h(info.get('name', '—'))}</b> ({h(info.get('code') or '—')})\n\n"
-        "Отправляйте одно или несколько изображений: можно прикреплять фото напрямую или через режим «Документ» без сжатия.\n"
-        "Каждый файл будет сохранён в хронологию вместе с вашим именем и временем загрузки.\n"
-        "Своё фото можно позже удалить через просмотр архива, а любой участник может запросить оригинал одним нажатием.\n\n"
-        "Когда закончите — нажмите «✅ Завершить загрузку». Чтобы выйти без добавления новых файлов, используйте «❌ Отменить»."
-    )
-    msg = await bot.send_message(c.message.chat.id, intro, reply_markup=kb_photo_session_controls())
-    flow_track(uid, msg)
+    await state.update_data(photo_project=project, uploaded=[], photo_session_message=None)
+    await _photo_refresh_session_message(c.message.chat.id, uid, state, info, [])
     await PhotoFSM.collecting.set()
     await c.answer()
 
@@ -3128,44 +7231,15 @@ async def photo_collect_media(m: types.Message, state: FSMContext):
     uploaded = list(data.get("uploaded") or [])
     uploaded.append(entry)
     await state.update_data(uploaded=uploaded)
-
-    meta_lines: List[str] = []
-    captured = metadata.get("captured_at") if isinstance(metadata, dict) else None
-    if captured:
-        meta_lines.append(f"📸 Дата съёмки: {h(captured)}")
-    gps = metadata.get("gps") if isinstance(metadata, dict) else None
-    if isinstance(gps, dict) and gps.get("lat") is not None and gps.get("lon") is not None:
-        meta_lines.append(f"🌐 Координаты: {gps['lat']:.6f}, {gps['lon']:.6f}")
-    address = metadata.get("address") if isinstance(metadata, dict) else None
-    if address:
-        meta_lines.append(f"🏙 Локация (EXIF): {h(address)}")
-    camera = metadata.get("camera") if isinstance(metadata, dict) else None
-    if camera:
-        meta_lines.append(f"📷 Камера: {h(camera)}")
-
-    detail_block = "\n".join(meta_lines)
-    if detail_block:
-        detail_block = f"\n{detail_block}"
-
-    caption = (
-        "✅ Фото сохранено\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"📂 Проект: <b>{h(info.get('name', '—'))}</b> ({h(project_code)})\n"
-        f"📛 Оригинал: {h(original_name)}\n"
-        f"📂 Файл архива: {h(filename)}\n"
-        f"👤 Автор: {h(prof.get('fullname', '—'))} (ID {uid}, {h(prof.get('bsu', '—'))})\n"
-        f"🕒 Загружено: {now.strftime('%Y-%m-%d %H:%M')}"
-        f"{detail_block}\n\n"
-        "Продолжайте отправлять фото или завершите загрузку кнопкой ниже."
-    )
-    msg = await bot.send_message(m.chat.id, caption, reply_markup=kb_photo_session_controls())
-    flow_track(uid, msg)
+    await _photo_refresh_session_message(m.chat.id, uid, state, info, uploaded, entry)
     await update_all_anchors()
 
 
 @dp.message_handler(state=PhotoFSM.collecting, content_types=ContentType.TEXT)
 async def photo_collect_text(m: types.Message, state: FSMContext):
     uid = m.from_user.id
+    data = await state.get_data()
+    uploaded = data.get("uploaded") or []
     try:
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
@@ -3173,9 +7247,66 @@ async def photo_collect_text(m: types.Message, state: FSMContext):
     hint = await bot.send_message(
         m.chat.id,
         "ℹ️ Отправьте фотографию или изображение документом. Когда закончите, нажмите «✅ Завершить загрузку».",
-        reply_markup=kb_photo_session_controls()
+        reply_markup=kb_photo_session_controls(bool(uploaded))
     )
     flow_track(uid, hint)
+
+
+@dp.callback_query_handler(lambda c: c.data == "photo_session_preview", state=PhotoFSM.collecting)
+async def photo_session_preview(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    uploaded = data.get("uploaded") or []
+    if not uploaded:
+        return await c.answer("Пока нет загруженных файлов", show_alert=True)
+    project = data.get("photo_project")
+    if not project:
+        return await c.answer("Проект не найден", show_alert=True)
+    await c.answer("Отправляю файлы…")
+    header = await bot.send_message(
+        c.message.chat.id,
+        f"🗂 <b>Загруженные в этой сессии</b>\nВсего файлов: <b>{len(uploaded)}</b>.",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+    )
+    flow_track(uid, header)
+    base_dir = proj_photos_dir(project)
+    for entry in uploaded:
+        stored = entry.get("file") or ""
+        original = entry.get("original") or stored
+        if not stored:
+            warn = await bot.send_message(
+                c.message.chat.id,
+                f"⚠️ Не удалось определить файл для {h(original)}.",
+                reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+            )
+            flow_track(uid, warn)
+            continue
+        path = os.path.join(base_dir, stored)
+        if not os.path.exists(path):
+            warn = await bot.send_message(
+                c.message.chat.id,
+                f"⚠️ Файл {h(stored)} не найден на диске.",
+                reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+            )
+            flow_track(uid, warn)
+            continue
+        caption = f"📁 {h(original)}"
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+        try:
+            ext = os.path.splitext(stored)[1].lower()
+            file_input = InputFile(path)
+            if _should_send_as_photo(ext):
+                msg = await bot.send_photo(c.message.chat.id, file_input, caption=caption, reply_markup=kb)
+            else:
+                msg = await bot.send_document(c.message.chat.id, file_input, caption=caption, reply_markup=kb)
+            flow_track(uid, msg)
+        except Exception:
+            warn = await bot.send_message(
+                c.message.chat.id,
+                f"⚠️ Не удалось отправить {h(original)}.",
+                reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+            )
+            flow_track(uid, warn)
 
 
 @dp.callback_query_handler(lambda c: c.data == "photo_finish", state=PhotoFSM.collecting)
@@ -3259,7 +7390,30 @@ async def photo_view(c: types.CallbackQuery):
         fallback_text = caption + "\n\n⚠️ Не удалось отобразить файл в Telegram, но запись остаётся в архиве."
         warn = await bot.send_message(c.message.chat.id, fallback_text, reply_markup=kb)
         flow_track(uid, warn)
+    footer = (
+        "📁 <b>Просмотр архива завершён</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "Выберите дальнейшее действие с помощью кнопок ниже."
+    )
+    tail = await bot.send_message(c.message.chat.id, footer, reply_markup=kb_photo_view_actions())
+    flow_track(uid, tail)
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data in {"photo_view_close", "photo_view_root", "photo_view_menu"})
+async def photo_view_controls(c: types.CallbackQuery):
+    uid = c.from_user.id
+    action = c.data
+    if action == "photo_view_menu":
+        await menu_photos(c)
+        return
+    if action == "photo_view_root":
+        await c.answer("Главное меню открыто")
+        await flow_clear(uid)
+        await anchor_show_root(uid)
+    else:
+        await c.answer("Просмотр закрыт")
+        await flow_clear(uid)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("photo_original:"))
@@ -3286,7 +7440,8 @@ async def photo_send_original(c: types.CallbackQuery):
         msg = await bot.send_document(
             c.message.chat.id,
             InputFile(path, filename=original_name),
-            caption=f"📤 Оригинал: {h(original_name)}"
+            caption=f"📤 Оригинал: {h(original_name)}",
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
         )
         flow_track(uid, msg)
         await c.answer("Оригинал отправлен")
@@ -4177,6 +8332,7 @@ async def adm_req_paid(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_sos")
 async def sos_start(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    await state.finish()
     await flow_clear(uid)
     text = ("⚠️ Вы нажали кнопку <b>SOS</b>.\n\n"
             "Пожалуйста, подтвердите, что нажатие не случайно:")
@@ -4185,7 +8341,6 @@ async def sos_start(c: types.CallbackQuery, state: FSMContext):
     kb.add(InlineKeyboardButton("❌ Отменить", callback_data="sos_cancel"))
     msg = await bot.send_message(c.message.chat.id, text, reply_markup=kb)
     flow_track(uid, msg)
-    await state.update_data(sos_stage="confirm")
     await c.answer()
 
 
@@ -4199,27 +8354,66 @@ async def sos_cancel(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "sos_confirm")
 async def sos_confirm(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    await flow_clear(uid)
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton("📍 Отправить местоположение", request_location=True))
-    msg = await bot.send_message(c.message.chat.id,
-                                 "📍 Отправьте вашу геолокацию кнопкой ниже.",
-                                 reply_markup=kb)
+    kb.row(
+        KeyboardButton("📍 Отправить местоположение", request_location=True),
+        KeyboardButton("❌ Отменить")
+    )
+    msg = await bot.send_message(
+        c.message.chat.id,
+        "📍 Отправьте вашу геолокацию кнопкой ниже или отмените действие.",
+        reply_markup=kb
+    )
     flow_track(uid, msg)
-    await state.update_data(sos_stage="location")
+    await SosFSM.waiting_location.set()
     await c.answer()
 
 
-@dp.message_handler(content_types=ContentType.LOCATION, state="*")
+@dp.message_handler(state=SosFSM.waiting_location, content_types=ContentType.TEXT)
+async def sos_location_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    normalized = text.replace("❌", "").replace("📍", "").strip().lower()
+    if normalized in {"отменить", "cancel"} or normalized in NP_CANCEL_WORDS:
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        try:
+            remove = await bot.send_message(m.chat.id, "⌨️", reply_markup=ReplyKeyboardRemove())
+            await bot.delete_message(remove.chat.id, remove.message_id)
+        except Exception:
+            pass
+        await flow_clear(uid)
+        await state.finish()
+        await anchor_show_root(uid)
+        return
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    warn = await bot.send_message(
+        m.chat.id,
+        "📍 Используйте кнопку отправки геопозиции или «❌ Отменить», чтобы вернуться в меню."
+    )
+    flow_track(uid, warn)
+
+
+@dp.message_handler(content_types=ContentType.LOCATION, state=SosFSM.waiting_location)
 async def sos_location(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    data = await state.get_data()
-    if data.get("sos_stage") != "location":
-        return
     lat, lon = m.location.latitude, m.location.longitude
     prof = load_user(uid) or {"user_id": uid}
 
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
+
+    try:
+        placeholder = await bot.send_message(m.chat.id, "⌨️", reply_markup=ReplyKeyboardRemove())
+        await bot.delete_message(m.chat.id, placeholder.message_id)
+    except Exception:
+        pass
 
     sender_kb = InlineKeyboardMarkup().add(
         InlineKeyboardButton("❌ Закрыть уведомление", callback_data="sos_sender_close")
@@ -4795,8 +8989,55 @@ async def admin_notice_close(c: types.CallbackQuery):
     await c.answer("Сообщение закрыто.")
 
 
+def _colorize_terminal(text: str, color: str) -> str:
+    """Return text wrapped in ANSI color codes if the terminal supports it."""
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\033[{color}m{text}\033[0m"
+
+
+def print_startup_banner():
+    """Print a vibrant startup banner for the SAARC Telegram bot."""
+    launch_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        f"🤖 {BOT_NAME} v{BOT_VERSION}",
+        f"🛠 Revision: {BOT_REVISION}",
+        "🏢 Company: SAARC",
+        f"⏱ Launch time: {launch_time}",
+        "🚀 Telegram bot is warming up — have a wonderful session!",
+    ]
+    width = max(len(line) for line in lines) + 4
+    border = "═" * (width - 2)
+    left = _colorize_terminal("║", "95")
+    right = _colorize_terminal("║", "95")
+    print(_colorize_terminal(f"╔{border}╗", "95"))
+    for line in lines:
+        padded = line.ljust(width - 4)
+        print(f"{left} {_colorize_terminal(padded, '96')} {right}")
+    print(_colorize_terminal(f"╚{border}╝", "95"))
+    ready_line = f"{BOT_NAME} v{BOT_VERSION} | {BOT_REVISION} | ready for SAARC 🚀"
+    print(_colorize_terminal(ready_line, "92"))
+
+
+async def on_startup(dispatcher):
+    await alerts_bootstrap()
+    await alerts_start_polling()
+
+
+async def on_shutdown(dispatcher):
+    global alerts_poll_task
+    if alerts_poll_task:
+        alerts_poll_task.cancel()
+        try:
+            await alerts_poll_task
+        except asyncio.CancelledError:
+            pass
+        alerts_poll_task = None
+
+
 # ========================== BOOT ==========================
 if __name__ == "__main__":
-    ensure_dirs(); sync_state()
-    print(f"{BOT_NAME} v{BOT_VERSION} | {BOT_REVISION} | ready")
-    executor.start_polling(dp, skip_updates=True)
+    ensure_dirs()
+    sync_state()
+    print_startup_banner()
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup, on_shutdown=on_shutdown)
