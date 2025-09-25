@@ -251,46 +251,67 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
     },
     "ALERTS_BTN_ACTIVE": {
-        "uk": "🔥 Поточні тривоги",
-        "en": "🔥 Active alerts",
-        "de": "🔥 Aktive Alarme",
-        "pl": "🔥 Aktywne alarmy",
-        "ru": "🔥 Активные тревоги",
+        "uk": "🔔 Поточна тривога",
+        "en": "🔔 Current alert",
+        "de": "🔔 Aktueller Alarm",
+        "pl": "🔔 Bieżący alarm",
+        "ru": "🔔 Текущая тревога",
+    },
+    "ALERTS_BTN_STATUS": {
+        "uk": "🛰️ Статус",
+        "en": "🛰️ Status",
+        "de": "🛰️ Status",
+        "pl": "🛰️ Status",
+        "ru": "🛰️ Статус",
     },
     "ALERTS_BTN_OVERVIEW": {
-        "uk": "🗺️ Статус областей",
-        "en": "🗺️ Region status",
-        "de": "🗺️ Regionenstatus",
-        "pl": "🗺️ Status regionów",
-        "ru": "🗺️ Статус областей",
+        "uk": "🗺️ Області",
+        "en": "🗺️ Regions",
+        "de": "🗺️ Regionen",
+        "pl": "🗺️ Regiony",
+        "ru": "🗺️ Области",
     },
     "ALERTS_BTN_HISTORY": {
-        "uk": "📜 Історія",
-        "en": "📜 History",
-        "de": "📜 Verlauf",
-        "pl": "📜 Historia",
-        "ru": "📜 История",
+        "uk": "🕰️ Історія",
+        "en": "🕰️ History",
+        "de": "🕰️ Verlauf",
+        "pl": "🕰️ Historia",
+        "ru": "🕰️ История",
     },
     "ALERTS_BTN_SUBSCRIPTIONS": {
-        "uk": "🧭 Керувати областями",
-        "en": "🧭 Manage regions",
-        "de": "🧭 Regionen verwalten",
-        "pl": "🧭 Zarządzaj regionami",
-        "ru": "🧭 Управлять регионами",
+        "uk": "⚙️ Керування",
+        "en": "⚙️ Management",
+        "de": "⚙️ Verwaltung",
+        "pl": "⚙️ Zarządzanie",
+        "ru": "⚙️ Управление",
+    },
+    "ALERTS_STATUS_HEADER": {
+        "uk": "🛰️ <b>Статус тривог</b>\n━━━━━━━━━━━━━━━━━━",
+        "en": "🛰️ <b>Alert status</b>\n━━━━━━━━━━━━━━━━━━",
+        "de": "🛰️ <b>Alarmstatus</b>\n━━━━━━━━━━━━━━━━━━",
+        "pl": "🛰️ <b>Status alarmów</b>\n━━━━━━━━━━━━━━━━━━",
+        "ru": "🛰️ <b>Статус тревог</b>\n━━━━━━━━━━━━━━━━━━",
+    },
+    "ALERTS_STATUS_NO_DATA": {
+        "uk": "ℹ️ Немає даних для відображення.",
+        "en": "ℹ️ There is no data to display right now.",
+        "de": "ℹ️ Zurzeit sind keine Daten verfügbar.",
+        "pl": "ℹ️ Brak danych do wyświetlenia.",
+        "ru": "ℹ️ Нет данных для отображения.",
     },
     "ALERTS_ACTIVE_HEADER": {
-        "uk": "🔥 <b>Поточні тривоги</b> ({count})",
-        "en": "🔥 <b>Active alerts</b> ({count})",
-        "de": "🔥 <b>Aktive Alarme</b> ({count})",
-        "pl": "🔥 <b>Aktywne alarmy</b> ({count})",
-        "ru": "🔥 <b>Активные тревоги</b> ({count})",
+        "uk": "🔔 <b>Поточні тривоги</b> ({count})",
+        "en": "🔔 <b>Current alerts</b> ({count})",
+        "de": "🔔 <b>Aktuelle Alarme</b> ({count})",
+        "pl": "🔔 <b>Bieżące alarmy</b> ({count})",
+        "ru": "🔔 <b>Текущие тревоги</b> ({count})",
     },
     "ALERTS_HISTORY_HEADER": {
-        "uk": "📜 <b>Історія тривог</b> ({count})",
-        "en": "📜 <b>Alert history</b> ({count})",
-        "de": "📜 <b>Alarmverlauf</b> ({count})",
-        "pl": "📜 <b>Historia alarmów</b> ({count})",
-        "ru": "📜 <b>История тревог</b> ({count})",
+        "uk": "🕰️ <b>Історія тривог</b> ({count})",
+        "en": "🕰️ <b>Alert history</b> ({count})",
+        "de": "🕰️ <b>Alarmverlauf</b> ({count})",
+        "pl": "🕰️ <b>Historia alarmów</b> ({count})",
+        "ru": "🕰️ <b>История тревог</b> ({count})",
     },
     "ALERTS_OVERVIEW_HEADER": {
         "uk": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
@@ -3123,6 +3144,7 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
 def kb_alerts(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_STATUS"), callback_data="alerts_status"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_OVERVIEW"), callback_data="alerts_overview"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"))
@@ -3904,6 +3926,19 @@ async def alerts_active_view(c: types.CallbackQuery):
         lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
     await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
     await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "alerts_status")
+async def alerts_status_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    status_block = alerts_anchor_section(uid).strip()
+    lines = [tr(uid, "ALERTS_STATUS_HEADER")]
+    if status_block:
+        lines.append(status_block)
+    else:
+        lines.append(tr(uid, "ALERTS_STATUS_NO_DATA"))
+    await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
     await c.answer()
 
 
