@@ -5331,6 +5331,17 @@ def alerts_user_regions(uid: int) -> List[str]:
     return regions
 
 
+def alerts_admin_region() -> Optional[str]:
+    if not active_project.get("name"):
+        return None
+    info = load_project_info(active_project["name"])
+    project_region = info.get("region") or ""
+    canonical = alerts_canonical_region(project_region)
+    if canonical:
+        return canonical
+    return project_region or None
+
+
 def alerts_display_region_name(region: str, lang: str) -> str:
     canonical = alerts_canonical_region(region) or region
     aliases = ALERTS_REGION_EQUIVALENTS.get(canonical)
