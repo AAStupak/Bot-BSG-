@@ -179,11 +179,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🟡 Последняя тревога в <b>{region}</b> • {type} • {start} → {end}",
     },
     "ANCHOR_ALERT_CALM": {
-        "uk": "🟢 У регіоні <b>{region}</b> спокійно.",
-        "en": "🟢 <b>{region}</b> is calm.",
-        "de": "🟢 In <b>{region}</b> ist es ruhig.",
-        "pl": "🟢 W regionie <b>{region}</b> jest spokojnie.",
-        "ru": "🟢 В регионе <b>{region}</b> спокойно.",
+        "uk": "🟢 У регіоні <b>{region}</b> відбій тривоги.",
+        "en": "🟢 <b>{region}</b> — alert cleared.",
+        "de": "🟢 In <b>{region}</b> wurde der Alarm aufgehoben.",
+        "pl": "🟢 W regionie <b>{region}</b> alarm odwołано.",
+        "ru": "🟢 В регионе <b>{region}</b> отбой тревоги.",
     },
     "ANCHOR_ALERT_CAUSE": {
         "uk": "🎯 Причина: {cause}",
@@ -333,11 +333,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🔴 {region} — тревога (время уточняется)",
     },
     "ALERTS_OVERVIEW_CALM": {
-        "uk": "🟢 {region} — спокійно",
-        "en": "🟢 {region} — calm",
-        "de": "🟢 {region} — ruhig",
-        "pl": "🟢 {region} — spokojnie",
-        "ru": "🟢 {region} — спокойно",
+        "uk": "🟢 {region} — відбій тривоги",
+        "en": "🟢 {region} — alert cleared",
+        "de": "🟢 {region} — Alarm aufgehoben",
+        "pl": "🟢 {region} — alarm odwołано",
+        "ru": "🟢 {region} — отбой тревоги",
     },
     "ALERTS_NO_ACTIVE": {
         "uk": "✅ Зараз немає активних тривог для вибраних областей.",
@@ -4367,27 +4367,27 @@ ALERTS_STATUS_TEXT: Dict[str, Dict[str, str]] = {
     "uk": {
         "alert": "Тривога",
         "standdown": "Відбій тривоги",
-        "calm": "Спокійно",
+        "calm": "Відбій тривоги",
     },
     "en": {
         "alert": "Alert",
         "standdown": "Alert cleared",
-        "calm": "Calm",
+        "calm": "Alert cleared",
     },
     "de": {
         "alert": "Alarm",
         "standdown": "Alarm beendet",
-        "calm": "Ruhig",
+        "calm": "Alarm aufgehoben",
     },
     "pl": {
         "alert": "Alarm",
-        "standdown": "Alarm odwołано",
-        "calm": "Spokojnie",
+        "standdown": "Alarm odwołano",
+        "calm": "Alarm odwołано",
     },
     "ru": {
         "alert": "Тревога",
         "standdown": "Отбой тревоги",
-        "calm": "Спокойно",
+        "calm": "Отбой тревоги",
     },
 }
 
@@ -5115,6 +5115,18 @@ def alerts_record_timeline(state: Dict[str, Any], event_ids: List[str], kind: st
         event = events_map.get(event_id)
         if not event:
             continue
+        started_at = event.get("started_at")
+        ended_at = event.get("ended_at")
+        if kind == "start" and not started_at:
+            started_at = recorded_at
+            event["started_at"] = started_at
+        if kind == "end":
+            if not started_at:
+                started_at = recorded_at
+                event.setdefault("started_at", started_at)
+            if not ended_at:
+                ended_at = recorded_at
+                event["ended_at"] = ended_at
         canonical = alerts_canonical_region(event.get("region") or event.get("region_display"))
         region_value = canonical or event.get("region") or event.get("region_display") or ""
         extra = event.get("extra") or {}
@@ -5124,8 +5136,8 @@ def alerts_record_timeline(state: Dict[str, Any], event_ids: List[str], kind: st
             "region": region_value,
             "type": event.get("type") or "",
             "severity": extra.get("severity") or "",
-            "started_at": event.get("started_at"),
-            "ended_at": event.get("ended_at"),
+            "started_at": started_at,
+            "ended_at": ended_at,
             "cause": extra.get("cause") or "",
             "details": extra.get("details") or "",
             "message": event.get("message") or "",
