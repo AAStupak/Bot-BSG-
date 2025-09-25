@@ -42,7 +42,7 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 
 import os, sys, json, random, re, base64, hashlib, secrets, asyncio
 from html import escape as html_escape
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, List, Tuple, Any, Set, Union
 
 from openpyxl import Workbook, load_workbook
@@ -91,6 +91,7 @@ ALERTS_API_TOKEN = "62f89091e56951ef257f763e445c09c1fd9dacd1ab2203"
 ALERTS_API_TIMEOUT = 15
 ALERTS_POLL_INTERVAL = 5  # seconds
 ALERTS_HISTORY_CACHE_TTL = 300  # seconds
+ALERTS_STANDDOWN_DISPLAY_WINDOW = 90 * 60  # seconds
 
 UKRAINE_REGIONS = [
     "Винницкая область",
@@ -3893,7 +3894,11 @@ async def menu_about(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_alerts")
 async def menu_alerts(c: types.CallbackQuery):
     uid = c.from_user.id
-    await clear_then_anchor(uid, tr(uid, "ALERTS_MENU_INTRO"), kb_alerts(uid))
+    intro = tr(uid, "ALERTS_MENU_INTRO")
+    count = alerts_active_oblast_count()
+    if count:
+        intro = f"{intro}\n\n{alerts_active_summary_line(uid)}"
+    await clear_then_anchor(uid, intro, kb_alerts(uid))
     await c.answer()
 
 
@@ -5040,11 +5045,26 @@ def alerts_parse_datetime(value: Optional[str]) -> Optional[datetime]:
         return dt
 
 
+def alerts_now() -> datetime:
+    try:
+        tz = ALERTS_TIMEZONE  # type: ignore[name-defined]
+    except Exception:
+        tz = timezone.utc
+    return datetime.now(tz)
+
+
 def alerts_format_timestamp(value: Optional[str]) -> str:
     dt = alerts_parse_datetime(value)
     if not dt:
         return value or ""
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def alerts_format_clock(value: Optional[str]) -> str:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return ""
+    return dt.strftime("%H:%M")
 
 
 def alerts_type_label(event: Dict[str, Any], lang: str) -> str:
@@ -5201,49 +5221,46 @@ def alerts_display_region_name(region: str, lang: str, short: bool = False) -> s
 
 def alerts_regions_overview_text(uid: int) -> str:
     lang = resolve_lang(uid)
-    state = _alerts_load_state()
-    events_map = state.get("events", {})
-    regions_map = state.get("regions", {})
-    labels = alerts_field_labels(lang)
     status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
-    indent = "&nbsp;&nbsp;&nbsp;"
     lines: List[str] = [tr(uid, "ALERTS_OVERVIEW_HEADER")]
     for index, raw_region in enumerate(UKRAINE_REGIONS, start=1):
-        canonical = alerts_canonical_region(raw_region) or raw_region
-        bucket = regions_map.get(canonical) or regions_map.get(raw_region) or {}
-        active_event: Optional[Dict[str, Any]] = None
-        for event_id in bucket.get("active", []):
-            payload = events_map.get(event_id)
-            if payload and not payload.get("ended_at"):
-                if not active_event or (payload.get("started_at") or "") > (active_event.get("started_at") or ""):
-                    active_event = payload
-        last_event: Optional[Dict[str, Any]] = None
-        for event_id in bucket.get("history", []):
-            payload = events_map.get(event_id)
-            if payload:
-                if not last_event or (payload.get("ended_at") or "") > (last_event.get("ended_at") or ""):
-                    last_event = payload
+        canonical, active_event, last_event = alerts_region_snapshot(raw_region)
         display_name = alerts_display_region_name(canonical, lang)
         if active_event:
             type_text = alerts_type_label(active_event, lang)
             severity_text = alerts_severity_label(active_event, lang)
-            start_text = alerts_format_timestamp(active_event.get("started_at")) or labels["status_unknown"]
-            summary_parts = [status_labels["alert"], type_text]
+            start_clock = alerts_format_clock(active_event.get("started_at"))
+            details: List[str] = []
+            if type_text:
+                details.append(type_text)
             if severity_text:
-                summary_parts.append(severity_text)
-            lines.append(f"{index}. 🔴 <b>{h(display_name)}</b> — {h(' • '.join(summary_parts))}")
-            lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
+                details.append(severity_text)
+            if start_clock:
+                details.append(start_clock)
+            line = f"{index}. 🔴 <b>{h(display_name)}</b> — {h(status_labels['alert'])}"
+            if details:
+                line += " • " + " • ".join(h(part) for part in details if part)
+            lines.append(line)
         elif last_event and last_event.get("ended_at"):
             type_text = alerts_type_label(last_event, lang)
             severity_text = alerts_severity_label(last_event, lang)
-            start_text = alerts_format_timestamp(last_event.get("started_at")) or labels["status_unknown"]
-            end_text = alerts_format_timestamp(last_event.get("ended_at")) or labels["status_unknown"]
-            summary_parts = [status_labels["standdown"], type_text]
+            start_clock = alerts_format_clock(last_event.get("started_at"))
+            end_clock = alerts_format_clock(last_event.get("ended_at"))
+            details: List[str] = []
+            if type_text:
+                details.append(type_text)
             if severity_text:
-                summary_parts.append(severity_text)
-            lines.append(f"{index}. 🟡 <b>{h(display_name)}</b> — {h(' • '.join(summary_parts))}")
-            lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
-            lines.append(f"{indent}🛑 {h(labels['ended'])}: {h(end_text)}")
+                details.append(severity_text)
+            if start_clock and end_clock:
+                details.append(f"{start_clock} → {end_clock}")
+            elif start_clock:
+                details.append(start_clock)
+            elif end_clock:
+                details.append(end_clock)
+            line = f"{index}. 🟡 <b>{h(display_name)}</b> — {h(status_labels['standdown'])}"
+            if details:
+                line += " • " + " • ".join(h(part) for part in details if part)
+            lines.append(line)
         else:
             lines.append(f"{index}. 🟢 <b>{h(display_name)}</b> — {h(status_labels['calm'])}")
     return "\n".join(lines)
@@ -5433,69 +5450,88 @@ def alerts_active_summary_line(uid: int) -> str:
     return tr(uid, "ANCHOR_ALERT_SUMMARY", count=count)
 
 
-def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
-    lang = resolve_lang(uid)
-    canonical = alerts_canonical_region(region_key) or region_key
+def alerts_region_snapshot(region_key: str) -> Tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     state = _alerts_load_state()
-    regions_map = state.get("regions", {})
-    bucket = regions_map.get(canonical) or regions_map.get(region_key) or {}
     events_map = state.get("events", {})
-    display_region = alerts_display_region_name(canonical, lang, short=True)
-    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
-    labels = alerts_field_labels(lang)
-    event: Optional[Dict[str, Any]] = None
+    regions_map = state.get("regions", {})
+    canonical = alerts_canonical_region(region_key) or region_key
+    bucket = regions_map.get(canonical) or regions_map.get(region_key) or {}
+    active_event: Optional[Dict[str, Any]] = None
     for event_id in bucket.get("active", []):
         payload = events_map.get(event_id)
         if payload and not payload.get("ended_at"):
-            if not event or (payload.get("started_at") or "") > (event.get("started_at") or ""):
-                event = payload
-    context = "active"
-    if not event:
-        for event_id in bucket.get("history", []):
-            payload = events_map.get(event_id)
-            if payload:
-                if not event or (payload.get("ended_at") or "") > (event.get("ended_at") or ""):
-                    event = payload
-                    context = "history"
-    if not event:
-        return f"🟢 <b>{h(display_region)}</b> — {h(status_labels['calm'])}"
+            if not active_event or (payload.get("started_at") or "") > (active_event.get("started_at") or ""):
+                active_event = payload
+    last_event: Optional[Dict[str, Any]] = None
+    for event_id in bucket.get("history", []):
+        payload = events_map.get(event_id)
+        if payload:
+            if not last_event or (payload.get("ended_at") or "") > (last_event.get("ended_at") or ""):
+                last_event = payload
+    return canonical, active_event, last_event
 
-    start_text = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
-    severity_text = alerts_severity_label(event, lang)
-    type_text = alerts_type_label(event, lang)
-    lines: List[str] = []
-    if context == "active" and not event.get("ended_at"):
-        lines.append(f"🚨 <b>{h(display_region)}</b> — {h(status_labels['alert'])}")
-        lines.append(f"🔥 {h(type_text)}")
+
+def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
+    lang = resolve_lang(uid)
+    canonical, active_event, last_event = alerts_region_snapshot(region_key)
+    display_region = alerts_display_region_name(canonical, lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    if active_event:
+        type_text = alerts_type_label(active_event, lang)
+        severity_text = alerts_severity_label(active_event, lang)
+        start_clock = alerts_format_clock(active_event.get("started_at"))
+        details: List[str] = []
+        if type_text:
+            details.append(type_text)
         if severity_text:
-            lines.append(f"⚠️ {h(severity_text)}")
-        lines.append(f"⏱ {h(labels['started'])}: {h(start_text)}")
-    else:
-        end_text = alerts_format_timestamp(event.get("ended_at")) or labels["status_unknown"]
-        lines.append(f"🟡 <b>{h(display_region)}</b> — {h(status_labels['standdown'])}")
-        lines.append(f"🔥 {h(type_text)}")
-        if severity_text:
-            lines.append(f"⚠️ {h(severity_text)}")
-        lines.append(f"⏱ {h(labels['started'])}: {h(start_text)}")
-        lines.append(f"🛑 {h(labels['ended'])}: {h(end_text)}")
-    return "\n".join(lines)
+            details.append(severity_text)
+        if start_clock:
+            details.append(start_clock)
+        line = f"🚨 <b>{h(display_region)}</b> — {h(status_labels['alert'])}"
+        if details:
+            line += " • " + " • ".join(h(part) for part in details if part)
+        return line
+    if last_event and last_event.get("ended_at"):
+        ended_dt = alerts_parse_datetime(last_event.get("ended_at"))
+        now_dt = alerts_now()
+        if ended_dt and (now_dt - ended_dt) <= timedelta(seconds=ALERTS_STANDDOWN_DISPLAY_WINDOW):
+            type_text = alerts_type_label(last_event, lang)
+            severity_text = alerts_severity_label(last_event, lang)
+            start_clock = alerts_format_clock(last_event.get("started_at"))
+            end_clock = alerts_format_clock(last_event.get("ended_at"))
+            details: List[str] = []
+            if type_text:
+                details.append(type_text)
+            if severity_text:
+                details.append(severity_text)
+            time_segment = ""
+            if start_clock and end_clock:
+                time_segment = f"{start_clock} → {end_clock}"
+            elif start_clock:
+                time_segment = start_clock
+            elif end_clock:
+                time_segment = end_clock
+            if time_segment:
+                details.append(time_segment)
+            line = f"🟡 <b>{h(display_region)}</b> — {h(status_labels['standdown'])}"
+            if details:
+                line += " • " + " • ".join(h(part) for part in details if part)
+            return line
+    return ""
 
 
 def alerts_anchor_section(uid: int) -> str:
-    summary_line = alerts_active_summary_line(uid)
     regions: List[str] = []
     for region in alerts_user_regions(uid):
         canonical = alerts_canonical_region(region) or region
         if canonical and canonical not in regions:
             regions.append(canonical)
     lines: List[str] = []
-    if summary_line:
-        lines.append(summary_line)
-    for region in regions[:3]:
+    for region in regions:
         block = alerts_anchor_region_block(uid, region)
         if block:
             lines.append(block)
-    return "\n".join(lines) if lines else summary_line
+    return "\n".join(lines[:3])
 
 
 def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
