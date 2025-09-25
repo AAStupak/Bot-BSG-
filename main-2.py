@@ -244,25 +244,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "ℹ️ О боте",
     },
     "ALERTS_MENU_INTRO": {
-        "uk": "🚨 <b>Повітряні тривоги</b>\n━━━━━━━━━━━━━━━━━━\nПереглядайте активні сигнали, історію та керуйте областями сповіщень.\nВиберіть дію нижче.",
-        "en": "🚨 <b>Air alerts</b>\n━━━━━━━━━━━━━━━━━━\nReview active warnings, browse history, and manage the regions you follow.\nChoose an option below.",
-        "de": "🚨 <b>Luftalarme</b>\n━━━━━━━━━━━━━━━━━━\nSehen Sie aktive Warnungen, den Verlauf und verwalten Sie Ihre Regionen.\nWählen Sie eine Aktion unten.",
-        "pl": "🚨 <b>Alarmy powietrzne</b>\n━━━━━━━━━━━━━━━━━━\nPrzeglądaj aktywne ostrzeżenia, historię i zarządzaj regionami powiadomień.\nWybierz działanie poniżej.",
-        "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
+        "uk": "🚨 <b>Повітряні тривоги</b>\n━━━━━━━━━━━━━━━━━━\nПереглядайте активні сигнали, історію та керуйте зонами оповіщень.\nВиберіть дію нижче.",
+        "en": "🚨 <b>Air alerts</b>\n━━━━━━━━━━━━━━━━━━\nReview active warnings, browse history, and manage your alert zones.\nChoose an option below.",
+        "de": "🚨 <b>Luftalarme</b>\n━━━━━━━━━━━━━━━━━━\nSehen Sie aktive Warnungen, den Verlauf und verwalten Sie Ihre Alarmzonen.\nWählen Sie eine Aktion unten.",
+        "pl": "🚨 <b>Alarmy powietrzne</b>\n━━━━━━━━━━━━━━━━━━\nPrzeglądaj aktywne ostrzeżenia, historię i zarządzaj strefami alarmów.\nWybierz działanie poniżej.",
+        "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте зонами оповещений.\nВыберите действие ниже.",
     },
     "ALERTS_BTN_ACTIVE": {
-        "uk": "🔥 Поточні тривоги",
-        "en": "🔥 Active alerts",
-        "de": "🔥 Aktive Alarme",
-        "pl": "🔥 Aktywne alarmy",
-        "ru": "🔥 Активные тревоги",
+        "uk": "🛎️ Поточні",
+        "en": "🛎️ Live now",
+        "de": "🛎️ Aktiv",
+        "pl": "🛎️ Aktywne",
+        "ru": "🛎️ Активные",
     },
     "ALERTS_BTN_OVERVIEW": {
-        "uk": "🗺️ Статус областей",
-        "en": "🗺️ Region status",
-        "de": "🗺️ Regionenstatus",
-        "pl": "🗺️ Status regionów",
-        "ru": "🗺️ Статус областей",
+        "uk": "🛰️ Накриття",
+        "en": "🛰️ Coverage",
+        "de": "🛰️ Abdeckung",
+        "pl": "🛰️ Pokrycie",
+        "ru": "🛰️ Накрытие",
     },
     "ALERTS_BTN_HISTORY": {
         "uk": "📜 Історія",
@@ -272,25 +272,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📜 История",
     },
     "ALERTS_BTN_SUBSCRIPTIONS": {
-        "uk": "🧭 Керувати областями",
-        "en": "🧭 Manage regions",
-        "de": "🧭 Regionen verwalten",
-        "pl": "🧭 Zarządzaj regionami",
-        "ru": "🧭 Управлять регионами",
+        "uk": "⚙️ Зони",
+        "en": "⚙️ Zones",
+        "de": "⚙️ Zonen",
+        "pl": "⚙️ Strefy",
+        "ru": "⚙️ Зоны",
     },
     "ALERTS_ACTIVE_HEADER": {
-        "uk": "🔥 <b>Поточні тривоги</b> ({count})",
-        "en": "🔥 <b>Active alerts</b> ({count})",
-        "de": "🔥 <b>Aktive Alarme</b> ({count})",
-        "pl": "🔥 <b>Aktywne alarmy</b> ({count})",
-        "ru": "🔥 <b>Активные тревоги</b> ({count})",
+        "uk": "🔔 <b>Поточні тривоги</b> ({count})",
+        "en": "🔔 <b>Current alerts</b> ({count})",
+        "de": "🔔 <b>Aktuelle Alarme</b> ({count})",
+        "pl": "🔔 <b>Bieżące alarmy</b> ({count})",
+        "ru": "🔔 <b>Текущие тревоги</b> ({count})",
     },
     "ALERTS_HISTORY_HEADER": {
-        "uk": "📜 <b>Історія тривог</b> ({count})",
-        "en": "📜 <b>Alert history</b> ({count})",
-        "de": "📜 <b>Alarmverlauf</b> ({count})",
-        "pl": "📜 <b>Historia alarmów</b> ({count})",
-        "ru": "📜 <b>История тревог</b> ({count})",
+        "uk": "🕰️ <b>Історія тривог</b> ({count})",
+        "en": "🕰️ <b>Alert history</b> ({count})",
+        "de": "🕰️ <b>Alarmverlauf</b> ({count})",
+        "pl": "🕰️ <b>Historia alarmów</b> ({count})",
+        "ru": "🕰️ <b>История тревог</b> ({count})",
     },
     "ALERTS_OVERVIEW_HEADER": {
         "uk": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
@@ -3122,10 +3122,14 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
 
 def kb_alerts(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_OVERVIEW"), callback_data="alerts_overview"))
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"))
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"))
+    kb.row(
+        InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"),
+        InlineKeyboardButton(tr(uid, "ALERTS_BTN_OVERVIEW"), callback_data="alerts_overview"),
+    )
+    kb.row(
+        InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"),
+        InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"),
+    )
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
     return kb
 
