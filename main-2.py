@@ -89,7 +89,7 @@ ALERTS_API_URL = f"{ALERTS_API_BASE_URL}{ALERTS_API_ACTIVE_ENDPOINT}"
 ALERTS_DEFAULT_HISTORY_PERIOD = "week_ago"
 ALERTS_API_TOKEN = "62f89091e56951ef257f763e445c09c1fd9dacd1ab2203"
 ALERTS_API_TIMEOUT = 15
-ALERTS_POLL_INTERVAL = 30  # seconds
+ALERTS_POLL_INTERVAL = 5  # seconds
 ALERTS_HISTORY_CACHE_TTL = 300  # seconds
 
 UKRAINE_REGIONS = [
@@ -193,6 +193,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "🔎 Details: {details}",
         "pl": "🔎 Szczegóły: {details}",
         "ru": "🔎 Детали: {details}",
+    },
+    "ANCHOR_ALERT_LOCATION": {
+        "uk": "📍 Локація: {location}",
+        "en": "📍 Location: {location}",
+        "de": "📍 Ort: {location}",
+        "pl": "📍 Lokalizacja: {location}",
+        "ru": "📍 Локация: {location}",
+    },
+    "ANCHOR_ALERT_COORDS": {
+        "uk": "🧭 Координати: {coords}",
+        "en": "🧭 Coordinates: {coords}",
+        "de": "🧭 Koordinaten: {coords}",
+        "pl": "🧭 Współrzędne: {coords}",
+        "ru": "🧭 Координаты: {coords}",
     },
     "BTN_CHECKS": {
         "uk": "🧾 Чеки",
@@ -4275,6 +4289,58 @@ ALERTS_SEVERITY_LABELS: Dict[str, Dict[str, str]] = {
     },
 }
 
+ALERTS_LOCATION_TYPE_LABELS: Dict[str, Dict[str, str]] = {
+    "oblast": {
+        "uk": "Область",
+        "en": "Region",
+        "de": "Oblast",
+        "pl": "Obwód",
+        "ru": "Область",
+    },
+    "raion": {
+        "uk": "Район",
+        "en": "District",
+        "de": "Rajon",
+        "pl": "Rejon",
+        "ru": "Район",
+    },
+    "hromada": {
+        "uk": "Громада",
+        "en": "Community",
+        "de": "Gemeinde",
+        "pl": "Hromada",
+        "ru": "Громада",
+    },
+    "community": {
+        "uk": "Громада",
+        "en": "Community",
+        "de": "Gemeinschaft",
+        "pl": "Wspólnota",
+        "ru": "Сообщество",
+    },
+    "city": {
+        "uk": "Місто",
+        "en": "City",
+        "de": "Stadt",
+        "pl": "Miasto",
+        "ru": "Город",
+    },
+    "settlement": {
+        "uk": "Населений пункт",
+        "en": "Settlement",
+        "de": "Siedlung",
+        "pl": "Osada",
+        "ru": "Населённый пункт",
+    },
+    "village": {
+        "uk": "Село",
+        "en": "Village",
+        "de": "Dorf",
+        "pl": "Wieś",
+        "ru": "Деревня",
+    },
+}
+
 ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
     "uk": {
         "header_active": "🚨 УВАГА! ТРИВОГА 🚨",
@@ -4282,6 +4348,8 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "type": "Тип",
         "region": "Регіон",
         "location": "Локація",
+        "location_type": "Тип локації",
+        "coordinates": "Координати",
         "severity": "Рівень",
         "cause": "Причина",
         "details": "Деталі",
@@ -4298,6 +4366,8 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "type": "Type",
         "region": "Region",
         "location": "Location",
+        "location_type": "Location type",
+        "coordinates": "Coordinates",
         "severity": "Severity",
         "cause": "Cause",
         "details": "Details",
@@ -4314,6 +4384,8 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "type": "Art",
         "region": "Region",
         "location": "Ort",
+        "location_type": "Ortstyp",
+        "coordinates": "Koordinaten",
         "severity": "Stufe",
         "cause": "Ursache",
         "details": "Details",
@@ -4330,6 +4402,8 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "type": "Typ",
         "region": "Region",
         "location": "Lokalizacja",
+        "location_type": "Typ lokalizacji",
+        "coordinates": "Współrzędne",
         "severity": "Poziom",
         "cause": "Przyczyna",
         "details": "Szczegóły",
@@ -4346,6 +4420,8 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "type": "Тип",
         "region": "Регион",
         "location": "Локация",
+        "location_type": "Тип локации",
+        "coordinates": "Координаты",
         "severity": "Уровень",
         "cause": "Причина",
         "details": "Детали",
@@ -4612,6 +4688,9 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "location_uid": payload.get("location_uid"),
         "oblast_uid": payload.get("location_oblast_uid") or payload.get("oblast_uid"),
         "oblast_title": oblast_title or region_original,
+        "latitude": payload.get("location_lat") or payload.get("lat") or payload.get("latitude"),
+        "longitude": payload.get("location_lng") or payload.get("lng") or payload.get("longitude"),
+        "coordinates": payload.get("location_coordinates") or payload.get("coordinates"),
         "notes": notes_clean,
     }
 
@@ -4951,6 +5030,58 @@ def alerts_field_labels(lang: str) -> Dict[str, str]:
     return ALERTS_FIELD_LABELS.get(lang) or ALERTS_FIELD_LABELS[DEFAULT_LANG]
 
 
+def alerts_location_type_label(extra: Optional[Dict[str, Any]], lang: str) -> str:
+    if not isinstance(extra, dict):
+        return ""
+    raw = extra.get("location_type")
+    if not raw:
+        return ""
+    key = str(raw).strip().lower()
+    if not key:
+        return ""
+    mapping = ALERTS_LOCATION_TYPE_LABELS.get(key)
+    if mapping:
+        return mapping.get(lang) or mapping.get(DEFAULT_LANG) or str(raw)
+    return str(raw)
+
+
+def alerts_coordinates_text(extra: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(extra, dict):
+        return ""
+    lat = extra.get("latitude")
+    lon = extra.get("longitude")
+    coords = extra.get("coordinates")
+
+    def _parse(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            text = str(value).strip()
+            if not text:
+                return None
+            text = text.replace(",", ".")
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+    if isinstance(coords, dict):
+        lat = lat or coords.get("lat") or coords.get("latitude")
+        lon = lon or coords.get("lon") or coords.get("lng") or coords.get("longitude")
+    elif isinstance(coords, (list, tuple)) and len(coords) >= 2:
+        lat = lat or coords[0]
+        lon = lon or coords[1]
+    elif isinstance(coords, str) and coords.strip():
+        return coords.strip()
+
+    lat_val = _parse(lat)
+    lon_val = _parse(lon)
+    if lat_val is None or lon_val is None:
+        return ""
+    return f"{lat_val:.4f}, {lon_val:.4f}"
+
+
 def alerts_format_row(icon: str, label: str, value: str) -> List[str]:
     if not value:
         return []
@@ -4972,12 +5103,17 @@ def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = 
     lines.extend(alerts_format_row("🌐", labels["type"], type_label))
     region_display = event.get("region_display") or event.get("region") or "—"
     lines.extend(alerts_format_row("📍", labels["region"], region_display))
-    location = (event.get("extra") or {}).get("location") or ""
+    extra = event.get("extra") or {}
+    location = extra.get("location") or ""
     lines.extend(alerts_format_row("🏙️", labels["location"], location))
+    location_type = alerts_location_type_label(extra, lang)
+    lines.extend(alerts_format_row("🏷️", labels["location_type"], location_type))
+    coordinates = alerts_coordinates_text(extra)
+    lines.extend(alerts_format_row("🧭", labels["coordinates"], coordinates))
     lines.extend(alerts_format_row("🔴", labels["severity"], alerts_severity_label(event, lang)))
-    cause = (event.get("extra") or {}).get("cause") or ""
+    cause = extra.get("cause") or ""
     lines.extend(alerts_format_row("🎯", labels["cause"], cause))
-    details = (event.get("extra") or {}).get("details") or ""
+    details = extra.get("details") or ""
     lines.extend(alerts_format_row("🔎", labels["details"], details))
     lines.extend(alerts_format_row("⏱️", labels["started"], alerts_format_timestamp(event.get("started_at"))))
     end_value = alerts_format_timestamp(event.get("ended_at")) if ended else labels["status_active"]
@@ -5266,76 +5402,89 @@ def alerts_active_summary_line(uid: int) -> str:
     return tr(uid, "ANCHOR_ALERT_SUMMARY", count=count)
 
 
-def alerts_anchor_section(uid: int) -> str:
-    summary_line = alerts_active_summary_line(uid)
-    if not active_project.get("name"):
-        return summary_line
-    info = load_project_info(active_project["name"])
-    project_region = info.get("region") or ""
-    if not project_region:
-        return summary_line
-    canonical = alerts_canonical_region(project_region)
-    display_region = canonical or project_region
-    state = _alerts_load_state()
-    bucket = state.get("regions", {}).get(canonical or project_region) or {}
-    events_map = state.get("events", {})
+def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
     lang = resolve_lang(uid)
-    region_text = ""
+    canonical = alerts_canonical_region(region_key) or region_key
+    state = _alerts_load_state()
+    regions_map = state.get("regions", {})
+    bucket = regions_map.get(canonical) or regions_map.get(region_key) or {}
+    events_map = state.get("events", {})
+    display_region_raw = alerts_display_region_name(canonical, lang)
+    display_region = display_region_raw if isinstance(display_region_raw, str) else str(display_region_raw or canonical or region_key)
+    event: Optional[Dict[str, Any]] = None
     for event_id in bucket.get("active", []):
-        event = events_map.get(event_id)
-        if not event or event.get("ended_at"):
-            continue
+        payload = events_map.get(event_id)
+        if payload and not payload.get("ended_at"):
+            event = payload
+            break
+    context = "active"
+    if not event:
+        for event_id in bucket.get("history", []):
+            payload = events_map.get(event_id)
+            if payload:
+                event = payload
+                context = "history"
+                break
+    if not event:
+        return tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
+
+    extra = event.get("extra") or {}
+    start_text = alerts_format_timestamp(event.get("started_at")) or "—"
+    end_text = alerts_format_timestamp(event.get("ended_at")) or "—"
+    if context == "active" and not event.get("ended_at"):
         text = tr(
             uid,
             "ANCHOR_ALERT_ACTIVE",
             region=h(display_region),
             type=h(alerts_type_label(event, lang)),
-            start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
+            start=h(start_text),
             severity=h(alerts_severity_label(event, lang)),
         )
-        extras: List[str] = []
-        cause = (event.get("extra") or {}).get("cause") or ""
-        details = (event.get("extra") or {}).get("details") or ""
-        if cause:
-            extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
-        if details:
-            extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
-        if extras:
-            text = "\n".join([text, *extras])
-        region_text = text
-        break
-    if not region_text:
-        for event_id in bucket.get("history", []):
-            event = events_map.get(event_id)
-            if not event:
-                continue
-            text = tr(
-                uid,
-                "ANCHOR_ALERT_RECENT",
-                region=h(display_region),
-                type=h(alerts_type_label(event, lang)),
-                start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
-                end=h(alerts_format_timestamp(event.get("ended_at")) or "—"),
-            )
-            extras: List[str] = []
-            cause = (event.get("extra") or {}).get("cause") or ""
-            details = (event.get("extra") or {}).get("details") or ""
-            if cause:
-                extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
-            if details:
-                extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
-            if extras:
-                text = "\n".join([text, *extras])
-            region_text = text
-            break
-    if not region_text:
-        region_text = tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
+    else:
+        text = tr(
+            uid,
+            "ANCHOR_ALERT_RECENT",
+            region=h(display_region),
+            type=h(alerts_type_label(event, lang)),
+            start=h(start_text),
+            end=h(end_text),
+        )
+    extras: List[str] = []
+    location = extra.get("location")
+    if isinstance(location, str):
+        location_clean = location.strip()
+        base_region = display_region.strip().lower()
+        if location_clean and location_clean.lower() != base_region:
+            extras.append(tr(uid, "ANCHOR_ALERT_LOCATION", location=h(location_clean)))
+    coords_text = alerts_coordinates_text(extra)
+    if coords_text:
+        extras.append(tr(uid, "ANCHOR_ALERT_COORDS", coords=h(coords_text)))
+    cause = extra.get("cause")
+    if isinstance(cause, str) and cause.strip():
+        extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause.strip())))
+    details = extra.get("details")
+    if isinstance(details, str) and details.strip():
+        extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details.strip())))
+    if extras:
+        text = "\n".join([text, *extras])
+    return text
+
+
+def alerts_anchor_section(uid: int) -> str:
+    summary_line = alerts_active_summary_line(uid)
+    regions: List[str] = []
+    for region in alerts_user_regions(uid):
+        canonical = alerts_canonical_region(region) or region
+        if canonical and canonical not in regions:
+            regions.append(canonical)
     lines: List[str] = []
     if summary_line:
         lines.append(summary_line)
-    if region_text:
-        lines.append(region_text)
-    return "\n".join(lines)
+    for region in regions[:3]:
+        block = alerts_anchor_region_block(uid, region)
+        if block:
+            lines.append(block)
+    return "\n".join(lines) if lines else summary_line
 
 
 def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
@@ -5410,7 +5559,7 @@ async def alerts_dispatch_updates(start_ids: List[str], end_ids: List[str]) -> N
 async def alerts_poll_loop() -> None:
     global alerts_poll_task
     try:
-        await asyncio.sleep(5)
+        await asyncio.sleep(ALERTS_POLL_INTERVAL)
         while True:
             try:
                 start_ids, end_ids = await asyncio.to_thread(alerts_refresh_once)
