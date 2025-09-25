@@ -314,11 +314,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📜 <b>История тревог</b> ({count})",
     },
     "ALERTS_OVERVIEW_HEADER": {
-        "uk": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
-        "en": "🗺️ <b>Region status</b>\n━━━━━━━━━━━━━━━━━━\nSee which oblasts are under alert right now.",
-        "de": "🗺️ <b>Status der Regionen</b>\n━━━━━━━━━━━━━━━━━━\nÜberblick über aktuelle Alarme nach Oblast.",
-        "pl": "🗺️ <b>Status regionów</b>\n━━━━━━━━━━━━━━━━━━\nSprawdź, w których obwodach trwa alarm.",
-        "ru": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПроверяйте, где сейчас действует тревога.",
+        "uk": "🗺️ Статус областей України\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
+        "en": "🗺️ Status of Ukraine's oblasts\n━━━━━━━━━━━━━━━━━━\nSee where alerts are sounding right now.",
+        "de": "🗺️ Status der Oblaste der Ukraine\n━━━━━━━━━━━━━━━━━━\nPrüfen Sie, wo gerade Alarm ausgelöst wird.",
+        "pl": "🗺️ Status obwodów Ukrainy\n━━━━━━━━━━━━━━━━━━\nSprawdź, gdzie trwa alarm.",
+        "ru": "🗺️ Статус областей Украины\n━━━━━━━━━━━━━━━━━━\nПроверяйте, где сейчас звучит тревога.",
+    },
+    "ALERTS_OVERVIEW_UPDATED": {
+        "uk": "🔄 Оновлено: {time}",
+        "en": "🔄 Updated: {time}",
+        "de": "🔄 Aktualisiert: {time}",
+        "pl": "🔄 Zaktualizowano: {time}",
+        "ru": "🔄 Обновлено: {time}",
+    },
+    "ALERTS_OVERVIEW_GUIDE": {
+        "uk": "ℹ️ Інструкція:\n🟢 Час показує відбій тривоги.\n🔴 Час показує початок тривоги.",
+        "en": "ℹ️ Guide:\n🟢 Time marks when the alert ended.\n🔴 Time marks when the alert began.",
+        "de": "ℹ️ Hinweis:\n🟢 Die Uhrzeit zeigt das Ende des Alarms.\n🔴 Die Uhrzeit zeigt den Beginn des Alarms.",
+        "pl": "ℹ️ Instrukcja:\n🟢 Czas oznacza odwołanie alarmu.\n🔴 Czas oznacza początek alarmu.",
+        "ru": "ℹ️ Инструкция:\n🟢 Время показывает отбой тревоги.\n🔴 Время показывает начало тревоги.",
     },
     "ALERTS_OVERVIEW_ACTIVE": {
         "uk": "🔴 {region} — тривога з {start}",
@@ -5476,47 +5490,53 @@ def alerts_display_region_name(region: str, lang: str, short: bool = False) -> s
 def alerts_regions_overview_text(uid: int) -> str:
     lang = resolve_lang(uid)
     status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
-    lines: List[str] = [tr(uid, "ALERTS_OVERVIEW_HEADER")]
+    header = tr(uid, "ALERTS_OVERVIEW_HEADER")
+    entries: List[Dict[str, Any]] = []
+    max_name_len = 0
     for index, raw_region in enumerate(UKRAINE_REGIONS, start=1):
         canonical, active_event, last_event = alerts_region_snapshot(raw_region)
         display_name = alerts_display_region_name(canonical, lang)
+        max_name_len = max(max_name_len, len(display_name))
         if active_event:
-            type_text = alerts_type_label(active_event, lang)
-            severity_text = alerts_severity_label(active_event, lang)
-            start_clock = alerts_format_clock(active_event.get("started_at"))
-            details: List[str] = []
-            if type_text:
-                details.append(type_text)
-            if severity_text:
-                details.append(severity_text)
-            if start_clock:
-                details.append(start_clock)
-            line = f"{index}. 🔴 <b>{h(display_name)}</b> — {h(status_labels['alert'])}"
-            if details:
-                line += " • " + " • ".join(h(part) for part in details if part)
-            lines.append(line)
-        elif last_event and last_event.get("ended_at"):
-            type_text = alerts_type_label(last_event, lang)
-            severity_text = alerts_severity_label(last_event, lang)
-            start_clock = alerts_format_clock(last_event.get("started_at"))
-            end_clock = alerts_format_clock(last_event.get("ended_at"))
-            details: List[str] = []
-            if type_text:
-                details.append(type_text)
-            if severity_text:
-                details.append(severity_text)
-            if start_clock and end_clock:
-                details.append(f"{start_clock} → {end_clock}")
-            elif start_clock:
-                details.append(start_clock)
-            elif end_clock:
-                details.append(end_clock)
-            line = f"{index}. 🟡 <b>{h(display_name)}</b> — {h(status_labels['standdown'])}"
-            if details:
-                line += " • " + " • ".join(h(part) for part in details if part)
-            lines.append(line)
+            status_text = alerts_type_label(active_event, lang) or status_labels.get("alert") or ""
+            time_text = alerts_format_clock(active_event.get("started_at")) or "--:--"
+            icon = "🔴"
         else:
-            lines.append(f"{index}. 🟢 <b>{h(display_name)}</b> — {h(status_labels['calm'])}")
+            icon = "🟢"
+            status_text = status_labels.get("standdown") or status_labels.get("calm") or ""
+            end_clock = ""
+            if last_event and last_event.get("ended_at"):
+                end_clock = alerts_format_clock(last_event.get("ended_at"))
+            time_text = end_clock or "--:--"
+        entries.append(
+            {
+                "index": index,
+                "icon": icon,
+                "name": display_name,
+                "status": status_text,
+                "time": time_text,
+            }
+        )
+
+    lines: List[str] = [header, ""]
+    for entry in entries:
+        name_padding = max_name_len - len(entry["name"])
+        padded_name = f"{h(entry['name'])}{' ' * max(name_padding, 0)}"
+        number = f"{entry['index']:2d}"
+        status_text = h(entry["status"])
+        time_text = h(entry["time"])
+        lines.append(f"{number}. {entry['icon']} {padded_name} — {status_text} • {time_text}")
+        lines.append("")
+
+    while lines and lines[-1] == "":
+        lines.pop()
+
+    updated_clock = alerts_now().strftime("%H:%M")
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    lines.append(tr(uid, "ALERTS_OVERVIEW_UPDATED").format(time=h(updated_clock)))
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_OVERVIEW_GUIDE"))
     return "\n".join(lines)
 
 
