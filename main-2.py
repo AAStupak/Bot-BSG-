@@ -5786,22 +5786,19 @@ def alerts_regions_overview_text(uid: int) -> str:
             }
         )
 
-    pre_lines: List[str] = [""]
+    nbsp = "\u00A0"
+    lines: List[str] = [header, ""]
     for entry in entries:
         name_padding = max_name_len - len(entry["name"])
-        padded_name = f"{h(entry['name'])}{' ' * max(name_padding, 0)}"
-        number = f"{entry['index']:2d}"
+        padded_name = f"{h(entry['name'])}{nbsp * max(name_padding, 0)}"
+        number = f"{entry['index']:2d}".replace(" ", nbsp)
         status_text = h(entry["status"])
         time_text = h(entry["time"])
-        pre_lines.append(f"{number}. {entry['icon']} {padded_name} — {status_text} • {time_text}")
-        pre_lines.append("")
+        lines.append(f"{number}. {entry['icon']} {padded_name} — {status_text} • {time_text}")
+        lines.append("")
 
-    while pre_lines and pre_lines[-1] == "":
-        pre_lines.pop()
-
-    lines: List[str] = [header, "<pre>"]
-    lines.extend(pre_lines)
-    lines.append("</pre>")
+    while len(lines) > 2 and lines[-1] == "":
+        lines.pop()
 
     updated_clock = alerts_now().strftime("%H:%M")
     lines.append("")
