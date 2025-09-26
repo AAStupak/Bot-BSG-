@@ -988,6 +988,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "✏️ Telefon",
         "ru": "✏️ Телефон",
     },
+    "PROFILE_BTN_EDIT_MENU": {
+        "uk": "✏️ Редагувати профіль",
+        "en": "✏️ Edit profile",
+        "de": "✏️ Profil bearbeiten",
+        "pl": "✏️ Edytuj profil",
+        "ru": "✏️ Редактировать профиль",
+    },
+    "PROFILE_BTN_DONE_EDIT": {
+        "uk": "⬅️ Готово",
+        "en": "⬅️ Done",
+        "de": "⬅️ Fertig",
+        "pl": "⬅️ Gotowe",
+        "ru": "⬅️ Готово",
+    },
     "PROFILE_BTN_EDIT_PHOTO": {
         "uk": "📸 Оновити фото",
         "en": "📸 Update photo",
@@ -1148,6 +1162,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "✏️ Nutzen Sie die Schaltflächen unten, um Daten oder Foto zu aktualisieren.",
         "pl": "✏️ Użyj przycisków poniżej, aby zaktualizować dane lub zdjęcie.",
         "ru": "✏️ Используйте кнопки ниже, чтобы обновить данные или фото.",
+    },
+    "PROFILE_VIEW_HINT": {
+        "uk": "👁 Скористайтеся кнопками нижче, щоб переглянути фото (якщо додано) або перейти до редагування.",
+        "en": "👁 Use the buttons below to preview the photo (if available) or open the edit menu.",
+        "de": "👁 Nutzen Sie die Schaltflächen unten, um das Foto anzusehen (falls vorhanden) oder das Bearbeitungsmenü zu öffnen.",
+        "pl": "👁 Użyj przycisków poniżej, aby obejrzeć zdjęcie (jeśli dodano) lub otworzyć edycję profilu.",
+        "ru": "👁 Используйте кнопки ниже, чтобы посмотреть фото (если добавлено) или открыть редактирование профиля.",
     },
     "PROFILE_EDIT_CANCELLED": {
         "uk": "❌ Зміни скасовано.",
@@ -4139,7 +4160,7 @@ def kb_registration_photo(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
-def profile_summary_text(uid: int, profile: Optional[dict]) -> str:
+def profile_summary_text(uid: int, profile: Optional[dict], editing: bool = False) -> str:
     profile = profile or {}
     lang = resolve_lang(uid)
     last_name = (profile.get("last_name") or "").strip()
@@ -4172,34 +4193,39 @@ def profile_summary_text(uid: int, profile: Optional[dict]) -> str:
         tr(uid, "PROFILE_FIELD_BSU", value=h(bsu)),
         tr(uid, "PROFILE_FIELD_PHOTO", status=h(photo_status)),
         "",
-        tr(uid, "PROFILE_EDIT_HINT"),
+        tr(uid, "PROFILE_EDIT_HINT" if editing else "PROFILE_VIEW_HINT"),
     ]
     return "\n".join(lines)
 
 
-def kb_profile_menu(uid: int, profile: Optional[dict], show_photo: bool = False) -> InlineKeyboardMarkup:
+def kb_profile_menu(uid: int, profile: Optional[dict], *, editing: bool = False, show_photo: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
-    btn_last = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_LAST_NAME"), callback_data="profile_edit:last_name")
-    btn_first = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_FIRST_NAME"), callback_data="profile_edit:first_name")
-    btn_middle = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_MIDDLE_NAME"), callback_data="profile_edit:middle_name")
-    btn_birth = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_BIRTHDATE"), callback_data="profile_edit:birthdate")
-    btn_region = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_REGION"), callback_data="profile_edit:region")
-    btn_phone = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_PHONE"), callback_data="profile_edit:phone")
-    btn_photo = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_PHOTO"), callback_data="profile_edit:photo")
-    kb.row(btn_last, btn_first)
-    kb.row(btn_middle, btn_birth)
-    kb.row(btn_region, btn_phone)
     photo_path = user_profile_photo_path(profile or {})
     has_photo = bool(photo_path and os.path.exists(photo_path))
+
     if has_photo:
         toggle_text = tr(uid, "PROFILE_BTN_HIDE_PHOTO" if show_photo else "PROFILE_BTN_VIEW_PHOTO")
         toggle_cb = "profile_photo:hide" if show_photo else "profile_photo:view"
-        btn_toggle = InlineKeyboardButton(toggle_text, callback_data=toggle_cb)
-        btn_remove = InlineKeyboardButton(tr(uid, "PROFILE_BTN_REMOVE_PHOTO"), callback_data="profile_photo:remove")
-        kb.row(btn_toggle, btn_photo)
-        kb.add(btn_remove)
-    else:
+        kb.add(InlineKeyboardButton(toggle_text, callback_data=toggle_cb))
+
+    if editing:
+        btn_last = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_LAST_NAME"), callback_data="profile_edit:last_name")
+        btn_first = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_FIRST_NAME"), callback_data="profile_edit:first_name")
+        btn_middle = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_MIDDLE_NAME"), callback_data="profile_edit:middle_name")
+        btn_birth = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_BIRTHDATE"), callback_data="profile_edit:birthdate")
+        btn_region = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_REGION"), callback_data="profile_edit:region")
+        btn_phone = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_PHONE"), callback_data="profile_edit:phone")
+        btn_photo = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_PHOTO"), callback_data="profile_edit:photo")
+        kb.row(btn_last, btn_first)
+        kb.row(btn_middle, btn_birth)
+        kb.row(btn_region, btn_phone)
         kb.add(btn_photo)
+        if has_photo:
+            kb.add(InlineKeyboardButton(tr(uid, "PROFILE_BTN_REMOVE_PHOTO"), callback_data="profile_photo:remove"))
+        kb.add(InlineKeyboardButton(tr(uid, "PROFILE_BTN_DONE_EDIT"), callback_data="profile_edit:close"))
+    else:
+        kb.add(InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_MENU"), callback_data="profile_edit:open"))
+
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
     return kb
 
@@ -4210,7 +4236,7 @@ def kb_profile_cancel_inline(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
-async def profile_show(uid: int, chat_id: Optional[int] = None, show_photo: Optional[bool] = None):
+async def profile_show(uid: int, chat_id: Optional[int] = None, show_photo: Optional[bool] = None, editing: Optional[bool] = None):
     runtime = users_runtime.setdefault(uid, {})
     tg_info = runtime.setdefault("tg", {})
     if chat_id:
@@ -4223,13 +4249,20 @@ async def profile_show(uid: int, chat_id: Optional[int] = None, show_photo: Opti
         stored_chat = (profile.get("tg", {}) or {}).get("chat_id")
         if stored_chat and not tg_info.get("chat_id"):
             tg_info["chat_id"] = stored_chat
-    summary = profile_summary_text(uid, profile)
+    if editing is not None:
+        runtime["profile_edit_mode"] = bool(editing)
+    edit_mode = bool(runtime.get("profile_edit_mode", False))
+
     photo_path = user_profile_photo_path(profile or {})
     has_photo = bool(photo_path and os.path.exists(photo_path))
     if show_photo is None:
         show_photo = bool(runtime.get("profile_show_photo") and has_photo)
-    kb = kb_profile_menu(uid, profile, show_photo=bool(show_photo and has_photo))
+    else:
+        show_photo = bool(show_photo and has_photo)
+
     runtime["profile_show_photo"] = bool(show_photo and has_photo)
+    summary = profile_summary_text(uid, profile, editing=edit_mode)
+    kb = kb_profile_menu(uid, profile, editing=edit_mode, show_photo=bool(show_photo and has_photo))
     if show_photo and has_photo:
         await flow_clear(uid)
         await anchor_replace_with_photo(uid, summary, kb, photo_path)
@@ -4992,6 +5025,27 @@ def _profile_runtime(uid: int, chat_id: int) -> dict:
     return runtime
 
 
+@dp.callback_query_handler(lambda c: c.data == "profile_edit:open", state="*")
+async def profile_edit_menu_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = _profile_runtime(uid, c.message.chat.id)
+    runtime["profile_edit_mode"] = True
+    await state.finish()
+    await profile_show(uid, chat_id=c.message.chat.id, editing=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit:close", state="*")
+async def profile_edit_menu_close(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = _profile_runtime(uid, c.message.chat.id)
+    runtime["profile_edit_mode"] = False
+    runtime["profile_show_photo"] = False
+    await state.finish()
+    await profile_show(uid, chat_id=c.message.chat.id, show_photo=False, editing=False)
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "profile_edit:last_name", state="*")
 async def profile_edit_last_name_prompt(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
@@ -5091,7 +5145,8 @@ async def profile_photo_remove(c: types.CallbackQuery, state: FSMContext):
     if isinstance(profile, dict):
         profile["profile_photo"] = {}
         save_user(profile)
-    await profile_show(uid, chat_id=c.message.chat.id)
+    runtime["profile_show_photo"] = False
+    await profile_show(uid, chat_id=c.message.chat.id, show_photo=False)
     notice = await bot.send_message(c.message.chat.id, tr(uid, "PROFILE_PHOTO_REMOVED"), reply_markup=ReplyKeyboardRemove())
     flow_track(uid, notice)
     await c.answer()
@@ -8028,9 +8083,11 @@ async def menu_settings(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_profile")
 async def menu_profile(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
-    _profile_runtime(uid, c.message.chat.id)
+    runtime = _profile_runtime(uid, c.message.chat.id)
+    runtime["profile_edit_mode"] = False
+    runtime["profile_show_photo"] = False
     await state.finish()
-    await profile_show(uid, chat_id=c.message.chat.id)
+    await profile_show(uid, chat_id=c.message.chat.id, show_photo=False, editing=False)
     await c.answer()
 
 
@@ -10115,14 +10172,21 @@ async def adm_users_page(c: types.CallbackQuery):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_"))
-async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
-    uid = c.from_user.id
-    if uid not in admins: return await c.answer("⛔", show_alert=True)
-    target = int(c.data.split("adm_user_",1)[1])
-    await state.update_data(target_uid=target)
+async def admin_render_user_card(admin_uid: int, target: int, state: FSMContext, chat_id: int, show_photo: Optional[bool] = None):
+    runtime = users_runtime.setdefault(admin_uid, {})
+    runtime.setdefault("tg", {})
+    runtime["tg"]["chat_id"] = chat_id
+    runtime["tg"].setdefault("user_id", admin_uid)
     prof = load_user(target) or {"user_id": target}
     projects = sorted(list((prof.get("receipts") or {}).keys()))
+
+    data = await state.get_data()
+    previous_target = data.get("target_uid")
+    if show_photo is None:
+        if previous_target == target:
+            show_photo = bool(data.get("adm_show_photo"))
+        else:
+            show_photo = False
 
     fullname_disp = h(prof.get('fullname', '—'))
     bsu_disp = h(prof.get('bsu', '—'))
@@ -10130,13 +10194,16 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     username_disp = h(f"@{username_raw}" if username_raw else "—")
     phone_disp = h(prof.get('phone', '—'))
     region_disp = h(prof.get('region', '—'))
-    lang = resolve_lang(uid)
+    lang = resolve_lang(admin_uid)
     birth_display, age_hint = format_birthdate_display(lang, prof.get('birth_date'))
     birth_line = h(birth_display) if birth_display else '—'
     age_part = f" ({h(age_hint)})" if age_hint else ""
     photo_path = user_profile_photo_path(prof)
     has_photo = bool(photo_path and os.path.exists(photo_path))
-    photo_state = tr(uid, "PROFILE_PHOTO_STATUS_SET") if has_photo else tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+    photo_state = tr(admin_uid, "PROFILE_PHOTO_STATUS_SET") if has_photo else tr(admin_uid, "PROFILE_PHOTO_STATUS_MISSING")
+
+    resolved_show_photo = bool(show_photo and has_photo)
+    await state.update_data(target_uid=target, adm_show_photo=resolved_show_photo)
 
     text_lines = [
         f"👤 <b>{fullname_disp}</b>",
@@ -10152,17 +10219,45 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
         "ℹ️ Используйте кнопки ниже, чтобы открыть финансы или детали чеков.",
     ]
     text = "\n".join(text_lines)
+
     kb = InlineKeyboardMarkup()
+    if has_photo:
+        toggle_text = tr(admin_uid, "PROFILE_BTN_HIDE_PHOTO" if resolved_show_photo else "PROFILE_BTN_VIEW_PHOTO")
+        toggle_cb = "adm_user_photo:hide" if resolved_show_photo else "adm_user_photo:view"
+        kb.add(InlineKeyboardButton(toggle_text, callback_data=toggle_cb))
     kb.add(InlineKeyboardButton("💳 Финансы", callback_data="adm_user_finance"))
     if projects:
         kb.add(InlineKeyboardButton("📊 Статистика по проекту", callback_data="adm_stat_choose"))
         kb.add(InlineKeyboardButton("📁 Чеки по проекту", callback_data="adm_recs_choose"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
-    if photo_path and os.path.exists(photo_path):
-        await flow_clear(uid)
-        await anchor_replace_with_photo(uid, text, kb, photo_path)
+
+    if resolved_show_photo and has_photo:
+        await flow_clear(admin_uid)
+        await anchor_replace_with_photo(admin_uid, text, kb, photo_path)
     else:
-        await clear_then_anchor(uid, text, kb)
+        await clear_then_anchor(admin_uid, text, kb)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_"))
+async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins: return await c.answer("⛔", show_alert=True)
+    target = int(c.data.split("adm_user_",1)[1])
+    await admin_render_user_card(uid, target, state, c.message.chat.id)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data in ("adm_user_photo:view", "adm_user_photo:hide"))
+async def adm_user_photo_toggle(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer()
+    show = c.data.endswith("view")
+    await admin_render_user_card(uid, int(target), state, c.message.chat.id, show_photo=show)
     await c.answer()
 
 
