@@ -1,0 +1,110 @@
+Bot BSG functional overview and data flow
+========================================
+
+This document explains, in maximum detail, how the current single-file bot (`main-2.py`) is structured, how data moves through the system, and what the user and administrator experiences look like. Every section references the helpers, FSM states, and storage locations that keep the flows consistent after a restart.
+
+1. Core architecture
+--------------------
+- **Framework & entry point**: the bot is built on `aiogram 2.25.1` and launched via `executor.start_polling(dp)` at the bottom of `main-2.py`. All handlers, keyboards, text templates, and helpers live in this one file.
+- **Message anchor concept**: conversations are driven by a single "anchor" message per user. Functions such as `anchor_upsert`, `anchor_show_root`, and `anchor_replace_with_photo` reuse or edit that message instead of spamming new ones. The runtime cache (`users_runtime`) remembers the anchor message id, the last caption/keyboard signature, and whether the current anchor is text or photo-based so the UI always feels stable.
+- **Finite state machines**: registration and profile editing rely on `OnboardFSM` and `ProfileEditFSM`. Additional FSMs (`ReceiptFSM`, `ProjectCreateFSM`, `PhotoFSM`, `SosFSM`, `NovaPoshtaFSM`) power the other bot areas (receipts, projects, SOS, Nova Poshta logistics). States persist in memory only; once a flow finishes the state resets and the user is returned to the anchor menu.
+- **Localization**: every user record stores a `lang` code. Helpers `resolve_lang` and `tr` map symbolic keys (see the `TEXTS` dictionary) to translated messages. Buttons and copy for onboarding use `registration_button_label` so the DALL·E/“Дальше” button text automatically matches the user language.
+
+2. Persistent storage layout
+---------------------------
+- **Profiles**: each Telegram user has a JSON file at `data/users/<telegram_id>.json`. `ensure_user` creates the initial structure on `/start` with their Telegram first name, username, language guess, and a unique human-readable code (`BSU-XXXX`). `save_user` overwrites the JSON atomically after every update (names, region, phone, photo metadata, admin flags, etc.).
+- **Profile media**: profile photos live in `data/users/<telegram_id>/profile.jpg`. Helper `user_profile_photo_path` resolves the current file; `store_profile_photo` normalises the image (RGB, max width/height 1280px) and stores EXIF-derived timestamps when present. Deleting a photo removes both the file and the metadata entry from the JSON profile.
+- **Projects & finance**: active projects live in `data/projects/<project_name>` with subfolders for PDF documents, receipt photos, and the Excel ledger. Finance requests are individual JSON files inside `data/finances/req_<timestamp>_<uid>.json` so they survive restarts and can be audited manually.
+- **Alerts cache**: responses from `https://api.alerts.in.ua/v1` are cached per region. Active alerts store under `alerts_history_cache` in RAM; a disk cache directory (`data/alerts`) persists recent history snapshots to reduce API pressure and allow cold-start hydration.
+
+3. Runtime cache and cleanup
+----------------------------
+- `users_runtime` mirrors short-lived context: chat id, anchor metadata, whether the current profile view is in edit mode, or whether the last warning still exists. The cache also keeps track of the most recent Telegram profile snapshot for quick access to usernames during admin lookups.
+- The helper `flow_track(uid, message)` records every temporary message sent during forms (registration prompts, validation warnings, previews). `flow_clear(uid)` iterates through the tracked message ids and attempts deletion, swallowing Telegram errors if the message already disappeared. Every field handler starts by deleting the user's invalid input, sending a warning, and tracking it so the warning is removed the moment the flow continues.
+
+4. `/start` command and language selection
+-----------------------------------------
+- `/start` triggers the handler `cmd_start`. It clears any FSM states, resets message tracking, and ensures the user JSON exists. It also stores the Telegram profile (first name, username, chat id) into `users_runtime['tg']` for later use.
+- The user receives a language picker keyboard produced by `kb_language_picker`. This inline keyboard lists the languages defined in `LANG_ORDER`. Selecting a language hits the callback handler `onboard_pick_language`, which deletes the picker, updates `profile['lang']`, saves the profile, and shows the confirmation message "Язык переключен..." with a single DALL·E/“Дальше” button.
+- The language confirmation enters `OnboardFSM.welcome`. Pressing the button fires `onboard_dalle_stage(..., stage='welcome')`.
+
+5. DALL·E guided onboarding narrative
+-------------------------------------
+- **Stage `welcome`**: the bot greets the user by their Telegram first name (or username fallback) and introduces BSG/bot as a workspace summarising projects, finance, alerts, and archives. The text is rendered with Markdown-like formatting but delivered via HTML to keep bold separators (`━━━━━━━━━━━━━━━━━━`). The only inline button remains DALL·E/“Дальше”.
+- **Stage `briefing`**: a numbered "How to complete registration" guide appears. Each step is a separate paragraph describing what will be asked: 1) last name, 2) first name, 3) patronymic (optional), 4) birth date, 5) region selection via button, 6) phone via Telegram contact, 7) passport-style photo with framing requirements. If the profile already has `first_name` and `last_name`, a shortcut message lets returning users jump directly to the main menu.
+- **Stage `instructions`**: the conversation transitions from static text to interactive prompts. `flow_clear` runs so only the current instruction is visible. From here, each input is handled in its dedicated state.
+
+6. Field-by-field registration logic
+------------------------------------
+All handlers follow the same pattern: delete incorrect input, send an explanatory warning without inline buttons, and move forward only after saving valid data to the profile JSON.
+
+- **Last name (`OnboardFSM.last_name`)**: expects only alphabetic characters (plus apostrophes or dashes). Validation uses `normalize_person_name` and `beautify_name`. Invalid input triggers `REGISTER_LAST_NAME_WARN`, the bad message gets deleted, and the warning is tracked for removal once the user retries successfully.
+- **First name (`OnboardFSM.first_name`)**: same validation as last name, storing into `profile['first_name']` and refreshing the runtime alias used for greetings.
+- **Patronymic (`OnboardFSM.middle_name`)**: accepts alphabetic strings but also understands skip keywords (`нет`, `немає`, `no`). Skipping clears the field; otherwise `beautify_name` normalises spacing and casing.
+- **Birth date (`OnboardFSM.birthdate`)**: `parse_birthdate_text` recognises formats like `DD.MM.YYYY`, `DD/MM/YYYY`, or `DD-MM-YYYY`. Rejecting impossible dates (future, <1900) results in the warning "❗ Не удалось распознать дату...". Successful parsing stores an ISO string (`YYYY-MM-DD`) and a computed age used later by `format_birthdate_display`.
+- **Region selection (`OnboardFSM.region`)**: the prompt contains only an inline "📍 Выбрать область" button (`kb_region_prompt`). Clicking it opens a full inline grid of regions (`kb_region_picker`). The handler `onboard_region_pick` persists the chosen oblast and moves to the confirmation step where the user acknowledges the choice with another DALL·E button (`reg_region_confirm`). Manual text input during this stage is deleted and followed by the reminder to use the button.
+- **Phone collection (`OnboardFSM.phone`)**: the bot sends a reply keyboard with the Telegram-native "📱 Отправить номер" button. Only `ContentType.CONTACT` is accepted; `onboard_phone_contact` saves the `phone_number` and stores the raw `user_id` for auditing. After success the reply keyboard is removed via `ReplyKeyboardRemove()` so future messages happen in inline mode again.
+- **Photo upload (`OnboardFSM.photo`)**: the prompt outlines passport-style requirements (frontal face, neutral background, good lighting). The inline keyboard offers "Пропустить" which sets the profile photo status to "not provided". Sending a photo triggers `onboard_photo_received`: the largest available file is downloaded, normalised with Pillow (`convert('RGB')`, `ImageOps.exif_transpose`), stored as JPEG, and metadata (`photo_id`, original filename, upload timestamp) is saved. Invalid file types or documents generate the warning "❗ Не удалось обработать фото..." and the message is deleted.
+- **Finalisation**: `finalize_registration` clears the FSM, removes any leftover warnings, updates the anchor to the main menu, and sends the confirmation banner with the BSU code.
+
+7. Automatic cleanup behaviour
+------------------------------
+- Every warning message id is stored in `users_runtime['warnings']`. Once a user sends a correct answer, the handler deletes both the bad input and the warning before advancing.
+- During registration the bot also deletes stray photos, text, or contacts that arrive while another step is active (e.g., sending a phone number while the region prompt is waiting). This prevents the chat from filling with irrelevant content and aligns with the request that "сообщение... он удаляет".
+
+8. Profile view (`👤 Мій профіль`)
+----------------------------------
+- Opening the profile calls `show_profile(uid, edit_mode=False, show_photo=False)`. It reads the JSON profile, renders the summary via `profile_summary_text`, and builds the inline keyboard with `kb_profile_menu`.
+- The summary block includes: last name, first name, patronymic (or `—`), birth date and age hint, region, phone, Telegram ID, BSU article (`BSG` code), and current photo status. All values are HTML-escaped through helper `h`.
+- Default buttons: `✏️ Редагувати профіль` (enter edit mode), `👁 Переглянути фото` (only if a photo exists), and `⬅️ Назад`. Tapping `👁` toggles `users_runtime['profile_show_photo']` and calls `anchor_replace_with_photo` so the same message id now carries the photo with the caption/keyboard.
+- Entering edit mode (`profile_enter_edit`) updates the anchor caption to include the edit hint and expands the keyboard with dedicated buttons for each field: last name, first name, patronymic, birth date, region, phone, `🖼 Оновити фото`, `🗑 Видалити фото`, and `✅ Готово` to exit edit mode.
+
+9. Profile editing workflows
+----------------------------
+- Each edit button sets the FSM state (`ProfileEditFSM.*`) and sends a temporary prompt using `profile_send_prompt`. The prompt message is tracked so it can be deleted when the update finishes or the user cancels.
+- **Name & patronymic editing**: reuse the same validation helpers as registration. Sending `нет/немає/no` while editing the patronymic clears the field. `ProfileEditFSM.waiting_middle_name` listens for these keywords.
+- **Birth date editing**: identical parser as registration, with the ability to cancel via inline "⬅️ Скасувати" (`profile_cancel_edit`).
+- **Region editing**: shows the same inline picker. Cancelling returns to edit mode without changing the saved region.
+- **Phone editing**: displays the system reply keyboard with "📱 Отправить номер". Only Telegram contacts are accepted; any other messages are deleted with the existing warning.
+- **Photo update/removal**: uploading a new photo while in `waiting_photo` runs the same `store_profile_photo` logic. `profile_remove_photo` deletes the file from disk and updates the profile JSON. Both actions refresh the anchor so the summary and buttons reflect the latest status immediately.
+- **Cancelling edits**: the inline "⬅️ Скасувати" button or `/cancel` resets the FSM and restores the previous anchor view without saving changes.
+
+10. Main menu arrangement
+-------------------------
+- `kb_root` constructs the root inline keyboard in the requested order: checks, documents, timeline, finance, alerts, SOS, Nova Poshta, settings, about, profile, admin. Settings now sits above “О боте”, and “Мій профіль” precedes the admin entry.
+- `project_status_text` renders either the no-project message or the active project summary (project name, code, region, timeline, BSG parcel stats, alert summary). As soon as a project becomes active or is updated, `update_all_anchors` refreshes every user anchored message to show the new details.
+
+11. Finance logic (user side)
+-----------------------------
+- The finance section summarises receipt totals using `user_finance_summary`: total receipts, paid vs unpaid sums, and outstanding payouts. Buttons allow the user to view unpaid receipts, request a payout, or review payout history.
+- Payout requests create a new JSON file in `data/finances`. The bot collects the project, amount, and receipt references, then notifies admins. Users receive alerts when an admin approves or marks a payout as sent, with follow-up buttons to confirm receipt (`✅ Деньги получены`).
+
+12. Administrator panel
+-----------------------
+- Admin access is controlled via a password stored in `ADMIN_CODE`. `users_runtime['is_admin']` toggles after successful authentication and is persisted in the user profile under `"is_admin": true`.
+- `kb_admin_menu` offers shortcuts to user management, project management, and finance oversight.
+- **User list**: pressing "👥 Пользователи" loads all JSON profiles, sorts them by last name, and renders an inline keyboard (`kb_admin_users`) with each user’s full name and BSU code.
+- **User card**: selecting a user calls `admin_show_user(uid, target_id)`. This function renders the same identity block as the personal profile but adds admin-specific sections: Telegram username, contact phone, oblast, birth date with age, BSG article (moved above the Telegram ID), and a photo status indicator. Inline buttons allow toggling the photo preview, opening the finance panel, viewing recent receipts, or jumping back to the user list.
+- **Photo handling**: `anchor_replace_with_photo` now edits the existing photo message in place (`bot.edit_message_media`) when admins toggle the preview, so the chat history stays clean.
+- **Finance panel in admin view**: `admin_render_finance_overview` aggregates receipt totals (count, sum, paid, unpaid) for the selected user across all projects. The panel lives under the "💵 Финансы" button on the same anchor message, replacing the summary until the admin taps "⬅️ Назад".
+
+13. Alerts subsystem
+--------------------
+- Background task `alerts_poll_loop` runs every `ALERTS_POLL_INTERVAL` seconds. It fetches `ALERTS_API_URL` for active alerts and enriches each region using cached history from `ALERTS_API_HISTORY_TEMPLATE`.
+- History 404 errors (e.g., `regions/1293`) are treated as empty datasets after the latest patch; the helper `alerts_load_history` catches `HTTPError` and returns `{ "alerts": [] }` so logs stay quiet.
+- Active alerts appear in the anchor summary under the finance statistics. Users can tap into the dedicated alerts section to see cards per region with status (active/calm), cause, timestamps, and severity colour coding.
+
+14. Additional functional areas (briefly)
+----------------------------------------
+- **Receipts**: `ReceiptFSM` guides the process of uploading a receipt photo, entering amount/description, choosing payment status, and confirming the preview. Saved receipts update the Excel ledger and become accessible under “🧾 Чеки”. Users can edit existing receipt statuses via inline buttons without re-uploading photos.
+- **Projects**: admins can create projects (name, region, location, description, dates, PDF documents). Activating a project updates every user’s anchor so new documentation and receipt storage directories exist on disk. PDFs are shared through the documents section with automatic keyboard navigation.
+- **Photo sessions**: `PhotoFSM` handles batch media uploads for admin galleries, tracking each file in `users_runtime['uploaded']` so previews and cancellations operate on the same set.
+- **SOS and Nova Poshta tools**: provide emergency broadcasts and parcel tracking/assignment. They reuse the anchor pattern and persist domain-specific information (e.g., TTN notes) in project directories.
+
+15. Data integrity and restart safety
+-------------------------------------
+- All disk writes use `json.dump(..., ensure_ascii=False, indent=2)` for readability. Before writing, directories are created via `ensure_dirs()`.
+- When critical operations fail (network errors, file errors), the bot logs exceptions but does not crash the main loop thanks to try/except wrappers around API calls, file IO, and message edits.
+- Upon restart the bot scans existing project and user folders to rebuild caches (active project, admin list, alert history). Anchors are recreated lazily as users interact again.
+
+This breakdown should serve as the exhaustive reference for how registration, profile management, admin tooling, finance, and supporting systems operate in the current Bot.BSG build.
