@@ -645,11 +645,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✅ Язык переключён на: {language}.",
     },
     "LANGUAGE_SELECTED_START": {
-        "uk": "✅ Мову перемкнено на: <b>{language}</b>. Натисніть «DALL·E», щоб продовжити налаштування.",
-        "en": "✅ Language set to <b>{language}</b>. Tap “DALL·E” to continue.",
-        "de": "✅ Sprache wurde auf <b>{language}</b> umgestellt. Tippen Sie auf „DALL·E“, um fortzufahren.",
-        "pl": "✅ Język ustawiono na <b>{language}</b>. Kliknij „DALL·E”, aby kontynuować.",
-        "ru": "✅ Язык переключён на <b>{language}</b>. Нажмите «DALL·E», чтобы продолжить настройку.",
+        "uk": "✅ Мову перемкнено на: <b>{language}</b>. Натисніть <b>{button}</b>, щоб продовжити налаштування.",
+        "en": "✅ Language set to <b>{language}</b>. Tap <b>{button}</b> to continue.",
+        "de": "✅ Sprache wurde auf <b>{language}</b> umgestellt. Tippen Sie auf <b>{button}</b>, um fortzufahren.",
+        "pl": "✅ Język ustawiono na <b>{language}</b>. Kliknij <b>{button}</b>, aby kontynuować.",
+        "ru": "✅ Язык переключён на <b>{language}</b>. Нажмите <b>{button}</b>, чтобы продолжить настройку.",
     },
     "SETTINGS_TITLE": {
         "uk": "⚙️ <b>Налаштування</b>\nОберіть дію:",
@@ -673,11 +673,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "⚠️ Команда не распознана. Используйте меню ниже.",
     },
     "INTRO_WELCOME": {
-        "uk": "👋 <b>Привіт, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі <b>Bot.BSG</b>. Тут завжди під рукою:\n1. проєкти з хронологією та завданнями;\n2. сховище даних про об'єкти;\n3. оперативні сповіщення про тривоги;\n4. чеки, фінанси та службові документи.\n\nЩоб дізнатися, як пройти реєстрацію, натисніть «DALL·E».",
-        "en": "👋 <b>Hello, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the <b>Bot.BSG</b> workspace. Everything you need stays within reach:\n1. project timelines and assignments;\n2. structured storage for facility data;\n3. real-time alert updates;\n4. receipts, finance tools, and documentation.\n\nPress “DALL·E” to learn how the registration works.",
-        "de": "👋 <b>Hallo, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Arbeitsbereich <b>Bot.BSG</b>. Hier haben Sie alles im Blick:\n1. Projektchroniken und Aufgaben;\n2. strukturierte Ablage der Objektdaten;\n3. aktuelle Alarmmeldungen in Echtzeit;\n4. Belege, Finanzübersichten und Unterlagen.\n\nTippen Sie auf „DALL·E“, um den Registrierungsablauf kennenzulernen.",
-        "pl": "👋 <b>Cześć, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nWitamy w przestrzeni roboczej <b>Bot.BSG</b>. Wszystko masz pod ręką:\n1. oś czasu projektów i zadania;\n2. uporządkowane przechowywanie danych o obiektach;\n3. bieżące powiadomienia o alertach;\n4. paragony, finanse i dokumenty.\n\nKliknij „DALL·E”, aby zobaczyć, jak wygląda rejestracja.",
-        "ru": "👋 <b>Привет, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве <b>Bot.BSG</b>. Здесь всё под рукой:\n1. проекты с их хронологией и задачами;\n2. хранение данных об объектах;\n3. оперативные уведомления о тревогах;\n4. чеки, финансы и служебные документы.\n\nНажмите «DALL·E», чтобы узнать, как пройти регистрацию.",
+        "uk": "👋 Привіт, {name}! Ласкаво просимо до робочого простору <b>BSG/bot</b>\n━━━━━━━━━━━━━━━━━━\nТут зібрано все, що допомагає працювати швидко й впевнено.\n\n> <b>BSG/bot</b> — ваш особистий інструмент порядку, швидкості та контролю.\n\nℹ️ Хочете дізнатися, як приєднатися? Натисніть <b>{button}</b> і отримайте покрокову інструкцію з реєстрації.",
+        "en": "👋 Hello, {name}! Welcome to the <b>BSG/bot</b> workspace\n━━━━━━━━━━━━━━━━━━\nEverything here is built to keep your work fast, focused, and under control.\n\n> <b>BSG/bot</b> is your personal tool for order, speed, and confidence at work.\n\nℹ️ Ready to learn how registration works? Just tap <b>{button}</b> for the step-by-step guide.",
+        "de": "👋 Hallo, {name}! Willkommen im Arbeitsbereich <b>BSG/bot</b>\n━━━━━━━━━━━━━━━━━━\nHier ist alles versammelt, was für Tempo und Überblick sorgt.\n\n> <b>BSG/bot</b> ist Ihr persönliches Werkzeug für Ordnung, Geschwindigkeit und Sicherheit in der Arbeit.\n\nℹ️ Möchten Sie erfahren, wie die Registrierung funktioniert? Tippen Sie auf <b>{button}</b>, um die Schritt-für-Schritt-Anleitung zu erhalten.",
+        "pl": "👋 Cześć, {name}! Witaj w przestrzeni roboczej <b>BSG/bot</b>\n━━━━━━━━━━━━━━━━━━\nTo tutaj znajdziesz wszystko, co przyspiesza pracę i pomaga nad nią panować.\n\n> <b>BSG/bot</b> to Twoje osobiste narzędzie porządku, szybkości i pewności działania.\n\nℹ️ Chcesz dowiedzieć się, jak wygląda rejestracja? Po prostu kliknij <b>{button}</b>, aby otrzymać instrukcję krok po kroku.",
+        "ru": "👋 Привет, {name}! Добро пожаловать в рабочее пространство <b>BSG/bot</b>\n━━━━━━━━━━━━━━━━━━\nЗдесь собрано всё, что помогает работать быстро и не терять контроль над важными делами.\n\n> <b>BSG/bot</b> — ваш личный инструмент для порядка, скорости и уверенности в работе.\n\nℹ️ Хотите присоединиться и узнать, как пройти регистрацию? Просто нажмите <b>{button}</b> и получите пошаговую инструкцию.",
     },
     "INTRO_WELCOME_FALLBACK": {
         "uk": "друже",
@@ -687,18 +687,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "друг",
     },
     "INTRO_REGISTRATION_GUIDE": {
-        "uk": "📝 <b>Як пройти реєстрацію</b>\n━━━━━━━━━━━━━━━━━━\n1. Вкажіть своє ім'я без скорочень.\n2. Запишіть прізвище так, як у документі.\n3. Додайте по батькові або напишіть, що його немає.\n4. Укажіть дату народження у форматі ДД.ММ.РРРР.\n5. Оберіть область проживання через кнопку «📍 Обрати область».\n6. Поділіться номером телефону кнопкою «📱 Надіслати номер».\n7. Завантажте фото у форматі “як у паспорті” або додайте його пізніше.\n\nГотові? Натисніть «DALL·E», щоб почати.",
-        "en": "📝 <b>How to complete registration</b>\n━━━━━━━━━━━━━━━━━━\n1. Enter your first name without abbreviations.\n2. Provide your last name exactly as it appears in your documents.\n3. Add your patronymic / middle name or write that you do not have one.\n4. Specify your date of birth in the DD.MM.YYYY format.\n5. Choose your region via the “📍 Select region” button.\n6. Share your phone number using the “📱 Share phone number” button.\n7. Upload a passport-style portrait or add it later.\n\nReady? Tap “DALL·E” to begin.",
-        "de": "📝 <b>So schließen Sie die Registrierung ab</b>\n━━━━━━━━━━━━━━━━━━\n1. Geben Sie Ihren Vornamen ohne Abkürzungen ein.\n2. Tragen Sie Ihren Nachnamen genau wie im Ausweis ein.\n3. Ergänzen Sie den zweiten Namen oder schreiben Sie, dass keiner vorhanden ist.\n4. Geben Sie Ihr Geburtsdatum im Format TT.MM.JJJJ an.\n5. Wählen Sie Ihre Region über die Schaltfläche „📍 Region wählen“.\n6. Teilen Sie Ihre Telefonnummer über „📱 Telefonnummer senden“.\n7. Laden Sie ein Porträt im Passformat hoch oder fügen Sie es später hinzu.\n\nBereit? Tippen Sie auf „DALL·E“, um zu starten.",
-        "pl": "📝 <b>Jak przejść rejestrację</b>\n━━━━━━━━━━━━━━━━━━\n1. Podaj swoje imię bez skrótów.\n2. Wpisz nazwisko dokładnie tak, jak w dokumencie.\n3. Dodaj drugie imię lub napisz, że go nie masz.\n4. Uzupełnij datę urodzenia w formacie DD.MM.RRRR.\n5. Wybierz region przyciskiem „📍 Wybierz region”.\n6. Udostępnij numer przyciskiem „📱 Wyślij numer”.\n7. Załaduj zdjęcie w stylu paszportowym albo zrób to później.\n\nGotowe? Kliknij „DALL·E”, aby rozpocząć.",
-        "ru": "📝 <b>Как пройти регистрацию</b>\n━━━━━━━━━━━━━━━━━━\n1. Укажите своё имя без сокращений.\n2. Запишите фамилию точно как в паспорте.\n3. Добавьте отчество или сообщите, что его нет.\n4. Введите дату рождения в формате ДД.ММ.ГГГГ.\n5. Выберите область через кнопку «📍 Выбрать область».\n6. Поделитесь телефоном кнопкой «📱 Отправить номер».\n7. Загрузите фото в паспортном стиле либо добавьте его позже.\n\nГотовы? Нажмите «DALL·E», чтобы начать.",
+        "uk": "📝 <b>Як пройти реєстрацію</b>\n━━━━━━━━━━━━━━━━━━\n1. Вкажіть своє ім'я без скорочень.\n\n2. Запишіть прізвище так, як у документі.\n\n3. Додайте по батькові або напишіть, що його немає.\n\n4. Укажіть дату народження у форматі ДД.ММ.РРРР.\n\n5. Оберіть область проживання через кнопку «📍 Обрати область».\n\n6. Поділіться номером телефону кнопкою «📱 Надіслати номер».\n\n7. Завантажте фото у паспортному стилі або додайте його пізніше.\n\nГотові? Натисніть <b>{button}</b>, щоб почати.",
+        "en": "📝 <b>How to complete registration</b>\n━━━━━━━━━━━━━━━━━━\n1. Enter your first name without abbreviations.\n\n2. Provide your last name exactly as it appears in your documents.\n\n3. Add your patronymic / middle name or write that you do not have one.\n\n4. Specify your date of birth in the DD.MM.YYYY format.\n\n5. Choose your region via the “📍 Select region” button.\n\n6. Share your phone number using the “📱 Share phone number” button.\n\n7. Upload a passport-style portrait or add it later.\n\nReady? Tap <b>{button}</b> to begin.",
+        "de": "📝 <b>So schließen Sie die Registrierung ab</b>\n━━━━━━━━━━━━━━━━━━\n1. Geben Sie Ihren Vornamen ohne Abkürzungen ein.\n\n2. Tragen Sie Ihren Nachnamen genau wie im Ausweis ein.\n\n3. Ergänzen Sie den zweiten Namen oder schreiben Sie, dass keiner vorhanden ist.\n\n4. Geben Sie Ihr Geburtsdatum im Format TT.MM.JJJJ an.\n\n5. Wählen Sie Ihre Region über die Schaltfläche „📍 Region wählen“.\n\n6. Teilen Sie Ihre Telefonnummer über „📱 Telefonnummer senden“.\n\n7. Laden Sie ein Porträt im Passformat hoch oder fügen Sie es später hinzu.\n\nBereit? Tippen Sie auf <b>{button}</b>, um zu starten.",
+        "pl": "📝 <b>Jak przejść rejestrację</b>\n━━━━━━━━━━━━━━━━━━\n1. Podaj swoje imię bez skrótów.\n\n2. Wpisz nazwisko dokładnie tak, jak w dokumencie.\n\n3. Dodaj drugie imię lub napisz, że go nie masz.\n\n4. Uzupełnij datę urodzenia w formacie DD.MM.RRRR.\n\n5. Wybierz region przyciskiem „📍 Wybierz region”.\n\n6. Udostępnij numer przyciskiem „📱 Wyślij numer”.\n\n7. Załaduj zdjęcie w stylu paszportowym albo zrób to później.\n\nGotowe? Kliknij <b>{button}</b>, aby rozpocząć.",
+        "ru": "📝 <b>Как пройти регистрацию</b>\n━━━━━━━━━━━━━━━━━━\n1. Укажите своё имя без сокращений.\n\n2. Запишите фамилию точно как в паспорте.\n\n3. Добавьте отчество или сообщите, что его нет.\n\n4. Введите дату рождения в формате ДД.ММ.ГГГГ.\n\n5. Выберите область через кнопку «📍 Выбрать область».\n\n6. Поделитесь телефоном кнопкой «📱 Отправить номер».\n\n7. Загрузите фото в паспортном стиле либо добавьте его позже.\n\nГотовы? Нажмите <b>{button}</b>, чтобы начать.",
     },
     "INTRO_REGISTERED_BRIEF": {
-        "uk": "✅ Ви вже зареєстровані. Натисніть «DALL·E», щоб перейти до головного меню та продовжити роботу.",
-        "en": "✅ You are already registered. Tap “DALL·E” to open the main menu and continue working.",
-        "de": "✅ Sie sind bereits registriert. Tippen Sie auf „DALL·E“, um das Hauptmenü zu öffnen und weiterzuarbeiten.",
-        "pl": "✅ Rejestracja jest już zakończona. Kliknij „DALL·E”, aby przejść do menu głównego i kontynuować pracę.",
-        "ru": "✅ Вы уже зарегистрированы. Нажмите «DALL·E», чтобы открыть главное меню и продолжить работу.",
+        "uk": "✅ Ви вже зареєстровані. Натисніть <b>{button}</b>, щоб перейти до головного меню та продовжити роботу.",
+        "en": "✅ You are already registered. Tap <b>{button}</b> to open the main menu and continue working.",
+        "de": "✅ Sie sind bereits registriert. Tippen Sie auf <b>{button}</b>, um das Hauptmenü zu öffnen und weiterzuarbeiten.",
+        "pl": "✅ Rejestracja jest już zakończona. Kliknij <b>{button}</b>, aby przejść do menu głównego i kontynuować pracę.",
+        "ru": "✅ Вы уже зарегистрированы. Нажмите <b>{button}</b>, чтобы открыть главное меню и продолжить работу.",
     },
     "REGISTER_NAME_ERROR": {
         "uk": "❗ Здається, бракує частини ПІБ. Будь ласка, вкажіть ім'я, прізвище та по батькові повністю.",
@@ -778,11 +778,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📍 Выберите свою область из списка ниже.",
     },
     "REGISTER_REGION_SELECTED": {
-        "uk": "✅ Область збережено: <b>{region}</b>. Натисніть «DALL·E», щоб перейти до номера телефону.",
-        "en": "✅ Region saved: <b>{region}</b>. Tap “DALL·E” to move on to the phone number step.",
-        "de": "✅ Region gespeichert: <b>{region}</b>. Tippen Sie auf „DALL·E“, um mit der Telefonnummer weiterzumachen.",
-        "pl": "✅ Region zapisany: <b>{region}</b>. Kliknij „DALL·E”, aby przejść do kroku z numerem telefonu.",
-        "ru": "✅ Область сохранена: <b>{region}</b>. Нажмите «DALL·E», чтобы перейти к шагу с телефоном.",
+        "uk": "✅ Область збережено: <b>{region}</b>. Натисніть <b>{button}</b>, щоб перейти до номера телефону.",
+        "en": "✅ Region saved: <b>{region}</b>. Tap <b>{button}</b> to move on to the phone number step.",
+        "de": "✅ Region gespeichert: <b>{region}</b>. Tippen Sie auf <b>{button}</b>, um mit der Telefonnummer weiterzumachen.",
+        "pl": "✅ Region zapisany: <b>{region}</b>. Kliknij <b>{button}</b>, aby przejść do kroku z numerem telefonu.",
+        "ru": "✅ Область сохранена: <b>{region}</b>. Нажмите <b>{button}</b>, чтобы перейти к шагу с телефоном.",
     },
     "REGISTER_REGION_CANCEL": {
         "uk": "⬅️ Повернутись",
@@ -1450,6 +1450,15 @@ LANG_CODES = {code for code, _ in LANG_ORDER}
 LANG_LABELS = {code: label for code, label in LANG_ORDER}
 
 
+REGISTRATION_NEXT_LABELS = {
+    "uk": "➡️ Далі / Дальше",
+    "en": "➡️ Next / Далее / Suivant",
+    "de": "➡️ Weiter / Дальше",
+    "pl": "➡️ Dalej / Дальше",
+    "ru": "➡️ Дальше",
+}
+
+
 def normalize_lang(code: Optional[str]) -> str:
     if isinstance(code, str) and code in LANG_CODES:
         return code
@@ -1466,6 +1475,11 @@ def resolve_lang(target: Any) -> str:
         if profile:
             return normalize_lang(profile.get("lang"))
     return DEFAULT_LANG
+
+
+def registration_button_label(target: Any) -> str:
+    lang = resolve_lang(target)
+    return REGISTRATION_NEXT_LABELS.get(lang, REGISTRATION_NEXT_LABELS[DEFAULT_LANG])
 
 
 def tr(target: Any, text: str, **kwargs) -> str:
@@ -4552,8 +4566,13 @@ async def language_selected(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
-    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data="dalle_stage:welcome"))
-    msg = await bot.send_message(chat_id, tr(uid, "LANGUAGE_SELECTED_START", language=LANG_LABELS[code]), reply_markup=kb)
+    button_text = registration_button_label(code)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton(button_text, callback_data="dalle_stage:welcome"))
+    msg = await bot.send_message(
+        chat_id,
+        tr(uid, "LANGUAGE_SELECTED_START", language=LANG_LABELS[code], button=button_text),
+        reply_markup=kb,
+    )
     runtime["dalle_message"] = (msg.chat.id, msg.message_id)
     await OnboardFSM.welcome.set()
     await state.update_data(after_language_registered=registered, chosen_language=code)
@@ -4570,8 +4589,14 @@ async def onboard_dalle_stage(c: types.CallbackQuery, state: FSMContext):
     if stage == "welcome" and current_state == OnboardFSM.welcome.state:
         await _clear_runtime_message(runtime, "dalle_message")
         name = _first_name_for_greeting(runtime, c.from_user)
-        greeting = tr(uid, "INTRO_WELCOME", name=h(name) if name else tr(uid, "INTRO_WELCOME_FALLBACK"))
-        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data="dalle_stage:brief"))
+        button_text = registration_button_label(uid)
+        greeting = tr(
+            uid,
+            "INTRO_WELCOME",
+            name=h(name) if name else tr(uid, "INTRO_WELCOME_FALLBACK"),
+            button=button_text,
+        )
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton(button_text, callback_data="dalle_stage:brief"))
         msg = await bot.send_message(chat_id, greeting, reply_markup=kb)
         runtime["dalle_message"] = (msg.chat.id, msg.message_id)
         await OnboardFSM.briefing.set()
@@ -4582,13 +4607,14 @@ async def onboard_dalle_stage(c: types.CallbackQuery, state: FSMContext):
         await _clear_runtime_message(runtime, "dalle_message")
         data = await state.get_data()
         registered = bool(data.get("after_language_registered"))
+        button_text = registration_button_label(uid)
         if registered:
-            summary = tr(uid, "INTRO_REGISTERED_BRIEF")
+            summary = tr(uid, "INTRO_REGISTERED_BRIEF", button=button_text)
             next_stage = "done"
         else:
-            summary = tr(uid, "INTRO_REGISTRATION_GUIDE")
+            summary = tr(uid, "INTRO_REGISTRATION_GUIDE", button=button_text)
             next_stage = "start"
-        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data=f"dalle_stage:{next_stage}"))
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton(button_text, callback_data=f"dalle_stage:{next_stage}"))
         msg = await bot.send_message(chat_id, summary, reply_markup=kb)
         runtime["dalle_message"] = (msg.chat.id, msg.message_id)
         await OnboardFSM.instructions.set()
@@ -4796,8 +4822,9 @@ async def onb_region_pick(c: types.CallbackQuery, state: FSMContext):
             return
         region = UKRAINE_REGIONS[idx]
         await state.update_data(region=region)
-        text = tr(uid, "REGISTER_REGION_SELECTED", region=h(region))
-        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data="dalle_stage:region_next"))
+        button_text = registration_button_label(uid)
+        text = tr(uid, "REGISTER_REGION_SELECTED", region=h(region), button=button_text)
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton(button_text, callback_data="dalle_stage:region_next"))
         if prompt:
             await bot.edit_message_text(text, prompt[0], prompt[1], reply_markup=kb)
             runtime["dalle_message"] = (prompt[0], prompt[1])
@@ -10065,10 +10092,6 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     await state.update_data(target_uid=target)
     prof = load_user(target) or {"user_id": target}
     projects = sorted(list((prof.get("receipts") or {}).keys()))
-    cnt_all = sum(len(prof.get("receipts", {}).get(p, [])) for p in projects)
-    sum_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, [])) for p in projects)
-    unpaid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is False) for p in projects)
-    paid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is True) for p in projects)
 
     fullname_disp = h(prof.get('fullname', '—'))
     bsu_disp = h(prof.get('bsu', '—'))
@@ -10080,16 +10103,60 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     birth_display, age_hint = format_birthdate_display(lang, prof.get('birth_date'))
     birth_line = h(birth_display) if birth_display else '—'
     age_part = f" ({h(age_hint)})" if age_hint else ""
+    photo_path = user_profile_photo_path(prof)
+    has_photo = bool(photo_path and os.path.exists(photo_path))
+    photo_state = tr(uid, "PROFILE_PHOTO_STATUS_SET") if has_photo else tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+
     text_lines = [
         f"👤 <b>{fullname_disp}</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"🆔 UserID: <code>{target}</code>",
-        f"🔖 BSU: <b>{bsu_disp}</b>",
-        f"🆘 Telegram: {username_disp}",
+        f"🔖 Артикул BSG: <b>{bsu_disp}</b>",
+        f"🆔 Telegram ID: <code>{target}</code>",
+        f"🧑‍💻 Username: {username_disp}",
         f"📱 Телефон: {phone_disp}",
         f"📍 Область: <b>{region_disp}</b>",
         f"🎂 Дата рождения: <b>{birth_line}</b>{age_part}",
-        f"🗂 Проектов: <b>{len(projects)}</b>",
+        f"🖼 Фото профиля: <b>{h(photo_state)}</b>",
+        "",
+        "ℹ️ Используйте кнопки ниже, чтобы открыть финансы или детали чеков.",
+    ]
+    text = "\n".join(text_lines)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("💳 Финансы", callback_data="adm_user_finance"))
+    if projects:
+        kb.add(InlineKeyboardButton("📊 Статистика по проекту", callback_data="adm_stat_choose"))
+        kb.add(InlineKeyboardButton("📁 Чеки по проекту", callback_data="adm_recs_choose"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
+    if photo_path and os.path.exists(photo_path):
+        await flow_clear(uid)
+        await anchor_replace_with_photo(uid, text, kb, photo_path)
+    else:
+        await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance")
+async def adm_user_finance(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        await c.answer()
+        return
+    prof = load_user(target) or {"user_id": target}
+    projects = sorted(list((prof.get("receipts") or {}).keys()))
+    cnt_all = sum(len(prof.get("receipts", {}).get(p, [])) for p in projects)
+    sum_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, [])) for p in projects)
+    unpaid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is False) for p in projects)
+    paid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is True) for p in projects)
+
+    text_lines = [
+        "💳 <b>Финансы пользователя</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🔖 Артикул BSG: <b>{h(prof.get('bsu', '—'))}</b>",
+        f"📂 Проектов в работе: <b>{len(projects)}</b>",
         f"🧾 Чеков всего: <b>{cnt_all}</b>",
         f"💰 Сумма чеков: <b>{fmt_money(sum_all)} грн</b>",
         f"✅ Оплачено: <b>{fmt_money(paid_all)} грн</b>",
@@ -10100,13 +10167,8 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     if projects:
         kb.add(InlineKeyboardButton("📊 Статистика по проекту", callback_data="adm_stat_choose"))
         kb.add(InlineKeyboardButton("📁 Чеки по проекту", callback_data="adm_recs_choose"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
-    photo_path = user_profile_photo_path(prof)
-    if photo_path and os.path.exists(photo_path):
-        await flow_clear(uid)
-        await anchor_replace_with_photo(uid, text, kb, photo_path)
-    else:
-        await clear_then_anchor(uid, text, kb)
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+    await clear_then_anchor(uid, text, kb)
     await c.answer()
 
 
