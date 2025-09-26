@@ -378,39 +378,60 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "⚠️ Сначала выберите хотя бы один регион для уведомлений.",
     },
     "ALERTS_SUBS_HEADER": {
-        "uk": "🧭 <b>Області сповіщень</b>",
-        "en": "🧭 <b>Alert regions</b>",
-        "de": "🧭 <b>Alarm-Regionen</b>",
-        "pl": "🧭 <b>Regiony alertów</b>",
-        "ru": "🧭 <b>Регионы тревог</b>",
+        "uk": "🧭 Області сповіщень",
+        "en": "🧭 Alert oblasts",
+        "de": "🧭 Alarmbezirke",
+        "pl": "🧭 Obwody powiadomień",
+        "ru": "🧭 Области тревог",
+    },
+    "ALERTS_SUBS_DIVIDER": {
+        "uk": "━━━━━━━━━━━━━━━━━━",
+        "en": "━━━━━━━━━━━━━━━━━━",
+        "de": "━━━━━━━━━━━━━━━━━━",
+        "pl": "━━━━━━━━━━━━━━━━━━",
+        "ru": "━━━━━━━━━━━━━━━━━━",
     },
     "ALERTS_SUBS_NOTE_HAS_PROJECT": {
-        "uk": "Основна область проєкту: <b>{region}</b> — її неможливо вимкнути.",
-        "en": "Project region: <b>{region}</b> — it cannot be disabled.",
-        "de": "Projektregion: <b>{region}</b> — kann nicht deaktiviert werden.",
-        "pl": "Region projektu: <b>{region}</b> — nie można go wyłączyć.",
-        "ru": "Область проекта: <b>{region}</b> — её нельзя отключить.",
+        "uk": "Основна область проєкту: {region}.  \nІнші області можна обрати вручну.  ",
+        "en": "Project oblast: {region}.  \nYou can add other oblasts manually.  ",
+        "de": "Projektbezirk: {region}.  \nWeitere Bezirke lassen sich manuell wählen.  ",
+        "pl": "Obwód projektu: {region}.  \nPozostałe obwody możesz wybrać ręcznie.  ",
+        "ru": "Область проекта: {region}.  \nДругие области можно выбрать вручную.  ",
     },
     "ALERTS_SUBS_NOTE_NO_PROJECT": {
-        "uk": "Наразі активний проєкт не вибрано, ви можете обрати будь-які області вручну.",
-        "en": "No active project region is set; feel free to pick any regions manually.",
-        "de": "Derzeit ist keine Projektregion aktiv; wählen Sie beliebige Regionen manuell aus.",
-        "pl": "Nie ustawiono aktywnego projektu, możesz ręcznie wybrać dowolne regiony.",
-        "ru": "Сейчас активный проект не выбран; можно вручную выбрать любые регионы.",
+        "uk": "Наразі активний проєкт не вибрано.  \nОбласті можна обрати вручну.  ",
+        "en": "No active project is selected.  \nChoose oblasts manually.  ",
+        "de": "Derzeit ist kein Projekt aktiv.  \nBezirke lassen sich manuell wählen.  ",
+        "pl": "Żaden projekt nie jest aktywny.  \nObwody możesz wybrać ręcznie.  ",
+        "ru": "Активный проект пока не выбран.  \nОбласти можно выбрать вручную.  ",
+    },
+    "ALERTS_SUBS_LIST_TITLE": {
+        "uk": "📍 Активні області:",
+        "en": "📍 Active oblasts:",
+        "de": "📍 Aktive Bezirke:",
+        "pl": "📍 Aktywne obwody:",
+        "ru": "📍 Активные области:",
+    },
+    "ALERTS_SUBS_LIST_EMPTY": {
+        "uk": "—",
+        "en": "—",
+        "de": "—",
+        "pl": "—",
+        "ru": "—",
     },
     "ALERTS_SUBS_MANAGE": {
-        "uk": "Додайте або приберіть області за допомогою кнопок нижче.",
-        "en": "Add or remove regions using the buttons below.",
-        "de": "Fügen Sie Regionen über die Schaltflächen unten hinzu oder entfernen Sie sie.",
-        "pl": "Dodaj lub usuń regiony za pomocą przycisków poniżej.",
-        "ru": "Добавляйте или убирайте регионы с помощью кнопок ниже.",
+        "uk": "➕➖ Керування списком через кнопки",
+        "en": "➕➖ Manage the list with the buttons",
+        "de": "➕➖ Liste über die Schaltflächen verwalten",
+        "pl": "➕➖ Zarządzaj listą przy użyciu przycisków",
+        "ru": "➕➖ Управляйте списком с помощью кнопок",
     },
     "ALERTS_SUBS_SELECTED": {
         "uk": "Активні області: {items}",
-        "en": "Selected regions: {items}",
-        "de": "Aktive Regionen: {items}",
-        "pl": "Aktywne regiony: {items}",
-        "ru": "Выбранные регионы: {items}",
+        "en": "Selected oblasts: {items}",
+        "de": "Aktive Bezirke: {items}",
+        "pl": "Aktywne obwody: {items}",
+        "ru": "Выбранные области: {items}",
     },
     "ALERTS_SUBS_ADDED": {
         "uk": "✅ Додано область: {region}",
@@ -6359,15 +6380,27 @@ def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboa
     canonical_project = alerts_canonical_region(project_region)
     selected = alerts_user_regions(uid)
     lang = resolve_lang(uid)
-    selected_display = ", ".join(
-        alerts_display_region_name(name, lang, short=True) for name in selected
-    ) if selected else "—"
-    lines = [tr(uid, "ALERTS_SUBS_HEADER")]
+    lines = [tr(uid, "ALERTS_SUBS_HEADER"), tr(uid, "ALERTS_SUBS_DIVIDER")]
     if canonical_project:
-        lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(canonical_project)))
+        project_label = alerts_display_region_name(canonical_project, lang, short=False)
+        lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(project_label)))
     else:
         lines.append(tr(uid, "ALERTS_SUBS_NOTE_NO_PROJECT"))
-    lines.append(tr(uid, "ALERTS_SUBS_SELECTED", items=h(selected_display)))
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_SUBS_LIST_TITLE"))
+    if selected:
+        labels = []
+        for name in selected:
+            full_label = alerts_display_region_name(name, lang, short=False)
+            trimmed = alerts_trim_region_suffix(full_label)
+            labels.append(h(trimmed or full_label))
+        chunk_size = 4
+        for idx in range(0, len(labels), chunk_size):
+            lines.append(" • ".join(labels[idx:idx + chunk_size]))
+    else:
+        lines.append(tr(uid, "ALERTS_SUBS_LIST_EMPTY"))
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_SUBS_DIVIDER"))
     lines.append(tr(uid, "ALERTS_SUBS_MANAGE"))
     kb = alerts_build_subscription_keyboard(uid, page, canonical_project, alerts)
     return "\n".join(lines), kb
