@@ -4361,9 +4361,9 @@ _alerts_user_cache: Dict[str, Dict[str, Any]] = {}
 
 
 def _alerts_resolve_project(project: Optional[str] = None) -> Optional[str]:
-    if project is not None:
+    if project:
         return project
-    return active_project.get("name")
+    return None
 
 
 def _alerts_context_key(project: Optional[str] = None) -> str:
@@ -4374,10 +4374,37 @@ def _alerts_context_key(project: Optional[str] = None) -> str:
 def alerts_storage_root(project: Optional[str] = None) -> str:
     base = ALERTS_STORAGE_BASE
     os.makedirs(base, exist_ok=True)
-    folder = project or "__global__"
-    root = os.path.join(base, folder)
-    os.makedirs(root, exist_ok=True)
-    return root
+
+    def _ensure_flattened() -> None:
+        legacy_global = os.path.join(base, "__global__")
+        if os.path.isdir(legacy_global):
+            for name in (ALERTS_STATE_FILENAME, ALERTS_USERS_FILENAME):
+                src = os.path.join(legacy_global, name)
+                dst = os.path.join(base, name)
+                if os.path.exists(src) and not os.path.exists(dst):
+                    os.replace(src, dst)
+            legacy_history = os.path.join(legacy_global, ALERTS_HISTORY_DIRNAME)
+            if os.path.isdir(legacy_history):
+                target_history = os.path.join(base, ALERTS_HISTORY_DIRNAME)
+                os.makedirs(target_history, exist_ok=True)
+                for entry in os.listdir(legacy_history):
+                    src = os.path.join(legacy_history, entry)
+                    dst = os.path.join(target_history, entry)
+                    if os.path.exists(src) and not os.path.exists(dst):
+                        os.replace(src, dst)
+            try:
+                if not os.listdir(legacy_global):
+                    os.rmdir(legacy_global)
+            except Exception:
+                pass
+
+    _ensure_flattened()
+
+    if project and project not in {"", "__global__"}:
+        legacy_path = os.path.join(base, project)
+        if os.path.isdir(legacy_path):
+            return legacy_path
+    return base
 
 
 def alerts_state_file(project: Optional[str] = None) -> str:
@@ -5063,6 +5090,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "details": "Деталі",
         "started": "Початок",
         "ended": "Відбій",
+        "duration": "Тривалість",
         "message": "Повідомлення",
         "source": "Джерело",
         "status_active": "ще триває",
@@ -5081,6 +5109,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "details": "Details",
         "started": "Start",
         "ended": "End",
+        "duration": "Duration",
         "message": "Message",
         "source": "Source",
         "status_active": "still active",
@@ -5099,6 +5128,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "details": "Details",
         "started": "Beginn",
         "ended": "Ende",
+        "duration": "Dauer",
         "message": "Meldung",
         "source": "Quelle",
         "status_active": "läuft noch",
@@ -5117,6 +5147,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "details": "Szczegóły",
         "started": "Początek",
         "ended": "Zakończenie",
+        "duration": "Czas trwania",
         "message": "Komunikat",
         "source": "Źródło",
         "status_active": "wciąż trwa",
@@ -5135,6 +5166,7 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "details": "Детали",
         "started": "Начало",
         "ended": "Отбой",
+        "duration": "Длительность",
         "message": "Сообщение",
         "source": "Источник",
         "status_active": "ещё продолжается",
@@ -5840,6 +5872,17 @@ def alerts_format_timestamp(value: Optional[str]) -> str:
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
+def alerts_format_datetime_display(value: Optional[str]) -> str:
+    date, clock = alerts_format_push_date_pair(value)
+    if date and clock:
+        return f"{date} • {clock}"
+    if date:
+        return date
+    if clock:
+        return clock
+    return ""
+
+
 def alerts_format_clock(value: Optional[str]) -> str:
     dt = alerts_parse_datetime(value)
     if not dt:
@@ -5990,13 +6033,13 @@ def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = 
     labels = alerts_field_labels(lang)
     status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
     ended = bool(event.get("ended_at"))
-    header = labels["header_ended"] if ended else labels["header_active"]
-    lines: List[str] = [header, "━━━━━━━━━━━━━━━━━━━"]
-    type_label = alerts_type_label(event, lang)
     region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
-    lines.extend(alerts_format_row("📍", labels["region"], region_display))
-    status_label = status_labels["standdown" if ended else "alert"]
-    lines.extend(alerts_format_row("🚨", status_label, type_label))
+    status_label = status_labels["standdown" if ended else "alert"].upper()
+    header_icon = "🟢" if ended else "🚨"
+    lines: List[str] = [f"{header_icon} {status_label} — {region_display}", "━━━━━━━━━━━━━━━━━━"]
+    type_label = alerts_type_label(event, lang)
+    type_icon = alerts_type_icon(event)
+    lines.extend(alerts_format_row(type_icon, labels["type"], type_label))
     severity_value = alerts_severity_label(event, lang)
     if severity_value:
         lines.extend(alerts_format_row("⚠️", labels["severity"], severity_value))
@@ -6005,12 +6048,19 @@ def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = 
     lines.extend(alerts_format_row("🎯", labels["cause"], cause))
     details = extra.get("details") or ""
     lines.extend(alerts_format_row("🔎", labels["details"], details))
-    lines.extend(alerts_format_row("⏱️", labels["started"], alerts_format_timestamp(event.get("started_at"))))
-    end_value = alerts_format_timestamp(event.get("ended_at")) if ended else labels["status_active"]
-    lines.extend(alerts_format_row("🛑", labels["ended"], end_value))
+    started_display = alerts_format_datetime_display(event.get("started_at")) or labels["status_unknown"]
+    lines.extend(alerts_format_row("🕒", labels["started"], started_display))
+    if ended:
+        end_display = alerts_format_datetime_display(event.get("ended_at")) or labels["status_unknown"]
+    else:
+        end_display = labels["status_active"]
+    lines.extend(alerts_format_row("✅", labels["ended"], end_display))
+    duration_seconds = alerts_duration_seconds(event.get("started_at"), event.get("ended_at") if ended else None)
+    duration_value = alerts_format_duration_value(duration_seconds, lang)
+    lines.extend(alerts_format_row("⏱️", labels["duration"], duration_value))
     lines.extend(alerts_format_row("📢", labels["message"], event.get("message") or ""))
     if index is not None and total:
-        lines.append("━━━━━━━━━━━━━━━━━━━")
+        lines.append("━━━━━━━━━━━━━━━━━━")
         lines.append(tr(lang, "ALERTS_CARD_INDEX", index=index + 1, total=total))
     return "\n".join(line for line in lines if line)
 
