@@ -511,11 +511,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🚨 Короткое уведомление о тревоге",
     },
     "ALERTS_PUSH_SUMMARY_LEAD_STANDDOWN": {
-        "uk": "🟢 Коротке сповіщення про відбій",
-        "en": "🟢 Quick stand-down notification",
-        "de": "🟢 Kurze Entwarnungsnachricht",
-        "pl": "🟢 Krótkie powiadomienie o odwołaniu",
-        "ru": "🟢 Короткое уведомление об отбое",
+        "uk": "",
+        "en": "",
+        "de": "",
+        "pl": "",
+        "ru": "",
     },
     "ALERTS_DURATION_RUNNING": {
         "uk": "триває {duration}",
