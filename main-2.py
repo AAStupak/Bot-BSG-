@@ -3762,47 +3762,16 @@ async def update_all_anchors():
 # ========================== ALERTS PANEL HELPERS ==========================
 async def alerts_clear_panel(uid: int):
     runtime = users_runtime.setdefault(uid, {})
-    panel = runtime.pop("alerts_panel", None)
+    runtime.pop("alerts_panel", None)
     runtime.pop("alerts_panel_last", None)
-    if isinstance(panel, (list, tuple)) and len(panel) == 2:
-        await _delete_message_safe(panel[0], panel[1])
 
 
 async def alerts_panel_show(uid: int, text: str, kb: InlineKeyboardMarkup, chat_id: Optional[int] = None):
     runtime = users_runtime.setdefault(uid, {})
-    panel = runtime.get("alerts_panel")
-    kb_sign = inline_kb_signature(kb)
     normalized_text = str(text or "")
-    payload = runtime.get("alerts_panel_last") or {}
-    if panel and payload.get("text") == normalized_text and payload.get("kb") == kb_sign:
-        return
-    if panel and isinstance(panel, (list, tuple)) and len(panel) == 2:
-        chat_id_existing, message_id = panel
-        try:
-            await bot.edit_message_text(
-                normalized_text,
-                chat_id_existing,
-                message_id,
-                reply_markup=kb,
-                disable_web_page_preview=True,
-            )
-            runtime["alerts_panel_last"] = {"text": normalized_text, "kb": kb_sign}
-            return
-        except MessageNotModified:
-            runtime["alerts_panel_last"] = {"text": normalized_text, "kb": kb_sign}
-            return
-        except MessageCantBeEdited:
-            pass
-        except Exception:
-            pass
-        await alerts_clear_panel(uid)
-    if chat_id is None:
-        chat_id = runtime.get("tg", {}).get("chat_id")
-    if not chat_id:
-        return
-    msg = await bot.send_message(chat_id, normalized_text, reply_markup=kb, disable_web_page_preview=True)
-    runtime["alerts_panel"] = (msg.chat.id, msg.message_id)
-    runtime["alerts_panel_last"] = {"text": normalized_text, "kb": kb_sign}
+    runtime.pop("alerts_panel", None)
+    runtime["alerts_panel_last"] = {"text": normalized_text, "kb": inline_kb_signature(kb)}
+    await anchor_show_text(uid, normalized_text, kb)
 
 
 # ========================== FLOW CLEANER ==========================
@@ -4286,14 +4255,14 @@ async def alerts_history_view(c: types.CallbackQuery):
     chat_id = c.message.chat.id
     regions = alerts_user_regions(uid)
     if not regions:
-        msg = await bot.send_message(chat_id, tr(uid, "ALERTS_NO_REGIONS"), disable_web_page_preview=True)
-        flow_track(uid, msg)
+        await alerts_panel_show(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid))
+        await alerts_clear_cards(uid)
         await c.answer()
         return
     events = alerts_collect_history_for_user(uid)
     if not events:
-        msg = await bot.send_message(chat_id, tr(uid, "ALERTS_NO_HISTORY"), disable_web_page_preview=True)
-        flow_track(uid, msg)
+        await alerts_panel_show(uid, tr(uid, "ALERTS_NO_HISTORY"), kb_alerts(uid))
+        await alerts_clear_cards(uid)
         await c.answer()
         return
     await alerts_panel_show(uid, tr(uid, "ALERTS_HISTORY_HEADER", count=len(events)), kb_alerts(uid), chat_id=chat_id)
@@ -6439,20 +6408,12 @@ def alerts_regions_overview_text(uid: int) -> str:
         max_name_width = max(max_name_width, name_width)
         if active_event:
             icon = "🔴"
-            type_text = alerts_type_label(active_event, lang)
-            severity_text = alerts_severity_label(active_event, lang)
-            base_status = get_status_label("alert")
-            parts: List[str] = []
-            if type_text:
-                parts.append(type_text)
-            if severity_text:
-                parts.append(severity_text)
-            status_text = " • ".join(part for part in parts if part) or base_status
+            status_text = get_status_label("alert")
             time_text = alerts_format_clock(active_event.get("started_at")) or "--:--"
         else:
             icon = "🟢"
             base_status = get_status_label("standdown") or get_status_label("calm")
-            status_text = base_status
+            status_text = base_status or get_status_label("alert")
             end_clock = ""
             if last_event:
                 end_clock = alerts_format_clock(last_event.get("ended_at"))
@@ -6466,9 +6427,9 @@ def alerts_regions_overview_text(uid: int) -> str:
                         end_clock = alerts_format_clock(candidate)
                         if end_clock:
                             break
-                if not status_text:
-                    status_text = alerts_type_label(last_event, lang)
             time_text = end_clock or "--:--"
+        if not status_text:
+            status_text = get_status_label("alert") if active_event else get_status_label("standdown")
         entries.append(
             {
                 "index": index,
