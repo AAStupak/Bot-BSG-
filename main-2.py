@@ -483,11 +483,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🚨 ТРЕВОГА | {region}",
     },
     "ALERTS_PUSH_HEADER_STANDDOWN": {
-        "uk": "✅ ВІДБІЙ | {region}",
-        "en": "✅ CLEAR | {region}",
-        "de": "✅ ENTWARNUNG | {region}",
-        "pl": "✅ ODWOŁANIE | {region}",
-        "ru": "✅ ОТБОЙ | {region}",
+        "uk": "🟢 ВІДБІЙ | {region}",
+        "en": "🟢 CLEAR | {region}",
+        "de": "🟢 ENTWARNUNG | {region}",
+        "pl": "🟢 ODWOŁANIE | {region}",
+        "ru": "🟢 ОТБОЙ | {region}",
     },
     "ALERTS_PUSH_SUMMARY_RUNNING": {
         "uk": "{icon} {type} • 🕒 {start} → {progress}",
@@ -497,11 +497,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "{icon} {type} • 🕒 {start} → {progress}",
     },
     "ALERTS_PUSH_SUMMARY_ENDED": {
-        "uk": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
-        "en": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
-        "de": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
-        "pl": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
-        "ru": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
+        "uk": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "en": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "de": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "pl": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "ru": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+    },
+    "ALERTS_PUSH_SUMMARY_LEAD_ALERT": {
+        "uk": "🚨 Коротке сповіщення про тривогу",
+        "en": "🚨 Quick alert notification",
+        "de": "🚨 Kurze Alarmbenachrichtigung",
+        "pl": "🚨 Krótkie powiadomienie o alarmie",
+        "ru": "🚨 Короткое уведомление о тревоге",
+    },
+    "ALERTS_PUSH_SUMMARY_LEAD_STANDDOWN": {
+        "uk": "🟢 Коротке сповіщення про відбій",
+        "en": "🟢 Quick stand-down notification",
+        "de": "🟢 Kurze Entwarnungsnachricht",
+        "pl": "🟢 Krótkie powiadomienie o odwołaniu",
+        "ru": "🟢 Короткое уведомление об отбое",
     },
     "ALERTS_DURATION_RUNNING": {
         "uk": "триває {duration}",
@@ -532,11 +546,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🚨 ТРЕВОГА — {region}",
     },
     "ALERTS_PUSH_DETAIL_TITLE_STANDDOWN": {
-        "uk": "✅ ВІДБІЙ — {region}",
-        "en": "✅ CLEAR — {region}",
-        "de": "✅ ENTWARNUNG — {region}",
-        "pl": "✅ ODWOŁANIE — {region}",
-        "ru": "✅ ОТБОЙ — {region}",
+        "uk": "🟢 ВІДБІЙ ТРИВОГИ — {region}",
+        "en": "🟢 ALERT CLEARED — {region}",
+        "de": "🟢 ENTWARNUNG — {region}",
+        "pl": "🟢 ALARM ODWOŁANY — {region}",
+        "ru": "🟢 ОТБОЙ ТРЕВОГИ — {region}",
     },
     "ALERTS_PUSH_DETAIL_TYPE": {
         "uk": "{icon} Тип загрози: {value}",
@@ -552,12 +566,12 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🕒 Początek: {date} • {time}",
         "ru": "🕒 Начало: {date} • {time}",
     },
-    "ALERTS_PUSH_DETAIL_END": {
-        "uk": "🛑 Завершення: {date} • {time}",
-        "en": "🛑 End: {date} • {time}",
-        "de": "🛑 Ende: {date} • {time}",
-        "pl": "🛑 Zakończenie: {date} • {time}",
-        "ru": "🛑 Завершение: {date} • {time}",
+    "ALERTS_PUSH_DETAIL_END_STANDDOWN": {
+        "uk": "✅ Відбій: {date} • {time}",
+        "en": "✅ Cleared: {date} • {time}",
+        "de": "✅ Entwarnung: {date} • {time}",
+        "pl": "✅ Odwołanie: {date} • {time}",
+        "ru": "✅ Отбой: {date} • {time}",
     },
     "ALERTS_PUSH_DETAIL_DURATION": {
         "uk": "⏱ Тривалість: {duration}",
@@ -588,11 +602,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "• 🏙 В области: {value}",
     },
     "ALERTS_PUSH_DETAIL_STATS_REGION_CLEAR": {
-        "uk": "• 🏙 В області: активних немає",
-        "en": "• 🏙 In the oblast: no active alerts",
-        "de": "• 🏙 In der Oblast: keine aktiven Alarme",
-        "pl": "• 🏙 W obwodzie: brak aktywnych alarmów",
-        "ru": "• 🏙 В области: активных нет",
+        "uk": "• 🏙 В області: завершена",
+        "en": "• 🏙 In the oblast: cleared",
+        "de": "• 🏙 In der Oblast: beendet",
+        "pl": "• 🏙 W obwodzie: zakończona",
+        "ru": "• 🏙 В области: завершена",
     },
     "ALERTS_PUSH_DETAIL_RECOMMENDATIONS_HEADER": {
         "uk": "⚠️ Рекомендації",
@@ -600,6 +614,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "⚠️ Empfehlungen",
         "pl": "⚠️ Zalecenia",
         "ru": "⚠️ Рекомендации",
+    },
+    "ALERTS_PUSH_DETAIL_STANDDOWN_HEADER": {
+        "uk": "✅ Ситуацію стабілізовано",
+        "en": "✅ Situation stabilised",
+        "de": "✅ Lage stabilisiert",
+        "pl": "✅ Sytuacja ustabilizowana",
+        "ru": "✅ Ситуация стабилизировалась",
+    },
+    "ALERTS_PUSH_DETAIL_STANDDOWN_NOTE": {
+        "uk": "Будьте уважні та стежте за новими сповіщеннями",
+        "en": "Stay cautious and watch for new notifications",
+        "de": "Bleiben Sie aufmerksam und verfolgen Sie neue Meldungen",
+        "pl": "Bądź ostrożny i śledź nowe powiadomienia",
+        "ru": "Будьте осторожны и следите за новыми уведомлениями",
     },
     "ALERTS_PUSH_DETAIL_FOOTER": {
         "uk": "✅ Бережіть себе!",
@@ -6587,13 +6615,14 @@ def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
     region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
     header_key = "ALERTS_PUSH_HEADER_STANDDOWN" if ended else "ALERTS_PUSH_HEADER_ALERT"
     header = tr(uid, header_key, region=region_display)
+    lead_key = "ALERTS_PUSH_SUMMARY_LEAD_STANDDOWN" if ended else "ALERTS_PUSH_SUMMARY_LEAD_ALERT"
+    lead_line = tr(uid, lead_key)
     type_label = alerts_type_label(event, lang)
     type_icon = alerts_type_icon(event)
     start_display = alerts_format_push_timestamp(event.get("started_at")) or "--:--"
     if ended:
         end_source = event.get("ended_at") or event.get("updated_at")
         end_display = alerts_format_push_timestamp(end_source) or "—"
-        duration_phrase = alerts_duration_phrase(event.get("started_at"), end_source, lang, False)
         body = tr(
             uid,
             "ALERTS_PUSH_SUMMARY_ENDED",
@@ -6601,7 +6630,6 @@ def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
             type=type_label,
             start=start_display,
             ended=end_display,
-            duration=duration_phrase,
         )
     else:
         progress = alerts_duration_phrase(event.get("started_at"), None, lang, True)
@@ -6613,7 +6641,13 @@ def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
             start=start_display,
             progress=progress,
         )
-    return f"{header}\n{body}".strip()
+    lines: List[str] = []
+    if lead_line:
+        lines.append(lead_line)
+        lines.append("")
+    lines.append(header)
+    lines.append(body)
+    return "\n".join(lines).strip()
 
 
 def alerts_push_detail_text(uid: int, event: Dict[str, Any], kind: str) -> str:
@@ -6646,10 +6680,10 @@ def alerts_push_detail_text(uid: int, event: Dict[str, Any], kind: str) -> str:
         tr(uid, "ALERTS_PUSH_DETAIL_TYPE", icon=type_icon, value=type_label),
         "",
         tr(uid, "ALERTS_PUSH_DETAIL_START", date=start_date or "—", time=start_time or "--:--"),
-        tr(uid, "ALERTS_PUSH_DETAIL_DURATION", duration=duration_value),
     ]
     if ended:
-        lines.append(tr(uid, "ALERTS_PUSH_DETAIL_END", date=end_date or "—", time=end_time or "--:--"))
+        lines.append(tr(uid, "ALERTS_PUSH_DETAIL_END_STANDDOWN", date=end_date or "—", time=end_time or "--:--"))
+    lines.append(tr(uid, "ALERTS_PUSH_DETAIL_DURATION", duration=duration_value))
     lines.extend(
         [
             "",
@@ -6657,18 +6691,32 @@ def alerts_push_detail_text(uid: int, event: Dict[str, Any], kind: str) -> str:
             tr(uid, "ALERTS_PUSH_DETAIL_STATS_HEADER"),
             tr(uid, "ALERTS_PUSH_DETAIL_STATS_COUNTRY", value=stats_country),
             stats_region,
-            "",
-            "━━━━━━━━━━━━━━━━━━",
-            tr(uid, "ALERTS_PUSH_DETAIL_RECOMMENDATIONS_HEADER"),
         ]
     )
-    if recommendations:
-        lines.append(recommendations)
-    lines.extend([
-        "",
-        "━━━━━━━━━━━━━━━━━━",
-        tr(uid, "ALERTS_PUSH_DETAIL_FOOTER"),
-    ])
+    if ended:
+        lines.extend(
+            [
+                "",
+                "━━━━━━━━━━━━━━━━━━",
+                tr(uid, "ALERTS_PUSH_DETAIL_STANDDOWN_HEADER"),
+                tr(uid, "ALERTS_PUSH_DETAIL_STANDDOWN_NOTE"),
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "━━━━━━━━━━━━━━━━━━",
+                tr(uid, "ALERTS_PUSH_DETAIL_RECOMMENDATIONS_HEADER"),
+            ]
+        )
+        if recommendations:
+            lines.append(recommendations)
+        lines.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            tr(uid, "ALERTS_PUSH_DETAIL_FOOTER"),
+        ])
     return "\n".join(lines)
 
 
