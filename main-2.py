@@ -6144,6 +6144,11 @@ def _alerts_api_get(endpoint: str, params: Optional[Dict[str, Any]] = None) -> T
         response = requests.get(url, headers=headers, params=params, timeout=ALERTS_API_TIMEOUT)
     except requests.RequestException as exc:
         return False, str(exc), None
+    if response.status_code == 404:
+        # alerts.in.ua returns 404 for historical lookups when a region
+        # has no archived alerts. Treat this as a valid "no data" response
+        # instead of propagating an error that would spam the logs.
+        return True, "", {}
     try:
         response.raise_for_status()
     except requests.RequestException as exc:
