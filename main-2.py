@@ -273,32 +273,32 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
     },
     "ALERTS_BTN_ACTIVE": {
-        "uk": "🔥 Поточні тривоги",
-        "en": "🔥 Active alerts",
-        "de": "🔥 Aktive Alarme",
-        "pl": "🔥 Aktywne alarmy",
-        "ru": "🔥 Активные тревоги",
+        "uk": "🚨 Активні сигнали",
+        "en": "🚨 Live alerts",
+        "de": "🚨 Live-Alarme",
+        "pl": "🚨 Aktywne sygnały",
+        "ru": "🚨 Активные сигналы",
     },
     "ALERTS_BTN_OVERVIEW": {
-        "uk": "🗺️ Статус областей",
-        "en": "🗺️ Region status",
-        "de": "🗺️ Regionenstatus",
-        "pl": "🗺️ Status regionów",
-        "ru": "🗺️ Статус областей",
+        "uk": "🗺️ Карта областей",
+        "en": "🗺️ Oblast map",
+        "de": "🗺️ Oblast-Karte",
+        "pl": "🗺️ Mapa obwodów",
+        "ru": "🗺️ Карта областей",
     },
     "ALERTS_BTN_HISTORY": {
-        "uk": "📜 Історія",
-        "en": "📜 History",
-        "de": "📜 Verlauf",
-        "pl": "📜 Historia",
-        "ru": "📜 История",
+        "uk": "🕓 Журнал тривог",
+        "en": "🕓 Alert log",
+        "de": "🕓 Alarmprotokoll",
+        "pl": "🕓 Dziennik alarmów",
+        "ru": "🕓 Журнал тревог",
     },
     "ALERTS_BTN_SUBSCRIPTIONS": {
-        "uk": "🧭 Керувати областями",
-        "en": "🧭 Manage regions",
-        "de": "🧭 Regionen verwalten",
-        "pl": "🧭 Zarządzaj regionami",
-        "ru": "🧭 Управлять регионами",
+        "uk": "🎛️ Мої області",
+        "en": "🎛️ My oblasts",
+        "de": "🎛️ Meine Oblaste",
+        "pl": "🎛️ Moje obwody",
+        "ru": "🎛️ Мои области",
     },
     "ALERTS_ACTIVE_HEADER": {
         "uk": "🔥 <b>Поточні тривоги</b> ({count})",
@@ -3341,8 +3341,8 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
 
 def kb_alerts(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_OVERVIEW"), callback_data="alerts_overview"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
@@ -6257,18 +6257,19 @@ def alerts_regions_overview_text(uid: int) -> str:
             }
         )
 
-    nbsp = "\u00A0"
-    lines: List[str] = [header, ""]
+    lines: List[str] = [h(header), ""]
     for entry in entries:
         stored_width = entry.get("name_width")
         if stored_width is None:
             stored_width = alerts_display_width(entry["name"])
         name_padding = max_name_width - stored_width
-        padded_name = f"{h(entry['name'])}{nbsp * max(name_padding, 0)}"
-        number = f"{entry['index']:2d}".replace(" ", nbsp)
+        padded_name = f"{entry['name']}{' ' * max(name_padding, 0)}"
+        number = f"{entry['index']:2d}"
         status_text = h(entry["status"])
         time_text = h(entry["time"])
-        lines.append(f"{number}. {entry['icon']} {padded_name} — {status_text} • {time_text}")
+        lines.append(
+            f"{number}. {entry['icon']} {h(padded_name)} — {status_text} • {time_text}"
+        )
         lines.append("")
 
     while len(lines) > 2 and lines[-1] == "":
@@ -6277,10 +6278,12 @@ def alerts_regions_overview_text(uid: int) -> str:
     updated_clock = alerts_now().strftime("%H:%M")
     lines.append("")
     lines.append("━━━━━━━━━━━━━━━━━━")
-    lines.append(tr(uid, "ALERTS_OVERVIEW_UPDATED").format(time=h(updated_clock)))
+    updated_line = tr(uid, "ALERTS_OVERVIEW_UPDATED").format(time=updated_clock)
+    lines.append(h(updated_line))
     lines.append("")
-    lines.append(tr(uid, "ALERTS_OVERVIEW_GUIDE"))
-    return "\n".join(lines)
+    lines.append(h(tr(uid, "ALERTS_OVERVIEW_GUIDE")))
+    body = "\n".join(lines)
+    return f"<pre>{body}</pre>"
 
 
 def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
