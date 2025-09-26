@@ -518,18 +518,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✖️ Закрыть",
     },
     "ALERTS_PUSH_OPEN": {
-        "uk": "🔎 Відкрити детально",
-        "en": "🔎 Open details",
-        "de": "🔎 Details anzeigen",
-        "pl": "🔎 Otwórz szczegóły",
-        "ru": "🔎 Открыть детально",
+        "uk": "🔽 Відкрити детально",
+        "en": "🔽 Open details",
+        "de": "🔽 Details anzeigen",
+        "pl": "🔽 Otwórz szczegóły",
+        "ru": "🔽 Открыть детально",
     },
     "ALERTS_PUSH_COLLAPSE": {
-        "uk": "⬆️ Згорнути",
-        "en": "⬆️ Collapse",
-        "de": "⬆️ Einklappen",
-        "pl": "⬆️ Zwiń",
-        "ru": "⬆️ Свернуть",
+        "uk": "🔼 Згорнути",
+        "en": "🔼 Collapse",
+        "de": "🔼 Einklappen",
+        "pl": "🔼 Zwiń",
+        "ru": "🔼 Свернуть",
     },
     "ALERTS_PUSH_DELETE": {
         "uk": "🗑 Видалити повідомлення",
@@ -5132,28 +5132,28 @@ ALERTS_RECOMMENDATIONS: Dict[str, Dict[str, List[str]]] = {
 ALERTS_OVERVIEW_STATUS_TEXT: Dict[str, Dict[str, str]] = {
     "uk": {
         "alert": "Тривога",
-        "standdown": "Відбій",
-        "calm": "Відбій",
+        "standdown": "Відбій тривоги",
+        "calm": "Відбій тривоги",
     },
     "en": {
         "alert": "Alert",
-        "standdown": "Cleared",
-        "calm": "Cleared",
+        "standdown": "Alert cleared",
+        "calm": "Alert cleared",
     },
     "de": {
         "alert": "Alarm",
-        "standdown": "Entwarnung",
-        "calm": "Entwarnung",
+        "standdown": "Alarm beendet",
+        "calm": "Alarm beendet",
     },
     "pl": {
         "alert": "Alarm",
-        "standdown": "Odwołано",
-        "calm": "Odwołано",
+        "standdown": "Alarm odwołano",
+        "calm": "Alarm odwołano",
     },
     "ru": {
         "alert": "Тревога",
-        "standdown": "Отбой",
-        "calm": "Отбой",
+        "standdown": "Отбой тревоги",
+        "calm": "Отбой тревоги",
     },
 }
 
@@ -6438,15 +6438,36 @@ def alerts_regions_overview_text(uid: int) -> str:
         name_width = alerts_display_width(display_name)
         max_name_width = max(max_name_width, name_width)
         if active_event:
-            status_text = get_status_label("alert")
-            time_text = alerts_format_clock(active_event.get("started_at")) or "--:--"
             icon = "🔴"
+            type_text = alerts_type_label(active_event, lang)
+            severity_text = alerts_severity_label(active_event, lang)
+            base_status = get_status_label("alert")
+            parts: List[str] = []
+            if type_text:
+                parts.append(type_text)
+            if severity_text:
+                parts.append(severity_text)
+            status_text = " • ".join(part for part in parts if part) or base_status
+            time_text = alerts_format_clock(active_event.get("started_at")) or "--:--"
         else:
             icon = "🟢"
-            status_text = get_status_label("standdown") or get_status_label("calm")
+            base_status = get_status_label("standdown") or get_status_label("calm")
+            status_text = base_status
             end_clock = ""
-            if last_event and last_event.get("ended_at"):
+            if last_event:
                 end_clock = alerts_format_clock(last_event.get("ended_at"))
+                if not end_clock:
+                    extra = last_event.get("extra") or {}
+                    for candidate in (
+                        extra.get("ended_at"),
+                        last_event.get("updated_at"),
+                        last_event.get("recorded_at"),
+                    ):
+                        end_clock = alerts_format_clock(candidate)
+                        if end_clock:
+                            break
+                if not status_text:
+                    status_text = alerts_type_label(last_event, lang)
             time_text = end_clock or "--:--"
         entries.append(
             {
