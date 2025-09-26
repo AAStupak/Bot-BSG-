@@ -6377,7 +6377,7 @@ def alerts_regions_overview_text(uid: int) -> str:
             }
         )
 
-    lines: List[str] = [h(header), ""]
+    list_lines: List[str] = []
     for entry in entries:
         stored_width = entry.get("name_width")
         if stored_width is None:
@@ -6387,23 +6387,34 @@ def alerts_regions_overview_text(uid: int) -> str:
         number = f"{entry['index']:2d}"
         status_text = h(entry["status"])
         time_text = h(entry["time"])
-        lines.append(
+        list_lines.append(
             f"{number}. {entry['icon']} {h(padded_name)} — {status_text} • {time_text}"
         )
-        lines.append("")
+        list_lines.append("")
 
-    while len(lines) > 2 and lines[-1] == "":
-        lines.pop()
+    while len(list_lines) > 1 and list_lines[-1] == "":
+        list_lines.pop()
 
     updated_clock = alerts_now().strftime("%H:%M")
-    lines.append("")
-    lines.append("━━━━━━━━━━━━━━━━━━")
     updated_line = tr(uid, "ALERTS_OVERVIEW_UPDATED").format(time=updated_clock)
-    lines.append(h(updated_line))
-    lines.append("")
-    lines.append(h(tr(uid, "ALERTS_OVERVIEW_GUIDE")))
-    body = "\n".join(lines)
-    return f"<pre>{body}</pre>"
+    guide_text = tr(uid, "ALERTS_OVERVIEW_GUIDE")
+
+    list_block = "\n".join(list_lines)
+    parts: List[str] = [
+        h(header),
+        "",
+        f"<pre>{list_block}</pre>",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        h(updated_line),
+        "",
+        h(guide_text),
+    ]
+
+    while parts and parts[-1] == "":
+        parts.pop()
+
+    return "\n".join(parts)
 
 
 def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
