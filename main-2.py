@@ -332,7 +332,7 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "en": "ℹ️ Guide:\n🟢 Time marks when the alert ended.\n🔴 Time marks when the alert began.",
         "de": "ℹ️ Hinweis:\n🟢 Die Uhrzeit zeigt das Ende des Alarms.\n🔴 Die Uhrzeit zeigt den Beginn des Alarms.",
         "pl": "ℹ️ Instrukcja:\n🟢 Czas oznacza odwołanie alarmu.\n🔴 Czas oznacza początek alarmu.",
-        "ru": "ℹ️ Инструкция:\n🟢 Время показывает отбой тревоги.\n🔴 Время показывает начало тревоги.",
+        "ru": "ℹ️ Инструкция:  \n🟢 Время = отбой тревоги  \n🔴 Время = начало тревоги",
     },
     "ALERTS_OVERVIEW_ACTIVE": {
         "uk": "🔴 {region} — тривога з {start}",
@@ -4666,12 +4666,40 @@ ALERTS_STATUS_TEXT: Dict[str, Dict[str, str]] = {
     "pl": {
         "alert": "Alarm",
         "standdown": "Alarm odwołano",
-        "calm": "Alarm odwołано",
+        "calm": "Alarm odwołano",
     },
     "ru": {
         "alert": "Тревога",
         "standdown": "Отбой тревоги",
         "calm": "Отбой тревоги",
+    },
+}
+
+ALERTS_OVERVIEW_STATUS_TEXT: Dict[str, Dict[str, str]] = {
+    "uk": {
+        "alert": "Тривога",
+        "standdown": "Відбій",
+        "calm": "Відбій",
+    },
+    "en": {
+        "alert": "Alert",
+        "standdown": "Cleared",
+        "calm": "Cleared",
+    },
+    "de": {
+        "alert": "Alarm",
+        "standdown": "Entwarnung",
+        "calm": "Entwarnung",
+    },
+    "pl": {
+        "alert": "Alarm",
+        "standdown": "Odwołано",
+        "calm": "Odwołано",
+    },
+    "ru": {
+        "alert": "Тревога",
+        "standdown": "Отбой",
+        "calm": "Отбой",
     },
 }
 
@@ -5718,7 +5746,8 @@ def alerts_overview_region_label(region: str, lang: str) -> str:
 
 def alerts_regions_overview_text(uid: int) -> str:
     lang = resolve_lang(uid)
-    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    status_labels = ALERTS_OVERVIEW_STATUS_TEXT.get(lang) or ALERTS_OVERVIEW_STATUS_TEXT[DEFAULT_LANG]
+    fallback_status = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
     header = tr(uid, "ALERTS_OVERVIEW_HEADER")
     entries: List[Dict[str, Any]] = []
     max_name_len = 0
@@ -5727,12 +5756,22 @@ def alerts_regions_overview_text(uid: int) -> str:
         display_name = alerts_overview_region_label(canonical, lang)
         max_name_len = max(max_name_len, len(display_name))
         if active_event:
-            status_text = alerts_type_label(active_event, lang) or status_labels.get("alert") or ""
+            status_text = (
+                status_labels.get("alert")
+                or fallback_status.get("alert")
+                or ""
+            )
             time_text = alerts_format_clock(active_event.get("started_at")) or "--:--"
             icon = "🔴"
         else:
             icon = "🟢"
-            status_text = status_labels.get("standdown") or status_labels.get("calm") or ""
+            status_text = (
+                status_labels.get("standdown")
+                or status_labels.get("calm")
+                or fallback_status.get("standdown")
+                or fallback_status.get("calm")
+                or ""
+            )
             end_clock = ""
             if last_event and last_event.get("ended_at"):
                 end_clock = alerts_format_clock(last_event.get("ended_at"))
