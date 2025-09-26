@@ -4213,14 +4213,18 @@ async def alerts_overview_view(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "alerts_history")
 async def alerts_history_view(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id
+    await flow_clear(uid)
     regions = alerts_user_regions(uid)
     if not regions:
-        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid))
+        msg = await bot.send_message(chat_id, tr(uid, "ALERTS_NO_REGIONS"), disable_web_page_preview=True)
+        flow_track(uid, msg)
         await c.answer()
         return
     events = alerts_collect_history_for_user(uid)
     if not events:
-        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_HISTORY"), kb_alerts(uid))
+        msg = await bot.send_message(chat_id, tr(uid, "ALERTS_NO_HISTORY"), disable_web_page_preview=True)
+        flow_track(uid, msg)
         await c.answer()
         return
     lang = resolve_lang(uid)
@@ -4244,7 +4248,9 @@ async def alerts_history_view(c: types.CallbackQuery):
         lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
         if ended:
             lines.append(f"{indent}🛑 {h(labels['ended'])}: {h(end_text)}")
-    await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
+    history_text = "\n".join(lines)
+    msg = await bot.send_message(chat_id, history_text, disable_web_page_preview=True)
+    flow_track(uid, msg)
     await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
     await c.answer()
 
