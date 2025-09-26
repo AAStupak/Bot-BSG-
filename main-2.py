@@ -301,11 +301,39 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🎛️ Мои области",
     },
     "ALERTS_ACTIVE_HEADER": {
-        "uk": "🔥 <b>Поточні тривоги</b> ({count})",
-        "en": "🔥 <b>Active alerts</b> ({count})",
-        "de": "🔥 <b>Aktive Alarme</b> ({count})",
-        "pl": "🔥 <b>Aktywne alarmy</b> ({count})",
-        "ru": "🔥 <b>Активные тревоги</b> ({count})",
+        "uk": "🚨Активні сигнали({count})",
+        "en": "🚨Active alerts({count})",
+        "de": "🚨Aktive Alarme({count})",
+        "pl": "🚨Aktywne alarmy({count})",
+        "ru": "🚨Активные сигналы({count})",
+    },
+    "ALERTS_ACTIVE_DIVIDER": {
+        "uk": "━━━━━━━━━━━━━━━━━━",
+        "en": "━━━━━━━━━━━━━━━━━━",
+        "de": "━━━━━━━━━━━━━━━━━━",
+        "pl": "━━━━━━━━━━━━━━━━━━",
+        "ru": "━━━━━━━━━━━━━━━━━━",
+    },
+    "ALERTS_ACTIVE_SUMMARY_TOTAL": {
+        "uk": "📍 Активні тривоги: {count}",
+        "en": "📍 Active alerts: {count}",
+        "de": "📍 Aktive Alarme: {count}",
+        "pl": "📍 Aktywne alarmy: {count}",
+        "ru": "📍 Активные тревоги: {count}",
+    },
+    "ALERTS_ACTIVE_SUMMARY_USER": {
+        "uk": "👤 Ваші вибрані області — персональні налаштування сповіщень",
+        "en": "👤 Your selected oblasts — personal alert preferences",
+        "de": "👤 Ihre ausgewählten Oblaste – persönliche Alarm-Einstellungen",
+        "pl": "👤 Twoje wybrane obwody — osobiste ustawienia alertów",
+        "ru": "👤 Ваши выбранные области — персональные настройки оповещений",
+    },
+    "ALERTS_ACTIVE_SUMMARY_PROJECT": {
+        "uk": "🏗 Прив’язано до об’єкта — області, визначені адміністратором",
+        "en": "🏗 Project scope — oblasts defined by the administrator",
+        "de": "🏗 Projektbezug – Oblaste, die vom Administrator festgelegt wurden",
+        "pl": "🏗 Powiązano z obiektem — obwody określone przez administratora",
+        "ru": "🏗 Привязано к объекту — области, определённые администратором",
     },
     "ALERTS_HISTORY_HEADER": {
         "uk": "📜 <b>Історія тривог</b> ({count})",
@@ -4141,20 +4169,34 @@ async def alerts_active_view(c: types.CallbackQuery):
         await c.answer()
         return
     lang = resolve_lang(uid)
-    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
     labels = alerts_field_labels(lang)
-    indent = "&nbsp;&nbsp;&nbsp;"
-    lines = [tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events))]
-    for idx, event in enumerate(events[:10], start=1):
-        region_display = alerts_display_region_name(event.get("region") or event.get("region_display") or "", lang)
-        start_text = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    divider = tr(uid, "ALERTS_ACTIVE_DIVIDER")
+    lines = [
+        tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events)),
+        divider,
+    ]
+    for event in events[:10]:
+        region_display = alerts_display_region_name(
+            event.get("region") or event.get("region_display") or "",
+            lang,
+            short=True,
+        )
         type_text = alerts_type_label(event, lang)
         severity_text = alerts_severity_label(event, lang)
-        summary_parts = [status_labels["alert"], type_text]
+        summary_text = type_text or status_labels.get("alert", "")
         if severity_text:
-            summary_parts.append(severity_text)
-        lines.append(f"{idx}. 🔴 <b>{h(region_display)}</b> — {h(' • '.join(summary_parts))}")
-        lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
+            summary_text = f"{summary_text} • {severity_text}" if summary_text else severity_text
+        lines.append(f"🔴 {h(region_display)} — {h(summary_text)}")
+        started_display = alerts_format_datetime_display(event.get("started_at"))
+        if not started_display:
+            started_display = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+        lines.append(f"⏱ {h(started_display)}")
+    lines.append(divider)
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_TOTAL", count=len(events)))
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_USER"))
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_PROJECT"))
     await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
     await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
     await c.answer()
