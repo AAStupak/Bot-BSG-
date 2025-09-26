@@ -93,6 +93,7 @@ ALERTS_API_TIMEOUT = 15
 ALERTS_POLL_INTERVAL = 5  # seconds
 ALERTS_HISTORY_CACHE_TTL = 300  # seconds
 ALERTS_STANDDOWN_DISPLAY_WINDOW = 90 * 60  # seconds
+ALERTS_MAP_URL = "https://map.ukrainealarm.com"
 ALERTS_DIRNAME = "alerts"
 ALERTS_STATE_FILENAME = "state.json"
 ALERTS_HISTORY_DIRNAME = "history"
@@ -553,6 +554,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🗑 Usuń wiadomość",
         "ru": "🗑 Удалить сообщение",
     },
+    "ALERTS_PUSH_MAP": {
+        "uk": "🗺️ Переглянути карту тривог",
+        "en": "🗺️ View alert map",
+        "de": "🗺️ Alarmkarte anzeigen",
+        "pl": "🗺️ Zobacz mapę alarmów",
+        "ru": "🗺️ Открыть карту тревог",
+    },
     "ALERTS_PUSH_HEADER_ALERT": {
         "uk": "🚨 ТРИВОГА | {region}",
         "en": "🚨 ALERT | {region}",
@@ -594,6 +602,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "",
         "pl": "",
         "ru": "",
+    },
+    "ALERTS_PUSH_TERRITORIAL_LEAD": {
+        "uk": "📍 Територіальне попередження — {scope}",
+        "en": "📍 Local alert — {scope}",
+        "de": "📍 Lokaler Alarm — {scope}",
+        "pl": "📍 Lokalny alarm — {scope}",
+        "ru": "📍 Территориальное оповещение — {scope}",
     },
     "ALERTS_DURATION_RUNNING": {
         "uk": "триває {duration}",
@@ -657,6 +672,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "⏱ Dauer: {duration}",
         "pl": "⏱ Czas trwania: {duration}",
         "ru": "⏱ Длительность: {duration}",
+    },
+    "ALERTS_PUSH_DETAIL_LOCATION_SCOPE": {
+        "uk": "📍 Місцевість: {value}",
+        "en": "📍 Area: {value}",
+        "de": "📍 Gebiet: {value}",
+        "pl": "📍 Obszar: {value}",
+        "ru": "📍 Территория: {value}",
     },
     "ALERTS_PUSH_DETAIL_STATS_HEADER": {
         "uk": "📊 Статистика на зараз",
@@ -4376,7 +4398,7 @@ async def alerts_push_actions(c: types.CallbackQuery):
         entry["kind"] = kind
         entry["expanded"] = expanded
         text = alerts_push_render(uid, event, kind, expanded=expanded)
-        kb = alerts_push_keyboard(uid, token, expanded)
+        kb = alerts_push_keyboard(uid, token, expanded, event, kind)
         try:
             await bot.edit_message_text(
                 text,
@@ -5137,6 +5159,13 @@ ALERTS_LOCATION_TYPE_LABELS: Dict[str, Dict[str, str]] = {
         "pl": "Wieś",
         "ru": "Деревня",
     },
+    "territory": {
+        "uk": "Територія",
+        "en": "Territory",
+        "de": "Gebiet",
+        "pl": "Terytorium",
+        "ru": "Территория",
+    },
 }
 
 ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
@@ -5555,6 +5584,21 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     severity_code = alerts_normalize_severity(payload.get("severity") or severity_note, type_code)
 
     notes_clean = alerts_sanitize_notes(payload.get("notes"))
+    location_type = (
+        payload.get("location_type")
+        or payload.get("location_level")
+        or payload.get("location_scope")
+        or payload.get("location_type_code")
+    )
+    location_title = (
+        payload.get("location_title")
+        or payload.get("location_name")
+        or payload.get("location")
+        or payload.get("city")
+        or payload.get("settlement")
+        or payload.get("community")
+    )
+
     extra_payload = {
         "severity": severity_code,
         "cause": cause,
@@ -5564,6 +5608,8 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "oblast_uid": payload.get("location_oblast_uid") or payload.get("oblast_uid"),
         "oblast_title": oblast_title or region_original,
         "notes": notes_clean,
+        "location_type": location_type,
+        "location_title": location_title,
     }
 
     clean_extra: Dict[str, Any] = {}
@@ -5574,6 +5620,8 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             continue
         if isinstance(value, str):
             value = value.strip()
+            if key == "location_type":
+                value = value.lower()
         if value in (None, "", []):
             continue
         clean_extra[key] = value
@@ -6769,12 +6817,23 @@ async def alerts_clear_cards(uid: int, context: Optional[str] = None):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def alerts_push_keyboard(uid: int, token: str, expanded: bool) -> InlineKeyboardMarkup:
+def alerts_push_keyboard(
+    uid: int,
+    token: str,
+    expanded: bool,
+    event: Optional[Dict[str, Any]],
+    kind: str,
+) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     if expanded:
         kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_COLLAPSE"), callback_data=f"alerts_push:collapse:{token}"))
     else:
         kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_OPEN"), callback_data=f"alerts_push:expand:{token}"))
+    ended = kind == "end" or bool((event or {}).get("ended_at"))
+    if not ended:
+        map_label = tr(uid, "ALERTS_PUSH_MAP")
+        if map_label:
+            kb.add(InlineKeyboardButton(map_label, url=ALERTS_MAP_URL))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_DELETE"), callback_data=f"alerts_push:delete:{token}"))
     return kb
 
@@ -6971,6 +7030,33 @@ def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[s
     return recipients
 
 
+def alerts_event_scope_text(event: Dict[str, Any], lang: str) -> Tuple[bool, str]:
+    extra = event.get("extra") or {}
+    location_type = str(extra.get("location_type") or "").strip().lower()
+    if location_type in ("", "oblast"):
+        return False, ""
+    location_name = (
+        extra.get("location_title")
+        or extra.get("location_name")
+        or event.get("region_display")
+        or event.get("region")
+        or ""
+    )
+    if not location_name:
+        return False, ""
+    display_name = alerts_display_region_name(location_name, lang) or str(location_name)
+    mapping = ALERTS_LOCATION_TYPE_LABELS.get(location_type)
+    if mapping:
+        label = mapping.get(lang) or mapping.get(DEFAULT_LANG) or ""
+    else:
+        label = location_type.capitalize() if location_type else ""
+    if label and display_name:
+        scope_text = f"{label}: {display_name}"
+    else:
+        scope_text = display_name or label
+    return True, scope_text.strip()
+
+
 def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
     lang = resolve_lang(uid)
     ended = kind == "end" or bool(event.get("ended_at"))
@@ -6982,6 +7068,7 @@ def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
     type_label = alerts_type_label(event, lang)
     type_icon = alerts_type_icon(event)
     start_display = alerts_format_push_timestamp(event.get("started_at")) or "--:--"
+    territorial, scope_text = alerts_event_scope_text(event, lang)
     if ended:
         end_source = event.get("ended_at") or event.get("updated_at")
         end_display = alerts_format_push_timestamp(end_source) or "—"
@@ -7008,6 +7095,8 @@ def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
         lines.append(lead_line)
         lines.append("")
     lines.append(header)
+    if territorial and scope_text:
+        lines.append(tr(uid, "ALERTS_PUSH_TERRITORIAL_LEAD", scope=h(scope_text)))
     lines.append(body)
     return "\n".join(lines).strip()
 
@@ -7040,9 +7129,19 @@ def alerts_push_detail_text(uid: int, event: Dict[str, Any], kind: str) -> str:
         "━━━━━━━━━━━━━━━━━━",
         "",
         tr(uid, "ALERTS_PUSH_DETAIL_TYPE", icon=type_icon, value=type_label),
-        "",
-        tr(uid, "ALERTS_PUSH_DETAIL_START", date=start_date or "—", time=start_time or "--:--"),
     ]
+    territorial, scope_text = alerts_event_scope_text(event, lang)
+    if territorial and scope_text:
+        lines.extend([
+            "",
+            tr(uid, "ALERTS_PUSH_DETAIL_LOCATION_SCOPE", value=h(scope_text)),
+        ])
+    lines.extend(
+        [
+            "",
+            tr(uid, "ALERTS_PUSH_DETAIL_START", date=start_date or "—", time=start_time or "--:--"),
+        ]
+    )
     if ended:
         lines.append(tr(uid, "ALERTS_PUSH_DETAIL_END_STANDDOWN", date=end_date or "—", time=end_time or "--:--"))
     lines.append(tr(uid, "ALERTS_PUSH_DETAIL_DURATION", duration=duration_value))
@@ -7138,7 +7237,7 @@ async def alerts_broadcast(event_id: str, kind: str) -> None:
             token = secrets.token_hex(4)
             while alerts_push_get(uid, token):
                 token = secrets.token_hex(4)
-            kb = alerts_push_keyboard(uid, token, expanded=False)
+            kb = alerts_push_keyboard(uid, token, expanded=False, event=event, kind=kind)
             message = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
             alerts_push_store(
                 uid,
