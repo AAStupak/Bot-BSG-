@@ -454,6 +454,22 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "👤 Мой профиль",
     },
 
+    "WARN_BTN_CLOSE": {
+        "uk": "❌ Закрити",
+        "en": "❌ Close",
+        "de": "❌ Schließen",
+        "pl": "❌ Zamknij",
+        "ru": "❌ Закрыть",
+    },
+
+    "WARN_MESSAGE_CLOSED": {
+        "uk": "Повідомлення закрито.",
+        "en": "Message closed.",
+        "de": "Nachricht geschlossen.",
+        "pl": "Wiadomość zamknięta.",
+        "ru": "Сообщение закрыто.",
+    },
+
     "BTN_NOVA_POSHTA": {
         "uk": "📮 Нова пошта",
         "en": "📮 Nova Poshta",
@@ -996,11 +1012,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✏️ Редактировать профиль",
     },
     "PROFILE_BTN_DONE_EDIT": {
-        "uk": "⬅️ Готово",
-        "en": "⬅️ Done",
-        "de": "⬅️ Fertig",
-        "pl": "⬅️ Gotowe",
-        "ru": "⬅️ Готово",
+        "uk": "⬅️ Назад до профілю",
+        "en": "⬅️ Back to profile",
+        "de": "⬅️ Zurück zum Profil",
+        "pl": "⬅️ Wróć do profilu",
+        "ru": "⬅️ Назад к профилю",
     },
     "PROFILE_BTN_EDIT_PHOTO": {
         "uk": "📸 Оновити фото",
@@ -4299,6 +4315,15 @@ def inline_kb_signature(kb: Optional[InlineKeyboardMarkup]) -> Any:
     return tuple(sign)
 
 
+def anchor_context_for(uid: int, kb_sign: Any) -> str:
+    if kb_sign is None:
+        return "custom"
+    runtime = users_runtime.setdefault(uid, {})
+    root_sign = inline_kb_signature(kb_root(uid))
+    runtime["root_kb_signature"] = root_sign
+    return "root" if kb_sign == root_sign else "custom"
+
+
 # ========================== ANCHOR ==========================
 async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: Optional[InlineKeyboardMarkup] = None):
     if text is None: text = project_status_text(uid)
@@ -4308,6 +4333,7 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
     ur = users_runtime.setdefault(uid, {})
     last_text = ur.get("last_anchor_text"); last_kb = ur.get("last_anchor_kb")
     anchor = ur.get("anchor")
+    ur["anchor_context"] = anchor_context_for(uid, kb_sign)
 
     if anchor and last_text == text and last_kb == kb_sign and ur.get("anchor_mode") == "text":
         return
@@ -4343,7 +4369,10 @@ async def anchor_show_text(uid: int, text: str, kb: InlineKeyboardMarkup):
 
 
 async def update_all_anchors():
-    for uid in list(users_runtime.keys()):
+    for uid, runtime in list(users_runtime.items()):
+        context = runtime.get("anchor_context")
+        if context not in (None, "root"):
+            continue
         await anchor_show_root(uid)
 
 
@@ -4355,6 +4384,7 @@ async def anchor_replace_with_photo(uid: int, caption: str, kb: InlineKeyboardMa
     anchor_id = runtime.get("anchor")
     kb_signature = inline_kb_signature(kb)
     media = InputMediaPhoto(InputFile(photo_path), caption=caption, parse_mode="HTML")
+    runtime["anchor_context"] = "custom"
 
     if anchor_id and runtime.get("anchor_mode") == "photo":
         try:
@@ -4431,6 +4461,36 @@ async def _delete_message_safe(chat_id: Optional[int], message_id: Optional[int]
         await bot.delete_message(chat_id, message_id)
     except Exception:
         pass
+
+
+def _warning_bucket(uid: int) -> Dict[str, Tuple[int, int]]:
+    runtime = users_runtime.setdefault(uid, {})
+    return runtime.setdefault("warnings", {})
+
+
+async def warning_clear(uid: int, key: str) -> None:
+    bucket = _warning_bucket(uid)
+    info = bucket.pop(key, None)
+    if isinstance(info, (list, tuple)) and len(info) == 2:
+        await _delete_message_safe(info[0], info[1])
+
+
+async def warning_remember(uid: int, key: str, msg: types.Message) -> None:
+    if not msg:
+        return
+    bucket = _warning_bucket(uid)
+    bucket[key] = (msg.chat.id, msg.message_id)
+
+
+def warning_forget(uid: int, key: str) -> None:
+    bucket = _warning_bucket(uid)
+    bucket.pop(key, None)
+
+
+def kb_warning_close(uid: int, key: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "WARN_BTN_CLOSE"), callback_data=f"warn_close:{key}"))
+    return kb
 
 
 async def remove_preview_message(state: FSMContext):
@@ -4741,10 +4801,17 @@ async def onb_first_name(m: types.Message, state: FSMContext):
         pass
     normalized = normalize_person_name(raw)
     if not normalized:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRSTNAME_ERROR"))
+        await warning_clear(uid, "register")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "REGISTER_FIRSTNAME_ERROR"),
+            reply_markup=kb_warning_close(uid, "register"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "register", warn)
         return
     prettified = beautify_name(normalized) or normalized
+    await warning_clear(uid, "register")
     data = await state.get_data()
     prompt = data.get("last_prompt")
     if prompt:
@@ -4766,10 +4833,17 @@ async def onb_last_name(m: types.Message, state: FSMContext):
         pass
     normalized = normalize_person_name(raw)
     if not normalized:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_SURNAME_ERROR"))
+        await warning_clear(uid, "register")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "REGISTER_SURNAME_ERROR"),
+            reply_markup=kb_warning_close(uid, "register"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "register", warn)
         return
     prettified = beautify_name(normalized) or normalized
+    await warning_clear(uid, "register")
     data = await state.get_data()
     prompt = data.get("last_prompt")
     if prompt:
@@ -4799,10 +4873,17 @@ async def onb_middle_name(m: types.Message, state: FSMContext):
     else:
         normalized = normalize_person_name(raw)
         if not normalized:
-            warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PATRONYMIC_ERROR"))
+            await warning_clear(uid, "register")
+            warn = await bot.send_message(
+                m.chat.id,
+                tr(uid, "REGISTER_PATRONYMIC_ERROR"),
+                reply_markup=kb_warning_close(uid, "register"),
+            )
             flow_track(uid, warn)
+            await warning_remember(uid, "register", warn)
             return
         stored = beautify_name(normalized) or normalized
+    await warning_clear(uid, "register")
     data = await state.get_data()
     prompt = data.get("last_prompt")
     if prompt:
@@ -4824,9 +4905,16 @@ async def onb_birthdate(m: types.Message, state: FSMContext):
         pass
     birth = parse_birthdate_text(raw)
     if not birth:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_ERROR"))
+        await warning_clear(uid, "register")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "REGISTER_BIRTHDATE_ERROR"),
+            reply_markup=kb_warning_close(uid, "register"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "register", warn)
         return
+    await warning_clear(uid, "register")
     data = await state.get_data()
     prompt = data.get("last_prompt")
     if prompt:
@@ -4845,8 +4933,14 @@ async def onb_region_text(m: types.Message, state: FSMContext):
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_NEED_BUTTON"))
+    await warning_clear(uid, "register")
+    warn = await bot.send_message(
+        m.chat.id,
+        tr(uid, "REGISTER_REGION_NEED_BUTTON"),
+        reply_markup=kb_warning_close(uid, "register"),
+    )
     flow_track(uid, warn)
+    await warning_remember(uid, "register", warn)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_region"), state=OnboardFSM.region)
@@ -4885,6 +4979,7 @@ async def onb_region_pick(c: types.CallbackQuery, state: FSMContext):
             await c.answer()
             return
         region = UKRAINE_REGIONS[idx]
+        await warning_clear(uid, "register")
         await state.update_data(region=region)
         button_text = registration_button_label(uid)
         text = tr(uid, "REGISTER_REGION_SELECTED", region=h(region), button=button_text)
@@ -4908,6 +5003,7 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext):
     if not prof:
         prof = ensure_user(uid, runtime.get("tg", {}))
     code = (prof or {}).get("bsu", "—")
+    await warning_clear(uid, "register")
     await state.finish()
     ok = await bot.send_message(chat_id, tr(uid, "START_PROFILE_SAVED", code=h(code)), reply_markup=ReplyKeyboardRemove())
     flow_track(uid, ok)
@@ -4924,9 +5020,16 @@ async def onb_phone_contact(m: types.Message, state: FSMContext):
     except Exception:
         pass
     if not phone:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_ERROR"))
+        await warning_clear(uid, "register")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "REGISTER_PHONE_ERROR"),
+            reply_markup=kb_warning_close(uid, "register"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "register", warn)
         return
+    await warning_clear(uid, "register")
     data = await state.get_data()
     prompt = data.get("last_prompt")
     if prompt:
@@ -4963,11 +5066,14 @@ async def onb_phone_text_wrong(m: types.Message, state: FSMContext):
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
-    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_PROMPT"), reply_markup=kb)
+    await warning_clear(uid, "register")
+    warn = await bot.send_message(
+        m.chat.id,
+        tr(uid, "REGISTER_PHONE_TEXT_PROMPT"),
+        reply_markup=kb_warning_close(uid, "register"),
+    )
     flow_track(uid, warn)
-    await state.update_data(phone_prompt=(warn.chat.id, warn.message_id))
+    await warning_remember(uid, "register", warn)
 
 
 @dp.message_handler(state=OnboardFSM.photo, content_types=ContentType.PHOTO)
@@ -4980,11 +5086,18 @@ async def onb_photo_upload(m: types.Message, state: FSMContext):
         pass
     filename = await store_profile_photo(uid, m.photo[-1])
     if not filename:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_INVALID"))
+        await warning_clear(uid, "register")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "REGISTER_PHOTO_INVALID"),
+            reply_markup=kb_warning_close(uid, "register"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "register", warn)
         return
     runtime = users_runtime.setdefault(uid, {})
     ensure_user(uid, runtime.get("tg", {}), profile_photo=filename)
+    await warning_clear(uid, "register")
     prompt = data.get("last_prompt")
     if prompt:
         await _delete_message_safe(prompt[0], prompt[1])
@@ -5000,8 +5113,14 @@ async def onb_photo_unexpected(m: types.Message, state: FSMContext):
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_INVALID"))
+    await warning_clear(uid, "register")
+    warn = await bot.send_message(
+        m.chat.id,
+        tr(uid, "REGISTER_PHOTO_INVALID"),
+        reply_markup=kb_warning_close(uid, "register"),
+    )
     flow_track(uid, warn)
+    await warning_remember(uid, "register", warn)
 
 
 @dp.callback_query_handler(lambda c: c.data == "reg_photo_skip", state=OnboardFSM.photo)
@@ -5031,6 +5150,7 @@ async def profile_edit_menu_open(c: types.CallbackQuery, state: FSMContext):
     runtime = _profile_runtime(uid, c.message.chat.id)
     runtime["profile_edit_mode"] = True
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_show(uid, chat_id=c.message.chat.id, editing=True)
     await c.answer()
 
@@ -5042,6 +5162,7 @@ async def profile_edit_menu_close(c: types.CallbackQuery, state: FSMContext):
     runtime["profile_edit_mode"] = False
     runtime["profile_show_photo"] = False
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_show(uid, chat_id=c.message.chat.id, show_photo=False, editing=False)
     await c.answer()
 
@@ -5051,6 +5172,7 @@ async def profile_edit_last_name_prompt(c: types.CallbackQuery, state: FSMContex
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_last_name.set()
     await c.answer()
@@ -5061,6 +5183,7 @@ async def profile_edit_first_name_prompt(c: types.CallbackQuery, state: FSMConte
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_first_name.set()
     await c.answer()
@@ -5071,6 +5194,7 @@ async def profile_edit_middle_name_prompt(c: types.CallbackQuery, state: FSMCont
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_middle_name.set()
     await c.answer()
@@ -5081,6 +5205,7 @@ async def profile_edit_birthdate_prompt(c: types.CallbackQuery, state: FSMContex
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_birthdate.set()
     await c.answer()
@@ -5091,6 +5216,7 @@ async def profile_edit_phone_prompt(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
     kb.add(KeyboardButton(tr(uid, "PROFILE_BTN_CANCEL_EDIT")))
@@ -5104,6 +5230,7 @@ async def profile_edit_photo_prompt(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_photo.set()
     await c.answer()
@@ -5114,6 +5241,7 @@ async def profile_edit_cancel(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     await profile_show(uid, chat_id=c.message.chat.id)
     await c.answer(tr(uid, "PROFILE_UPDATE_CANCELLED"))
 
@@ -5123,6 +5251,7 @@ async def profile_edit_region_prompt(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
+    await warning_clear(uid, "profile")
     msg = await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_REGION_PROMPT"),
                                     reply_markup=kb_region_prompt(uid, "profile_region", include_back=True))
     await ProfileEditFSM.waiting_region.set()
@@ -5146,6 +5275,7 @@ async def profile_photo_remove(c: types.CallbackQuery, state: FSMContext):
         profile["profile_photo"] = {}
         save_user(profile)
     runtime["profile_show_photo"] = False
+    await warning_clear(uid, "profile")
     await profile_show(uid, chat_id=c.message.chat.id, show_photo=False)
     notice = await bot.send_message(c.message.chat.id, tr(uid, "PROFILE_PHOTO_REMOVED"), reply_markup=ReplyKeyboardRemove())
     flow_track(uid, notice)
@@ -5199,6 +5329,7 @@ async def profile_region_picker(c: types.CallbackQuery, state: FSMContext):
         if prompt:
             await _delete_message_safe(prompt[0], prompt[1])
         await state.finish()
+        await warning_clear(uid, "profile")
         await profile_show(uid, chat_id=c.message.chat.id)
         await c.answer()
         return
@@ -5213,6 +5344,7 @@ async def profile_region_picker(c: types.CallbackQuery, state: FSMContext):
             return
         region = UKRAINE_REGIONS[idx]
         runtime = users_runtime.setdefault(uid, {})
+        await warning_clear(uid, "profile")
         ensure_user(uid, runtime.get("tg", {}), region=region)
         if prompt:
             try:
@@ -5237,10 +5369,17 @@ async def profile_edit_last_name_set(m: types.Message, state: FSMContext):
         pass
     normalized = normalize_person_name(raw)
     if not normalized:
-        warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_ERROR_LAST_NAME"))
+        await warning_clear(uid, "profile")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "PROFILE_ERROR_LAST_NAME"),
+            reply_markup=kb_warning_close(uid, "profile"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "profile", warn)
         return
     prettified = beautify_name(normalized) or normalized
+    await warning_clear(uid, "profile")
     ensure_user(uid, runtime.get("tg", {}), last_name=prettified)
     await state.finish()
     await profile_show(uid, chat_id=m.chat.id)
@@ -5259,10 +5398,17 @@ async def profile_edit_first_name_set(m: types.Message, state: FSMContext):
         pass
     normalized = normalize_person_name(raw)
     if not normalized:
-        warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_ERROR_FIRST_NAME"))
+        await warning_clear(uid, "profile")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "PROFILE_ERROR_FIRST_NAME"),
+            reply_markup=kb_warning_close(uid, "profile"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "profile", warn)
         return
     prettified = beautify_name(normalized) or normalized
+    await warning_clear(uid, "profile")
     ensure_user(uid, runtime.get("tg", {}), first_name=prettified)
     await state.finish()
     await profile_show(uid, chat_id=m.chat.id)
@@ -5284,10 +5430,17 @@ async def profile_edit_middle_name_set(m: types.Message, state: FSMContext):
     else:
         normalized = normalize_person_name(raw)
         if not normalized:
-            warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_ERROR_MIDDLE_NAME"))
+            await warning_clear(uid, "profile")
+            warn = await bot.send_message(
+                m.chat.id,
+                tr(uid, "PROFILE_ERROR_MIDDLE_NAME"),
+                reply_markup=kb_warning_close(uid, "profile"),
+            )
             flow_track(uid, warn)
+            await warning_remember(uid, "profile", warn)
             return
         stored = beautify_name(normalized) or normalized
+    await warning_clear(uid, "profile")
     ensure_user(uid, runtime.get("tg", {}), middle_name=stored)
     await state.finish()
     await profile_show(uid, chat_id=m.chat.id)
@@ -5306,9 +5459,16 @@ async def profile_edit_birthdate_set(m: types.Message, state: FSMContext):
         pass
     birth = parse_birthdate_text(raw)
     if not birth:
-        warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_ERROR_BIRTHDATE"))
+        await warning_clear(uid, "profile")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "PROFILE_ERROR_BIRTHDATE"),
+            reply_markup=kb_warning_close(uid, "profile"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "profile", warn)
         return
+    await warning_clear(uid, "profile")
     ensure_user(uid, runtime.get("tg", {}), birth_date=birth.strftime("%Y-%m-%d"))
     await state.finish()
     await profile_show(uid, chat_id=m.chat.id)
@@ -5326,9 +5486,16 @@ async def profile_edit_phone_set(m: types.Message, state: FSMContext):
     except Exception:
         pass
     if not phone:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_ERROR"))
+        await warning_clear(uid, "profile")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "REGISTER_PHONE_ERROR"),
+            reply_markup=kb_warning_close(uid, "profile"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "profile", warn)
         return
+    await warning_clear(uid, "profile")
     ensure_user(uid, runtime.get("tg", {}), phone=phone)
     await state.finish()
     await profile_show(uid, chat_id=m.chat.id)
@@ -5344,18 +5511,23 @@ async def profile_edit_phone_text(m: types.Message, state: FSMContext):
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
     cancel_text = tr(uid, "PROFILE_BTN_CANCEL_EDIT")
     text = (m.text or "").strip()
     if text == cancel_text:
         await state.finish()
+        await warning_clear(uid, "profile")
         await profile_show(uid, chat_id=m.chat.id)
         notice = await bot.send_message(m.chat.id, tr(uid, "PROFILE_UPDATE_CANCELLED"), reply_markup=ReplyKeyboardRemove())
         flow_track(uid, notice)
         return
-    warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_PHONE_TEXT_PROMPT"), reply_markup=kb)
+    await warning_clear(uid, "profile")
+    warn = await bot.send_message(
+        m.chat.id,
+        tr(uid, "PROFILE_PHONE_TEXT_PROMPT"),
+        reply_markup=kb_warning_close(uid, "profile"),
+    )
     flow_track(uid, warn)
+    await warning_remember(uid, "profile", warn)
 
 
 @dp.message_handler(state=ProfileEditFSM.waiting_photo, content_types=ContentType.PHOTO)
@@ -5368,10 +5540,17 @@ async def profile_edit_photo_set(m: types.Message, state: FSMContext):
         pass
     filename = await store_profile_photo(uid, m.photo[-1])
     if not filename:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_INVALID"))
+        await warning_clear(uid, "profile")
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "REGISTER_PHOTO_INVALID"),
+            reply_markup=kb_warning_close(uid, "profile"),
+        )
         flow_track(uid, warn)
+        await warning_remember(uid, "profile", warn)
         return
     ensure_user(uid, runtime.get("tg", {}), profile_photo=filename)
+    await warning_clear(uid, "profile")
     await state.finish()
     await profile_show(uid, chat_id=m.chat.id)
     notice = await bot.send_message(m.chat.id, tr(uid, "PROFILE_PHOTO_UPDATED"), reply_markup=ReplyKeyboardRemove())
@@ -5386,8 +5565,14 @@ async def profile_edit_photo_invalid(m: types.Message, state: FSMContext):
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_INVALID"))
+    await warning_clear(uid, "profile")
+    warn = await bot.send_message(
+        m.chat.id,
+        tr(uid, "REGISTER_PHOTO_INVALID"),
+        reply_markup=kb_warning_close(uid, "profile"),
+    )
     flow_track(uid, warn)
+    await warning_remember(uid, "profile", warn)
 
 
 @dp.message_handler(state=ProfileEditFSM.waiting_region, content_types=ContentType.ANY)
@@ -5398,8 +5583,14 @@ async def profile_edit_region_text(m: types.Message, state: FSMContext):
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_NEED_BUTTON"))
+    await warning_clear(uid, "profile")
+    warn = await bot.send_message(
+        m.chat.id,
+        tr(uid, "REGISTER_REGION_NEED_BUTTON"),
+        reply_markup=kb_warning_close(uid, "profile"),
+    )
     flow_track(uid, warn)
+    await warning_remember(uid, "profile", warn)
 
 
 # ========================== ADMIN PROMOTE ==========================
@@ -10660,6 +10851,19 @@ async def proj_finish_do(c: types.CallbackQuery):
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
             except Exception: pass
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("warn_close:"))
+async def warning_close_callback(c: types.CallbackQuery):
+    uid = c.from_user.id
+    key = c.data.split(":", 1)[1] if ":" in c.data else ""
+    if key:
+        warning_forget(uid, key)
+    try:
+        await bot.delete_message(c.message.chat.id, c.message.message_id)
+    except Exception:
+        pass
+    await c.answer(tr(uid, "WARN_MESSAGE_CLOSED"))
 
 
 @dp.callback_query_handler(lambda c: c.data == "broadcast_close")
