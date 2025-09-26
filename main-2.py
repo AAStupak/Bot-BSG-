@@ -4227,30 +4227,6 @@ async def alerts_history_view(c: types.CallbackQuery):
         flow_track(uid, msg)
         await c.answer()
         return
-    lang = resolve_lang(uid)
-    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
-    labels = alerts_field_labels(lang)
-    indent = "&nbsp;&nbsp;&nbsp;"
-    lines = [tr(uid, "ALERTS_HISTORY_HEADER", count=len(events))]
-    for idx, event in enumerate(events[:10], start=1):
-        region_display = alerts_display_region_name(event.get("region") or event.get("region_display") or "", lang)
-        start_text = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
-        end_text = alerts_format_timestamp(event.get("ended_at")) if event.get("ended_at") else labels["status_active"]
-        type_text = alerts_type_label(event, lang)
-        severity_text = alerts_severity_label(event, lang)
-        ended = bool(event.get("ended_at"))
-        status_key = "standdown" if ended else "alert"
-        status_icon = "🟡" if ended else "🔴"
-        summary_parts = [status_labels[status_key], type_text]
-        if severity_text:
-            summary_parts.append(severity_text)
-        lines.append(f"{idx}. {status_icon} <b>{h(region_display)}</b> — {h(' • '.join(summary_parts))}")
-        lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
-        if ended:
-            lines.append(f"{indent}🛑 {h(labels['ended'])}: {h(end_text)}")
-    history_text = "\n".join(lines)
-    msg = await bot.send_message(chat_id, history_text, disable_web_page_preview=True)
-    flow_track(uid, msg)
     await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
     await c.answer()
 
