@@ -41,6 +41,7 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 """
 
 import os, sys, json, random, re, base64, hashlib, secrets, asyncio
+import unicodedata
 from html import escape as html_escape
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, List, Tuple, Any, Set, Union
@@ -5744,17 +5745,37 @@ def alerts_overview_region_label(region: str, lang: str) -> str:
     return trimmed or display
 
 
+def alerts_display_width(text: str) -> int:
+    """Estimate visual column width for aligning overview rows."""
+    if not text:
+        return 0
+    width = 0
+    for char in str(text):
+        if unicodedata.combining(char):
+            continue
+        if char in ("\u00A0", "\u202F", "\u2007"):
+            width += 1
+            continue
+        east_asian = unicodedata.east_asian_width(char)
+        if east_asian in ("F", "W"):
+            width += 2
+        else:
+            width += 1
+    return width
+
+
 def alerts_regions_overview_text(uid: int) -> str:
     lang = resolve_lang(uid)
     status_labels = ALERTS_OVERVIEW_STATUS_TEXT.get(lang) or ALERTS_OVERVIEW_STATUS_TEXT[DEFAULT_LANG]
     fallback_status = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
     header = tr(uid, "ALERTS_OVERVIEW_HEADER")
     entries: List[Dict[str, Any]] = []
-    max_name_len = 0
+    max_name_width = 0
     for index, raw_region in enumerate(UKRAINE_REGIONS, start=1):
         canonical, active_event, last_event = alerts_region_snapshot(raw_region)
         display_name = alerts_overview_region_label(canonical, lang)
-        max_name_len = max(max_name_len, len(display_name))
+        name_width = alerts_display_width(display_name)
+        max_name_width = max(max_name_width, name_width)
         if active_event:
             status_text = (
                 status_labels.get("alert")
@@ -5781,6 +5802,7 @@ def alerts_regions_overview_text(uid: int) -> str:
                 "index": index,
                 "icon": icon,
                 "name": display_name,
+                "name_width": name_width,
                 "status": status_text,
                 "time": time_text,
             }
@@ -5789,7 +5811,10 @@ def alerts_regions_overview_text(uid: int) -> str:
     nbsp = "\u00A0"
     lines: List[str] = [header, ""]
     for entry in entries:
-        name_padding = max_name_len - len(entry["name"])
+        stored_width = entry.get("name_width")
+        if stored_width is None:
+            stored_width = alerts_display_width(entry["name"])
+        name_padding = max_name_width - stored_width
         padded_name = f"{h(entry['name'])}{nbsp * max(name_padding, 0)}"
         number = f"{entry['index']:2d}".replace(" ", nbsp)
         status_text = h(entry["status"])
