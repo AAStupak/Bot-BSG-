@@ -167,6 +167,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🇺🇦 Aktywne alarmy: <b>{count}</b> obwodów",
         "ru": "🇺🇦 Активные тревоги: <b>{count}</b> областей",
     },
+    "ANCHOR_ALERT_PROJECT_HEADER": {
+        "uk": "📍 Поточний об'єкт тривог",
+        "en": "📍 Current alert object",
+        "de": "📍 Aktueller Alarm-Standort",
+        "pl": "📍 Bieżący obiekt alarmów",
+        "ru": "📍 Текущий объект тревоги",
+    },
+    "ANCHOR_ALERT_ACTIVE_HEADER": {
+        "uk": "🚨 Активні тривоги: <b>{count}</b>",
+        "en": "🚨 Active alerts: <b>{count}</b>",
+        "de": "🚨 Aktive Alarme: <b>{count}</b>",
+        "pl": "🚨 Aktywne alarmy: <b>{count}</b>",
+        "ru": "🚨 Активные тревоги: <b>{count}</b>",
+    },
     "ANCHOR_ALERT_ACTIVE": {
         "uk": "🚨 Тривога у <b>{region}</b> • {type} • від {start} • {severity}",
         "en": "🚨 Alert for <b>{region}</b> oblast • {type} • since {start} • {severity}",
@@ -4351,6 +4365,14 @@ async def alerts_push_actions(c: types.CallbackQuery):
     action, token = parts[1], parts[2]
     entry = alerts_push_get(uid, token)
     if not entry:
+        if action == "delete":
+            alerts_push_remove(uid, token)
+            try:
+                await bot.delete_message(c.message.chat.id, c.message.message_id)
+            except Exception:
+                pass
+            await c.answer()
+            return
         await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
         return
     event_id = entry.get("event_id")
@@ -6706,7 +6728,7 @@ def alerts_region_active_total(region_key: str) -> int:
     return count
 
 
-def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
+def alerts_anchor_region_block(uid: int, region_key: str, include_standdown: bool = False) -> Optional[str]:
     lang = resolve_lang(uid)
     canonical, active_event, last_event = alerts_region_snapshot(region_key)
     display_region = alerts_display_region_name(canonical, lang)
@@ -6730,56 +6752,63 @@ def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
         if details:
             line += " • " + " • ".join(h(part) for part in details if part)
         return line
-    if last_event and last_event.get("ended_at"):
-        ended_dt = alerts_parse_datetime(last_event.get("ended_at"))
-        now_dt = alerts_now()
-        if ended_dt and (now_dt - ended_dt) <= timedelta(seconds=ALERTS_STANDDOWN_DISPLAY_WINDOW):
-            type_text = alerts_type_label(last_event, lang)
-            severity_text = alerts_severity_label(last_event, lang)
-            start_clock = alerts_format_clock(last_event.get("started_at"))
-            end_clock = alerts_format_clock(last_event.get("ended_at"))
-            extra = last_event.get("extra") or {}
-            cause_text = extra.get("cause") or ""
-            details: List[str] = []
-            if type_text:
-                details.append(type_text)
-            if cause_text:
-                details.append(cause_text)
-            if severity_text:
-                details.append(severity_text)
-            time_segment = ""
-            if start_clock and end_clock:
-                time_segment = f"{start_clock} → {end_clock}"
-            elif start_clock:
-                time_segment = start_clock
-            elif end_clock:
-                time_segment = end_clock
-            if time_segment:
-                details.append(time_segment)
-            line = f"🟡 <b>{h(display_region)}</b> — {h(status_labels['standdown'])}"
-            if details:
-                line += " • " + " • ".join(h(part) for part in details if part)
-            return line
+    if include_standdown:
+        type_text = alerts_type_label(last_event, lang) if last_event else ""
+        severity_text = alerts_severity_label(last_event, lang) if last_event else ""
+        extra = (last_event or {}).get("extra") or {}
+        cause_text = extra.get("cause") or ""
+        end_clock = alerts_format_clock((last_event or {}).get("ended_at"))
+        if not end_clock and last_event:
+            end_clock = alerts_format_clock(last_event.get("updated_at"))
+        details: List[str] = []
+        if type_text:
+            details.append(type_text)
+        if cause_text:
+            details.append(cause_text)
+        if severity_text:
+            details.append(severity_text)
+        if end_clock:
+            details.append(end_clock)
+        line = f"🟢 <b>{h(display_region)}</b> — {h(status_labels['standdown'])}"
+        if details:
+            line += " • " + " • ".join(h(part) for part in details if part)
+        return line
     return ""
 
 
 def alerts_anchor_section(uid: int) -> str:
-    summary = alerts_active_summary_line(uid)
-    regions: List[str] = []
-    for region in alerts_user_regions(uid):
-        canonical = alerts_canonical_region(region) or region
-        if canonical and canonical not in regions:
-            regions.append(canonical)
-    lines: List[str] = [summary] if summary else []
-    for region in regions:
-        block = alerts_anchor_region_block(uid, region)
+    lines: List[str] = []
+
+    project_region = alerts_project_region()
+    if project_region:
+        project_header = tr(uid, "ANCHOR_ALERT_PROJECT_HEADER")
+        project_block = alerts_anchor_region_block(uid, project_region, include_standdown=True)
+        if project_header:
+            lines.append(project_header)
+        if project_block:
+            lines.append(project_block)
+
+    active_events = alerts_collect_active_for_user(uid)
+    active_lines: List[str] = []
+    seen: Set[str] = set()
+    for event in active_events:
+        region_value = alerts_canonical_region(event.get("region") or event.get("region_display")) or event.get("region") or ""
+        if not region_value:
+            continue
+        if region_value in seen:
+            continue
+        seen.add(region_value)
+        block = alerts_anchor_region_block(uid, region_value, include_standdown=False)
         if block:
-            lines.append(block)
-    if not lines:
-        return ""
-    head = lines[0]
-    tail = lines[1:4]
-    return "\n".join([head] + tail)
+            active_lines.append(block)
+    if active_events:
+        if lines:
+            lines.append("")
+        lines.append(tr(uid, "ANCHOR_ALERT_ACTIVE_HEADER", count=len(active_events)))
+        lines.extend(active_lines)
+
+    filtered = [line for line in lines if line]
+    return "\n".join(filtered)
 
 
 def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
