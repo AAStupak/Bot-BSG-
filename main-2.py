@@ -631,11 +631,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
     },
 
     "LANGUAGE_PROMPT": {
-        "uk": "🌐 Оберіть мову спілкування з ботом:",
-        "en": "🌐 Choose the language you prefer to use with the bot:",
-        "de": "🌐 Wählen Sie die Sprache für die Kommunikation mit dem Bot:",
-        "pl": "🌐 Wybierz język komunikacji z botem:",
-        "ru": "🌐 Выберите язык общения с ботом:",
+        "uk": "🌐 Оберіть мову, якою зручно працювати з ботом.",
+        "en": "🌐 Choose the language you would like to use with the bot.",
+        "de": "🌐 Wählen Sie die Sprache, in der Sie mit dem Bot arbeiten möchten.",
+        "pl": "🌐 Wybierz język, w którym chcesz korzystać z bota.",
+        "ru": "🌐 Выберите язык, на котором вам удобно общаться с ботом.",
     },
     "LANGUAGE_SELECTED": {
         "uk": "✅ Мову змінено на: {language}.",
@@ -643,6 +643,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "✅ Sprache geändert zu: {language}.",
         "pl": "✅ Zmieniono język na: {language}.",
         "ru": "✅ Язык переключён на: {language}.",
+    },
+    "LANGUAGE_SELECTED_START": {
+        "uk": "✅ Мову перемкнено на: <b>{language}</b>. Натисніть «DALL·E», щоб продовжити налаштування.",
+        "en": "✅ Language set to <b>{language}</b>. Tap “DALL·E” to continue.",
+        "de": "✅ Sprache wurde auf <b>{language}</b> umgestellt. Tippen Sie auf „DALL·E“, um fortzufahren.",
+        "pl": "✅ Język ustawiono na <b>{language}</b>. Kliknij „DALL·E”, aby kontynuować.",
+        "ru": "✅ Язык переключён на <b>{language}</b>. Нажмите «DALL·E», чтобы продолжить настройку.",
     },
     "SETTINGS_TITLE": {
         "uk": "⚙️ <b>Налаштування</b>\nОберіть дію:",
@@ -665,48 +672,33 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "⚠️ Nieznane polecenie. Skorzystaj z menu poniżej.",
         "ru": "⚠️ Команда не распознана. Используйте меню ниже.",
     },
-    "BTN_NEXT": {
-        "uk": "➡️ ДАЛІ",
-        "en": "➡️ NEXT",
-        "de": "➡️ WEITER",
-        "pl": "➡️ DALEJ",
-        "ru": "➡️ ДАЛЕЕ",
+    "INTRO_WELCOME": {
+        "uk": "👋 <b>Привіт, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі <b>Bot.BSG</b>. Тут завжди під рукою:\n1. проєкти з хронологією та завданнями;\n2. сховище даних про об'єкти;\n3. оперативні сповіщення про тривоги;\n4. чеки, фінанси та службові документи.\n\nЩоб дізнатися, як пройти реєстрацію, натисніть «DALL·E».",
+        "en": "👋 <b>Hello, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the <b>Bot.BSG</b> workspace. Everything you need stays within reach:\n1. project timelines and assignments;\n2. structured storage for facility data;\n3. real-time alert updates;\n4. receipts, finance tools, and documentation.\n\nPress “DALL·E” to learn how the registration works.",
+        "de": "👋 <b>Hallo, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Arbeitsbereich <b>Bot.BSG</b>. Hier haben Sie alles im Blick:\n1. Projektchroniken und Aufgaben;\n2. strukturierte Ablage der Objektdaten;\n3. aktuelle Alarmmeldungen in Echtzeit;\n4. Belege, Finanzübersichten und Unterlagen.\n\nTippen Sie auf „DALL·E“, um den Registrierungsablauf kennenzulernen.",
+        "pl": "👋 <b>Cześć, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nWitamy w przestrzeni roboczej <b>Bot.BSG</b>. Wszystko masz pod ręką:\n1. oś czasu projektów i zadania;\n2. uporządkowane przechowywanie danych o obiektach;\n3. bieżące powiadomienia o alertach;\n4. paragony, finanse i dokumenty.\n\nKliknij „DALL·E”, aby zobaczyć, jak wygląda rejestracja.",
+        "ru": "👋 <b>Привет, {name}!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве <b>Bot.BSG</b>. Здесь всё под рукой:\n1. проекты с их хронологией и задачами;\n2. хранение данных об объектах;\n3. оперативные уведомления о тревогах;\n4. чеки, финансы и служебные документы.\n\nНажмите «DALL·E», чтобы узнать, как пройти регистрацию.",
     },
-    "INTRO_GREETING_NEW": {
-        "uk": "👋 <b>Вітаю, колего!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі Bot.BSG. Тут зберігаємо чеки, оформлюємо виплати та тримаємо документи проєкту під рукою.\n\nНатисніть «ДАЛІ», щоб продовжити.",
-        "en": "👋 <b>Hello, teammate!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the Bot.BSG workspace. Here we store receipts, track payouts, and keep project documents handy.\n\nPress “NEXT” to continue.",
-        "de": "👋 <b>Hallo, Kollegin oder Kollege!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Bot.BSG-Arbeitsbereich. Hier speichern wir Belege, verwalten Auszahlungen und behalten Projektdokumente griffbereit.\n\nDrücken Sie „WEITER“, um fortzufahren.",
-        "pl": "👋 <b>Witaj, współpracowniku!</b>\n━━━━━━━━━━━━━━━━━━\nTo przestrzeń robocza Bot.BSG. Przechowujemy tu paragony, obsługujemy wypłaty i mamy dokumenty projektu pod ręką.\n\nKliknij „DALEJ”, aby kontynuować.",
-        "ru": "👋 <b>Привет, коллега!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве Bot.BSG. Здесь мы храним чеки, оформляем выплаты и держим документы проекта под рукой.\n\nНажмите «ДАЛЕЕ», чтобы продолжить.",
+    "INTRO_WELCOME_FALLBACK": {
+        "uk": "друже",
+        "en": "friend",
+        "de": "Freund", 
+        "pl": "przyjacielu",
+        "ru": "друг",
     },
-    "INTRO_GREETING_REGISTERED": {
-        "uk": "👋 <b>Радий вітати знову!</b>\n━━━━━━━━━━━━━━━━━━\nВи можете одразу перейти до головного меню, щоб працювати з розділами бота.\n\nНатисніть «ДАЛІ», аби перейти до основних дій.",
-        "en": "👋 <b>Welcome back!</b>\n━━━━━━━━━━━━━━━━━━\nYou can jump straight to the main menu to work with the bot’s sections.\n\nPress “NEXT” to open the main actions.",
-        "de": "👋 <b>Willkommen zurück!</b>\n━━━━━━━━━━━━━━━━━━\nSie können direkt ins Hauptmenü wechseln, um mit den Bereichen des Bots zu arbeiten.\n\nDrücken Sie „WEITER“, um die wichtigsten Aktionen zu öffnen.",
-        "pl": "👋 <b>Miło znów Cię widzieć!</b>\n━━━━━━━━━━━━━━━━━━\nMożesz od razu przejść do menu głównego i korzystać z modułów bota.\n\nKliknij „DALEJ”, aby wyświetlić najważniejsze opcje.",
-        "ru": "👋 <b>Рад снова видеть!</b>\n━━━━━━━━━━━━━━━━━━\nВы можете сразу перейти в главное меню и работать с разделами бота.\n\nНажмите «ДАЛЕЕ», чтобы открыть основные действия.",
+    "INTRO_REGISTRATION_GUIDE": {
+        "uk": "📝 <b>Як пройти реєстрацію</b>\n━━━━━━━━━━━━━━━━━━\n1. Вкажіть своє ім'я без скорочень.\n2. Запишіть прізвище так, як у документі.\n3. Додайте по батькові або напишіть, що його немає.\n4. Укажіть дату народження у форматі ДД.ММ.РРРР.\n5. Оберіть область проживання через кнопку «📍 Обрати область».\n6. Поділіться номером телефону кнопкою «📱 Надіслати номер».\n7. Завантажте фото у форматі “як у паспорті” або додайте його пізніше.\n\nГотові? Натисніть «DALL·E», щоб почати.",
+        "en": "📝 <b>How to complete registration</b>\n━━━━━━━━━━━━━━━━━━\n1. Enter your first name without abbreviations.\n2. Provide your last name exactly as it appears in your documents.\n3. Add your patronymic / middle name or write that you do not have one.\n4. Specify your date of birth in the DD.MM.YYYY format.\n5. Choose your region via the “📍 Select region” button.\n6. Share your phone number using the “📱 Share phone number” button.\n7. Upload a passport-style portrait or add it later.\n\nReady? Tap “DALL·E” to begin.",
+        "de": "📝 <b>So schließen Sie die Registrierung ab</b>\n━━━━━━━━━━━━━━━━━━\n1. Geben Sie Ihren Vornamen ohne Abkürzungen ein.\n2. Tragen Sie Ihren Nachnamen genau wie im Ausweis ein.\n3. Ergänzen Sie den zweiten Namen oder schreiben Sie, dass keiner vorhanden ist.\n4. Geben Sie Ihr Geburtsdatum im Format TT.MM.JJJJ an.\n5. Wählen Sie Ihre Region über die Schaltfläche „📍 Region wählen“.\n6. Teilen Sie Ihre Telefonnummer über „📱 Telefonnummer senden“.\n7. Laden Sie ein Porträt im Passformat hoch oder fügen Sie es später hinzu.\n\nBereit? Tippen Sie auf „DALL·E“, um zu starten.",
+        "pl": "📝 <b>Jak przejść rejestrację</b>\n━━━━━━━━━━━━━━━━━━\n1. Podaj swoje imię bez skrótów.\n2. Wpisz nazwisko dokładnie tak, jak w dokumencie.\n3. Dodaj drugie imię lub napisz, że go nie masz.\n4. Uzupełnij datę urodzenia w formacie DD.MM.RRRR.\n5. Wybierz region przyciskiem „📍 Wybierz region”.\n6. Udostępnij numer przyciskiem „📱 Wyślij numer”.\n7. Załaduj zdjęcie w stylu paszportowym albo zrób to później.\n\nGotowe? Kliknij „DALL·E”, aby rozpocząć.",
+        "ru": "📝 <b>Как пройти регистрацию</b>\n━━━━━━━━━━━━━━━━━━\n1. Укажите своё имя без сокращений.\n2. Запишите фамилию точно как в паспорте.\n3. Добавьте отчество или сообщите, что его нет.\n4. Введите дату рождения в формате ДД.ММ.ГГГГ.\n5. Выберите область через кнопку «📍 Выбрать область».\n6. Поделитесь телефоном кнопкой «📱 Отправить номер».\n7. Загрузите фото в паспортном стиле либо добавьте его позже.\n\nГотовы? Нажмите «DALL·E», чтобы начать.",
     },
-    "INTRO_REG_STEPS": {
-        "uk": "📝 <b>Як пройти реєстрацію</b>\n━━━━━━━━━━━━━━━━━━\n1️⃣ Послідовно введіть прізвище, ім'я та по батькові.\n2️⃣ Вкажіть дату народження у форматі ДД.ММ.РРРР.\n3️⃣ Натисніть «📍 Обрати область» та виберіть регіон.\n4️⃣ Поділіться номером телефону кнопкою «📱 Надіслати номер».\n5️⃣ За бажання додайте фото (як у паспорті) або пропустіть цей крок.\n\nГотові? Натисніть «ДАЛІ» та почніть.",
-        "en": "📝 <b>Registration steps</b>\n━━━━━━━━━━━━━━━━━━\n1️⃣ Enter your last name, first name, and patronymic one by one.\n2️⃣ Provide your date of birth in the DD.MM.YYYY format.\n3️⃣ Tap “📍 Choose region” and select your oblast.\n4️⃣ Share your phone number via the “📱 Share phone number” button.\n5️⃣ Upload a passport-style photo or press “Skip”.\n\nReady? Press “NEXT” to begin.",
-        "de": "📝 <b>So funktioniert die Registrierung</b>\n━━━━━━━━━━━━━━━━━━\n1️⃣ Geben Sie nacheinander Nachname, Vorname und Vatersname ein.\n2️⃣ Tragen Sie Ihr Geburtsdatum im Format TT.MM.JJJJ ein.\n3️⃣ Tippen Sie auf „📍 Region wählen“ und wählen Sie Ihr Gebiet aus.\n4️⃣ Teilen Sie Ihre Telefonnummer über die Schaltfläche „📱 Telefonnummer senden“.\n5️⃣ Laden Sie ein Passfoto hoch oder tippen Sie auf „Überspringen“.\n\nBereit? Drücken Sie „WEITER“ und starten Sie.",
-        "pl": "📝 <b>Jak przejść rejestrację</b>\n━━━━━━━━━━━━━━━━━━\n1️⃣ Wpisz kolejno nazwisko, imię oraz drugie imię.\n2️⃣ Podaj datę urodzenia w formacie DD.MM.RRRR.\n3️⃣ Kliknij „📍 Wybierz region” i wskaż swój obwód.\n4️⃣ Udostępnij numer telefonu przyciskiem „📱 Wyślij numer”.\n5️⃣ Dodaj zdjęcie w stylu paszportowym lub naciśnij „Pomiń”.\n\nGotowy? Kliknij „DALEJ” i zacznij.",
-        "ru": "📝 <b>Как пройти регистрацию</b>\n━━━━━━━━━━━━━━━━━━\n1️⃣ Последовательно укажите фамилию, имя и отчество.\n2️⃣ Введите дату рождения в формате ДД.ММ.ГГГГ.\n3️⃣ Нажмите «📍 Выбрать область» и укажите регион.\n4️⃣ Поделитесь номером телефона кнопкой «📱 Отправить номер».\n5️⃣ При желании загрузите фото (как в паспорте) или нажмите «Пропустить».\n\nГотовы? Нажмите «ДАЛЕЕ» и начните.",
-    },
-
-    "INTRO_PROMPT_NAME": {
-        "uk": "📝 Введіть повне прізвище та ім'я одним повідомленням у форматі: Ім'я Прізвище По батькові.",
-        "en": "📝 Enter your full name in one message using the format: Firstname Lastname Middle name.",
-        "de": "📝 Geben Sie Ihren vollständigen Namen in einer Nachricht ein: Vorname Nachname zweiter Name.",
-        "pl": "📝 Wpisz pełne imię i nazwisko w jednej wiadomości w formacie: Imię Nazwisko Drugie imię.",
-        "ru": "📝 Введите полное ФИО одним сообщением в формате: Имя Фамилия Отчество.",
-    },
-    "INTRO_SECTIONS": {
-        "uk": "📋 <b>Ключові розділи</b>\n━━━━━━━━━━━━━━━━━━\n• «🧾 Чеки» — завантаження та історія документів.\n• «💵 Фінанси» — статистика, запити та підтвердження виплат.\n• «📑 Документи» — файли та інструкції щодо проєкту.\n\nНатисніть «ДАЛІ», щоб перейти до головного меню.",
-        "en": "📋 <b>Main sections</b>\n━━━━━━━━━━━━━━━━━━\n• “🧾 Receipts” — upload and history of documents.\n• “💵 Finance” — statistics, payout requests, and confirmations.\n• “📑 Documents” — project files and guidelines.\n\nPress “NEXT” to open the main menu.",
-        "de": "📋 <b>Wichtige Bereiche</b>\n━━━━━━━━━━━━━━━━━━\n• „🧾 Belege“ – Upload und Verlauf der Dokumente.\n• „💵 Finanzen“ – Statistiken, Auszahlungsanträge und Bestätigungen.\n• „📑 Dokumente“ – Projektunterlagen und Richtlinien.\n\nDrücken Sie „WEITER“, um das Hauptmenü zu öffnen.",
-        "pl": "📋 <b>Najważniejsze sekcje</b>\n━━━━━━━━━━━━━━━━━━\n• „🧾 Paragony” – wgrywanie i historia dokumentów.\n• „💵 Finanse” – statystyki, wnioski o wypłatę i potwierdzenia.\n• „📑 Dokumenty” – pliki i instrukcje projektowe.\n\nKliknij „DALEJ”, aby przejść do menu głównego.",
-        "ru": "📋 <b>Ключевые разделы</b>\n━━━━━━━━━━━━━━━━━━\n• «🧾 Чеки» — загрузка и история документов.\n• «💵 Финансы» — статистика, запросы и подтверждения выплат.\n• «📑 Документы» — файлы и инструкции по объекту.\n\nНажмите «ДАЛЕЕ», чтобы открыть главное меню.",
+    "INTRO_REGISTERED_BRIEF": {
+        "uk": "✅ Ви вже зареєстровані. Натисніть «DALL·E», щоб перейти до головного меню та продовжити роботу.",
+        "en": "✅ You are already registered. Tap “DALL·E” to open the main menu and continue working.",
+        "de": "✅ Sie sind bereits registriert. Tippen Sie auf „DALL·E“, um das Hauptmenü zu öffnen und weiterzuarbeiten.",
+        "pl": "✅ Rejestracja jest już zakończona. Kliknij „DALL·E”, aby przejść do menu głównego i kontynuować pracę.",
+        "ru": "✅ Вы уже зарегистрированы. Нажмите «DALL·E», чтобы открыть главное меню и продолжить работу.",
     },
     "REGISTER_NAME_ERROR": {
         "uk": "❗ Здається, бракує частини ПІБ. Будь ласка, вкажіть ім'я, прізвище та по батькові повністю.",
@@ -716,11 +708,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Похоже, не хватает части ФИО. Укажите имя, фамилию и отчество полностью.",
     },
     "REGISTER_SURNAME_PROMPT": {
-        "uk": "📝 Вкажіть своє <b>прізвище</b> повністю (як у паспорті).",
-        "en": "📝 Enter your <b>last name</b> exactly as in your documents.",
-        "de": "📝 Geben Sie Ihren <b>Nachnamen</b> vollständig so ein, wie er im Ausweis steht.",
-        "pl": "📝 Podaj swoje <b>nazwisko</b> dokładnie tak, jak w dokumencie.",
-        "ru": "📝 Укажите свою <b>фамилию</b> полностью (как в паспорте).",
+        "uk": "2. ✍️ <b>Вкажіть своє прізвище.</b>\nНапишіть повністю, як у паспорті.",
+        "en": "2. ✍️ <b>Enter your last name.</b>\nType it exactly as in your documents.",
+        "de": "2. ✍️ <b>Geben Sie Ihren Nachnamen an.</b>\nSchreiben Sie ihn so, wie er im Ausweis steht.",
+        "pl": "2. ✍️ <b>Podaj swoje nazwisko.</b>\nZapisz je dokładnie jak w dokumencie.",
+        "ru": "2. ✍️ <b>Укажите свою фамилию.</b>\nНапишите полностью, как в паспорте.",
     },
     "REGISTER_SURNAME_ERROR": {
         "uk": "❗ Перевірте прізвище: використовуйте лише букви, апостроф та дефіс.",
@@ -730,11 +722,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Проверьте фамилию: допускаются только буквы, апостроф и дефис.",
     },
     "REGISTER_FIRSTNAME_PROMPT": {
-        "uk": "📝 Тепер введіть своє <b>ім'я</b>.",
-        "en": "📝 Now enter your <b>first name</b>.",
-        "de": "📝 Geben Sie nun Ihren <b>Vornamen</b> ein.",
-        "pl": "📝 Teraz wpisz swoje <b>imię</b>.",
-        "ru": "📝 Теперь введите своё <b>имя</b>.",
+        "uk": "1. ✍️ <b>Вкажіть своє ім'я.</b>\nНапишіть без скорочень, як у паспорті.",
+        "en": "1. ✍️ <b>Enter your first name.</b>\nUse the full form, just like in your documents.",
+        "de": "1. ✍️ <b>Geben Sie Ihren Vornamen ein.</b>\nNutzen Sie die vollständige Schreibweise wie im Ausweis.",
+        "pl": "1. ✍️ <b>Podaj swoje imię.</b>\nUżyj pełnej formy, tak jak w dokumentach.",
+        "ru": "1. ✍️ <b>Укажите своё имя.</b>\nПишите полностью, без сокращений, как в документах.",
     },
     "REGISTER_FIRSTNAME_ERROR": {
         "uk": "❗ Перевірте ім'я: використовуйте лише букви.",
@@ -744,11 +736,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Проверьте имя: допускаются только буквы.",
     },
     "REGISTER_PATRONYMIC_PROMPT": {
-        "uk": "📝 Вкажіть <b>по батькові</b>. Якщо його немає — напишіть «Немає».",
-        "en": "📝 Enter your <b>patronymic / middle name</b>. If you do not have one, type “No”.",
-        "de": "📝 Geben Sie Ihren <b>zweiten Namen</b> ein. Falls keiner vorhanden ist, schreiben Sie „Keiner“.",
-        "pl": "📝 Podaj <b>drugie imię</b>. Jeśli go nie masz, wpisz „Brak”.",
-        "ru": "📝 Укажите своё <b>отчество</b>. Если его нет — напишите «Нет».",
+        "uk": "3. ✍️ <b>По батькові.</b>\nЯкщо його немає — напишіть «Немає».",
+        "en": "3. ✍️ <b>Patronymic / middle name.</b>\nIf you do not have one, type “No”.",
+        "de": "3. ✍️ <b>Zweiter Name.</b>\nFalls nicht vorhanden, schreiben Sie „Keiner“.",
+        "pl": "3. ✍️ <b>Drugie imię.</b>\nJeśli go nie masz, wpisz „Brak”.",
+        "ru": "3. ✍️ <b>Отчество.</b>\nЕсли его нет — напишите «Нет».",
     },
     "REGISTER_PATRONYMIC_ERROR": {
         "uk": "❗ Перевірте по батькові: використовуйте лише букви або напишіть «Немає».",
@@ -758,11 +750,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Проверьте отчество: используйте буквы или напишите «Нет».",
     },
     "REGISTER_BIRTHDATE_PROMPT": {
-        "uk": "🎂 Вкажіть дату народження у форматі ДД.ММ.РРРР (наприклад, 25.07.1995).",
-        "en": "🎂 Provide your date of birth in the DD.MM.YYYY format (e.g. 25.07.1995).",
-        "de": "🎂 Geben Sie Ihr Geburtsdatum im Format TT.MM.JJJJ an (z. B. 25.07.1995).",
-        "pl": "🎂 Podaj datę urodzenia w formacie DD.MM.RRRR (np. 25.07.1995).",
-        "ru": "🎂 Укажите дату рождения в формате ДД.ММ.ГГГГ (например, 25.07.1995).",
+        "uk": "4. 📆 <b>Дата народження.</b>\nФормат: ДД.ММ.РРРР (наприклад, 25.07.1995).",
+        "en": "4. 📆 <b>Date of birth.</b>\nFormat: DD.MM.YYYY (e.g. 25.07.1995).",
+        "de": "4. 📆 <b>Geburtsdatum.</b>\nFormat: TT.MM.JJJJ (z. B. 25.07.1995).",
+        "pl": "4. 📆 <b>Data urodzenia.</b>\nFormat: DD.MM.RRRR (np. 25.07.1995).",
+        "ru": "4. 📆 <b>Дата рождения.</b>\nФормат: ДД.ММ.ГГГГ (например, 25.07.1995).",
     },
     "REGISTER_BIRTHDATE_ERROR": {
         "uk": "❗ Не вдалося розпізнати дату. Використайте формат ДД.ММ.РРРР.",
@@ -772,11 +764,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Не удалось распознать дату. Используйте формат ДД.ММ.ГГГГ.",
     },
     "REGISTER_REGION_PROMPT": {
-        "uk": "📍 Оберіть область проживання. Натисніть «📍 Обрати область», щоб побачити список.",
-        "en": "📍 Choose your region. Tap “📍 Choose region” to see the list.",
-        "de": "📍 Wählen Sie Ihre Region. Tippen Sie auf „📍 Region wählen“, um die Liste zu öffnen.",
-        "pl": "📍 Wybierz swój region. Kliknij „📍 Wybierz region”, aby zobaczyć listę.",
-        "ru": "📍 Выберите область проживания. Нажмите «📍 Выбрать область», чтобы открыть список.",
+        "uk": "5. 📍 <b>Оберіть область.</b>\nНатисніть «📍 Обрати область» та підтвердіть свій вибір.",
+        "en": "5. 📍 <b>Select your region.</b>\nUse the “📍 Choose region” button to confirm your oblast.",
+        "de": "5. 📍 <b>Wählen Sie Ihre Region.</b>\nTippen Sie auf „📍 Region wählen“ und bestätigen Sie Ihre Auswahl.",
+        "pl": "5. 📍 <b>Wybierz swój region.</b>\nUżyj przycisku „📍 Wybierz region”, aby potwierdzić obwód.",
+        "ru": "5. 📍 <b>Выберите область.</b>\nНажмите «📍 Выбрать область» и подтвердите выбор.",
     },
     "REGISTER_REGION_SELECT_PROMPT": {
         "uk": "📍 Оберіть область зі списку нижче.",
@@ -786,11 +778,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📍 Выберите свою область из списка ниже.",
     },
     "REGISTER_REGION_SELECTED": {
-        "uk": "✅ Область збережено: <b>{region}</b>.",
-        "en": "✅ Region saved: <b>{region}</b>.",
-        "de": "✅ Region gespeichert: <b>{region}</b>.",
-        "pl": "✅ Region zapisany: <b>{region}</b>.",
-        "ru": "✅ Область сохранена: <b>{region}</b>.",
+        "uk": "✅ Область збережено: <b>{region}</b>. Натисніть «DALL·E», щоб перейти до номера телефону.",
+        "en": "✅ Region saved: <b>{region}</b>. Tap “DALL·E” to move on to the phone number step.",
+        "de": "✅ Region gespeichert: <b>{region}</b>. Tippen Sie auf „DALL·E“, um mit der Telefonnummer weiterzumachen.",
+        "pl": "✅ Region zapisany: <b>{region}</b>. Kliknij „DALL·E”, aby przejść do kroku z numerem telefonu.",
+        "ru": "✅ Область сохранена: <b>{region}</b>. Нажмите «DALL·E», чтобы перейти к шагу с телефоном.",
     },
     "REGISTER_REGION_CANCEL": {
         "uk": "⬅️ Повернутись",
@@ -814,11 +806,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📍 Выбрать область",
     },
     "REGISTER_PHOTO_PROMPT": {
-        "uk": "📸 Завершальний крок: надішліть портретне фото, як у паспорті (нейтральний фон, обличчя по центру). Якщо не готові — натисніть «Пропустити».",
-        "en": "📸 Final step: send a passport-style portrait (neutral background, face centered). Not ready yet? Press “Skip”.",
-        "de": "📸 Letzter Schritt: Senden Sie ein Passfoto (neutraler Hintergrund, Gesicht mittig). Noch nicht bereit? Tippen Sie auf „Überspringen“.",
-        "pl": "📸 Ostatni krok: wyślij zdjęcie portretowe jak do dokumentu (neutralne tło, twarz w centrum). Jeśli nie masz go teraz – kliknij „Pomiń”.",
-        "ru": "📸 Финальный шаг: отправьте портретное фото, как в паспорте (нейтральный фон, лицо по центру). Пока нет фото? Нажмите «Пропустить».",
+        "uk": "7. 📸 <b>Фото профілю.</b>\nПаспортний формат: чітке обличчя, нейтральний фон. Можна додати пізніше кнопкою «Пропустити».",
+        "en": "7. 📸 <b>Profile photo.</b>\nPassport-style portrait: clear face, neutral background. You may add it later via “Skip”.",
+        "de": "7. 📸 <b>Profilfoto.</b>\nPassformat: klares Gesicht, neutraler Hintergrund. Sie können es über „Überspringen“ später hinzufügen.",
+        "pl": "7. 📸 <b>Zdjęcie profilowe.</b>\nStyl paszportowy: wyraźna twarz, neutralne tło. Możesz dodać później przyciskiem „Pomiń”.",
+        "ru": "7. 📸 <b>Фото профиля.</b>\nПаспортный формат: четкое лицо и нейтральный фон. Можно добавить позже кнопкой «Пропустить».",
     },
     "REGISTER_PHOTO_SKIP_BTN": {
         "uk": "⏭ Пропустити",
@@ -843,11 +835,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
     },
 
     "REGISTER_PHONE_PROMPT": {
-        "uk": "📞 Залишився номер телефону. Натисніть «📱 Надіслати номер», і бот автоматично додасть його до анкети.",
-        "en": "📞 We still need your phone number. Tap “📱 Share phone number” and the bot will fill it in automatically.",
-        "de": "📞 Uns fehlt noch Ihre Telefonnummer. Tippen Sie auf „📱 Telefonnummer senden“, und der Bot trägt sie automatisch ein.",
-        "pl": "📞 Potrzebujemy jeszcze numeru telefonu. Kliknij „📱 Wyślij numer”, a bot uzupełni go automatycznie.",
-        "ru": "📞 Остался телефон для связи. Нажмите «📱 Отправить номер», и бот автоматически подставит его в анкету.",
+        "uk": "6. 📞 <b>Номер телефону для реєстрації.</b>\nНатисніть «📱 Надіслати номер», щоб поділитися контактом.",
+        "en": "6. 📞 <b>Phone number for registration.</b>\nTap “📱 Share phone number” to send your contact.",
+        "de": "6. 📞 <b>Telefonnummer für die Registrierung.</b>\nTippen Sie auf „📱 Telefonnummer senden“, um den Kontakt zu teilen.",
+        "pl": "6. 📞 <b>Numer telefonu do rejestracji.</b>\nKliknij „📱 Wyślij numer”, aby udostępnić kontakt.",
+        "ru": "6. 📞 <b>Номер телефона для регистрации.</b>\nНажмите «📱 Отправить номер», чтобы поделиться контактом.",
     },
     "REGISTER_PHONE_ERROR": {
         "uk": "❗ Не вдалося отримати номер. Спробуйте ще раз кнопкою «📱 Надіслати номер».",
@@ -857,11 +849,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Номер не получен. Попробуйте ещё раз кнопкой «📱 Отправить номер».",
     },
     "REGISTER_PHONE_TEXT_PROMPT": {
-        "uk": "❗ Щоб продовжити, відправте номер телефона кнопкою «📱 Надіслати номер» нижче — так уникнемо помилок.",
-        "en": "❗ To continue, send your phone number using the “📱 Share phone number” button below to avoid mistakes.",
-        "de": "❗ Um fortzufahren, senden Sie Ihre Telefonnummer über die Schaltfläche „📱 Telefonnummer senden“, um Fehler zu vermeiden.",
-        "pl": "❗ Aby kontynuować, wyślij numer telefonu przyciskiem „📱 Wyślij numer” poniżej – unikniemy pomyłek.",
-        "ru": "❗ Чтобы продолжить регистрацию, отправьте номер телефона кнопкой «📱 Отправить номер» ниже, чтобы избежать ошибок.",
+        "uk": "📞 Будь ласка, скористайтеся кнопкою «📱 Надіслати номер», щоб ми точно зберегли коректний контакт.",
+        "en": "📞 Please use the “📱 Share phone number” button so we can save the correct contact.",
+        "de": "📞 Bitte verwenden Sie die Schaltfläche „📱 Telefonnummer senden“, damit wir die richtige Nummer speichern.",
+        "pl": "📞 Użyj przycisku „📱 Wyślij numer”, abyśmy zapisali poprawny kontakt.",
+        "ru": "📞 Пожалуйста, нажмите «📱 Отправить номер», чтобы мы сохранили верный контакт.",
     },
     "BTN_SEND_PHONE": {
         "uk": "📱 Надіслати номер",
@@ -955,46 +947,46 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "ещё не добавлено",
     },
     "PROFILE_BTN_EDIT_LAST_NAME": {
-        "uk": "✏️ Змінити прізвище",
-        "en": "✏️ Edit last name",
-        "de": "✏️ Nachnamen ändern",
-        "pl": "✏️ Zmień nazwisko",
-        "ru": "✏️ Изменить фамилию",
+        "uk": "✏️ Прізвище",
+        "en": "✏️ Last name",
+        "de": "✏️ Nachname",
+        "pl": "✏️ Nazwisko",
+        "ru": "✏️ Фамилия",
     },
     "PROFILE_BTN_EDIT_FIRST_NAME": {
-        "uk": "✏️ Змінити ім'я",
-        "en": "✏️ Edit first name",
-        "de": "✏️ Vornamen ändern",
-        "pl": "✏️ Zmień imię",
-        "ru": "✏️ Изменить имя",
+        "uk": "✏️ Ім'я",
+        "en": "✏️ First name",
+        "de": "✏️ Vorname",
+        "pl": "✏️ Imię",
+        "ru": "✏️ Имя",
     },
     "PROFILE_BTN_EDIT_MIDDLE_NAME": {
-        "uk": "✏️ Змінити по батькові",
-        "en": "✏️ Edit patronymic",
-        "de": "✏️ Zweiten Namen ändern",
-        "pl": "✏️ Zmień drugie imię",
-        "ru": "✏️ Изменить отчество",
+        "uk": "✏️ По батькові",
+        "en": "✏️ Middle name",
+        "de": "✏️ Zweiter Name",
+        "pl": "✏️ Drugie imię",
+        "ru": "✏️ Отчество",
     },
     "PROFILE_BTN_EDIT_BIRTHDATE": {
-        "uk": "✏️ Змінити дату народження",
-        "en": "✏️ Edit date of birth",
-        "de": "✏️ Geburtsdatum ändern",
-        "pl": "✏️ Zmień datę urodzenia",
-        "ru": "✏️ Изменить дату рождения",
+        "uk": "✏️ Дата народження",
+        "en": "✏️ Date of birth",
+        "de": "✏️ Geburtsdatum",
+        "pl": "✏️ Data urodzenia",
+        "ru": "✏️ Дата рождения",
     },
     "PROFILE_BTN_EDIT_REGION": {
-        "uk": "✏️ Змінити область",
-        "en": "✏️ Edit region",
-        "de": "✏️ Region ändern",
-        "pl": "✏️ Zmień region",
-        "ru": "✏️ Изменить область",
+        "uk": "✏️ Область",
+        "en": "✏️ Region",
+        "de": "✏️ Region",
+        "pl": "✏️ Region",
+        "ru": "✏️ Область",
     },
     "PROFILE_BTN_EDIT_PHONE": {
-        "uk": "✏️ Змінити телефон",
-        "en": "✏️ Edit phone",
-        "de": "✏️ Telefon ändern",
-        "pl": "✏️ Zmień telefon",
-        "ru": "✏️ Изменить телефон",
+        "uk": "✏️ Телефон",
+        "en": "✏️ Phone",
+        "de": "✏️ Telefon",
+        "pl": "✏️ Telefon",
+        "ru": "✏️ Телефон",
     },
     "PROFILE_BTN_EDIT_PHOTO": {
         "uk": "📸 Оновити фото",
@@ -1009,6 +1001,27 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "🗑 Foto entfernen",
         "pl": "🗑 Usuń zdjęcie",
         "ru": "🗑 Удалить фото",
+    },
+    "PROFILE_BTN_VIEW_PHOTO": {
+        "uk": "👁 Переглянути фото",
+        "en": "👁 View photo",
+        "de": "👁 Foto ansehen",
+        "pl": "👁 Zobacz zdjęcie",
+        "ru": "👁 Посмотреть фото",
+    },
+    "PROFILE_BTN_HIDE_PHOTO": {
+        "uk": "👁‍🗨 Сховати фото",
+        "en": "👁‍🗨 Hide photo",
+        "de": "👁‍🗨 Foto ausblenden",
+        "pl": "👁‍🗨 Ukryj zdjęcie",
+        "ru": "👁‍🗨 Скрыть фото",
+    },
+    "PROFILE_BTN_CANCEL_EDIT": {
+        "uk": "⬅️ Скасувати",
+        "en": "⬅️ Cancel",
+        "de": "⬅️ Abbrechen",
+        "pl": "⬅️ Anuluj",
+        "ru": "⬅️ Отмена",
     },
     "PROFILE_PROMPT_LAST_NAME": {
         "uk": "📝 Надішліть нове <b>прізвище</b>.",
@@ -1093,6 +1106,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "✅ Daten aktualisiert.",
         "pl": "✅ Dane zaktualizowane.",
         "ru": "✅ Данные обновлены.",
+    },
+    "PROFILE_UPDATE_CANCELLED": {
+        "uk": "❎ Зміни скасовано.",
+        "en": "❎ Changes cancelled.",
+        "de": "❎ Änderungen verworfen.",
+        "pl": "❎ Zmiany anulowane.",
+        "ru": "❎ Изменения отменены.",
     },
     "PROFILE_PHOTO_UPDATED": {
         "uk": "✅ Фото профілю оновлено.",
@@ -1478,11 +1498,15 @@ alerts_history_cache: Dict[str, Dict[str, Any]] = {}
 # ========================== FSM ==========================
 class OnboardFSM(StatesGroup):
     language = State()
-    last_name = State()
+    welcome = State()
+    briefing = State()
+    instructions = State()
     first_name = State()
+    last_name = State()
     middle_name = State()
     birthdate = State()
     region = State()
+    region_confirm = State()
     phone = State()
     photo = State()
 
@@ -4079,12 +4103,6 @@ def kb_saved_receipt() -> InlineKeyboardMarkup:
     return kb
 
 
-def kb_next_step(target: Any, callback_data: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(tr(target, "BTN_NEXT"), callback_data=callback_data))
-    return kb
-
-
 def kb_region_prompt(uid: int, prefix: str, include_back: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_PICK_BTN"), callback_data=f"{prefix}:open"))
@@ -4145,7 +4163,7 @@ def profile_summary_text(uid: int, profile: Optional[dict]) -> str:
     return "\n".join(lines)
 
 
-def kb_profile_menu(uid: int, profile: Optional[dict]) -> InlineKeyboardMarkup:
+def kb_profile_menu(uid: int, profile: Optional[dict], show_photo: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     btn_last = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_LAST_NAME"), callback_data="profile_edit:last_name")
     btn_first = InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_FIRST_NAME"), callback_data="profile_edit:first_name")
@@ -4157,39 +4175,28 @@ def kb_profile_menu(uid: int, profile: Optional[dict]) -> InlineKeyboardMarkup:
     kb.row(btn_last, btn_first)
     kb.row(btn_middle, btn_birth)
     kb.row(btn_region, btn_phone)
-    has_photo = bool(profile and user_profile_photo_path(profile))
+    photo_path = user_profile_photo_path(profile or {})
+    has_photo = bool(photo_path and os.path.exists(photo_path))
     if has_photo:
+        toggle_text = tr(uid, "PROFILE_BTN_HIDE_PHOTO" if show_photo else "PROFILE_BTN_VIEW_PHOTO")
+        toggle_cb = "profile_photo:hide" if show_photo else "profile_photo:view"
+        btn_toggle = InlineKeyboardButton(toggle_text, callback_data=toggle_cb)
         btn_remove = InlineKeyboardButton(tr(uid, "PROFILE_BTN_REMOVE_PHOTO"), callback_data="profile_photo:remove")
-        kb.row(btn_photo, btn_remove)
+        kb.row(btn_toggle, btn_photo)
+        kb.add(btn_remove)
     else:
         kb.add(btn_photo)
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
     return kb
 
 
-async def profile_refresh_photo(uid: int, profile: Optional[dict]):
-    runtime = users_runtime.setdefault(uid, {})
-    prev = runtime.pop("profile_photo_msg", None)
-    if isinstance(prev, (list, tuple)) and len(prev) == 2:
-        await _delete_message_safe(prev[0], prev[1])
-    path = user_profile_photo_path(profile or {})
-    if not path or not os.path.exists(path):
-        return
-    chat_id = runtime.get("tg", {}).get("chat_id")
-    if not chat_id:
-        return
-    try:
-        msg = await bot.send_photo(
-            chat_id,
-            InputFile(path),
-            caption=tr(uid, "PROFILE_FIELD_PHOTO", status=h(tr(uid, "PROFILE_PHOTO_STATUS_SET")))
-        )
-    except Exception:
-        return
-    runtime["profile_photo_msg"] = (msg.chat.id, msg.message_id)
+def kb_profile_cancel_inline(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "PROFILE_BTN_CANCEL_EDIT"), callback_data="profile_edit:cancel"))
+    return kb
 
 
-async def profile_show(uid: int, chat_id: Optional[int] = None):
+async def profile_show(uid: int, chat_id: Optional[int] = None, show_photo: Optional[bool] = None):
     runtime = users_runtime.setdefault(uid, {})
     tg_info = runtime.setdefault("tg", {})
     if chat_id:
@@ -4203,12 +4210,20 @@ async def profile_show(uid: int, chat_id: Optional[int] = None):
         if stored_chat and not tg_info.get("chat_id"):
             tg_info["chat_id"] = stored_chat
     summary = profile_summary_text(uid, profile)
-    kb = kb_profile_menu(uid, profile)
-    await clear_then_anchor(uid, summary, kb)
-    await profile_refresh_photo(uid, profile)
+    photo_path = user_profile_photo_path(profile or {})
+    has_photo = bool(photo_path and os.path.exists(photo_path))
+    if show_photo is None:
+        show_photo = bool(runtime.get("profile_show_photo") and has_photo)
+    kb = kb_profile_menu(uid, profile, show_photo=bool(show_photo and has_photo))
+    runtime["profile_show_photo"] = bool(show_photo and has_photo)
+    if show_photo and has_photo:
+        await flow_clear(uid)
+        await anchor_replace_with_photo(uid, summary, kb, photo_path)
+    else:
+        await clear_then_anchor(uid, summary, kb)
 
 
-async def profile_send_prompt(uid: int, chat_id: int, text: str, reply_markup: Optional[ReplyKeyboardMarkup] = None) -> types.Message:
+async def profile_send_prompt(uid: int, chat_id: int, text: str, reply_markup: Optional[Any] = None) -> types.Message:
     markup = reply_markup or ReplyKeyboardRemove()
     await flow_clear(uid)
     msg = await bot.send_message(chat_id, text, reply_markup=markup)
@@ -4283,6 +4298,26 @@ async def update_all_anchors():
         await anchor_show_root(uid)
 
 
+async def anchor_replace_with_photo(uid: int, caption: str, kb: InlineKeyboardMarkup, photo_path: str) -> None:
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id")
+    if not chat_id:
+        return
+    anchor_id = runtime.get("anchor")
+    if anchor_id:
+        try:
+            await bot.delete_message(chat_id, anchor_id)
+        except Exception:
+            pass
+    try:
+        msg = await bot.send_photo(chat_id, InputFile(photo_path), caption=caption, reply_markup=kb)
+    except Exception:
+        return
+    runtime["anchor"] = msg.message_id
+    runtime["last_anchor_text"] = caption
+    runtime["last_anchor_kb"] = inline_kb_signature(kb)
+
+
 # ========================== FLOW CLEANER ==========================
 def flow_track(uid: int, msg: types.Message):
     users_runtime.setdefault(uid, {}).setdefault("flow_msgs", []).append((msg.chat.id, msg.message_id))
@@ -4297,9 +4332,6 @@ async def flow_clear(uid: int):
         for chat_id, mid in tracked
         if chat_id and mid
     ]
-    photo_msg = runtime.pop("profile_photo_msg", None)
-    if isinstance(photo_msg, (list, tuple)) and len(photo_msg) == 2:
-        tasks.append(_delete_message_safe(photo_msg[0], photo_msg[1]))
     last_card = runtime.pop("np_last_card", None)
     if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
         tasks.append(_delete_message_safe(last_card[0], last_card[1]))
@@ -4455,18 +4487,17 @@ def kb_language_picker(prefix: str = "lang_select") -> InlineKeyboardMarkup:
     return kb
 
 
-async def launch_intro(uid: int, chat_id: int, registered: bool):
-    runtime = users_runtime.setdefault(uid, {})
-    previous_intro = runtime.get("intro_flow", {}).get("message")
-    if previous_intro and isinstance(previous_intro, (list, tuple)) and len(previous_intro) == 2:
-        await _delete_message_safe(previous_intro[0], previous_intro[1])
-    text_key = "INTRO_GREETING_REGISTERED" if registered else "INTRO_GREETING_NEW"
-    msg = await bot.send_message(chat_id, tr(uid, text_key), reply_markup=kb_next_step(uid, "intro_next:1"))
-    runtime["intro_flow"] = {
-        "registered": registered,
-        "chat_id": chat_id,
-        "message": (msg.chat.id, msg.message_id),
-    }
+async def _clear_runtime_message(runtime: dict, key: str) -> None:
+    ref = runtime.pop(key, None)
+    if isinstance(ref, (list, tuple)) and len(ref) == 2:
+        await _delete_message_safe(ref[0], ref[1])
+
+
+def _first_name_for_greeting(runtime: dict, fallback: types.User) -> str:
+    name = (runtime.get("tg", {}) or {}).get("first_name")
+    if not name:
+        name = fallback.first_name or fallback.username or ""
+    return name or ""
 
 
 @dp.message_handler(commands=["start"], state="*")
@@ -4495,14 +4526,10 @@ async def start_cmd(m: types.Message, state: FSMContext):
     prof = ensure_user(uid, runtime["tg"])
     registered = profile_is_complete(prof)
 
-    if not prof.get("lang_confirmed"):
-        prompt = await m.answer(tr("uk", "LANGUAGE_PROMPT"), reply_markup=kb_language_picker("lang_select"))
-        runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
-        await OnboardFSM.language.set()
-        await state.update_data(after_language_registered=registered)
-        return
-
-    await launch_intro(uid, m.chat.id, registered)
+    prompt = await m.answer(tr("uk", "LANGUAGE_PROMPT"), reply_markup=kb_language_picker("lang_select"))
+    runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
+    await OnboardFSM.language.set()
+    await state.update_data(after_language_registered=registered, dalle_stage=None)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("lang_select:"), state=OnboardFSM.language)
@@ -4525,83 +4552,93 @@ async def language_selected(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
-    confirm = await bot.send_message(chat_id, tr(uid, "LANGUAGE_SELECTED", language=LANG_LABELS[code]))
-    flow_track(uid, confirm)
-    await launch_intro(uid, chat_id, registered)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data="dalle_stage:welcome"))
+    msg = await bot.send_message(chat_id, tr(uid, "LANGUAGE_SELECTED_START", language=LANG_LABELS[code]), reply_markup=kb)
+    runtime["dalle_message"] = (msg.chat.id, msg.message_id)
+    await OnboardFSM.welcome.set()
+    await state.update_data(after_language_registered=registered, chosen_language=code)
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("intro_next:"))
-async def intro_next(c: types.CallbackQuery, state: FSMContext):
+@dp.callback_query_handler(lambda c: c.data.startswith("dalle_stage:"), state="*")
+async def onboard_dalle_stage(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     runtime = users_runtime.setdefault(uid, {})
-    info = runtime.get("intro_flow") or {}
-    registered = info.get("registered")
-    if registered is None:
-        prof = load_user(uid) or {}
-        registered = profile_is_complete(prof)
-    chat_id = info.get("chat_id") or c.message.chat.id
+    stage = c.data.split(":", 1)[1]
+    current_state = await state.get_state()
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
 
-    try:
-        await bot.delete_message(c.message.chat.id, c.message.message_id)
-    except Exception:
-        pass
+    if stage == "welcome" and current_state == OnboardFSM.welcome.state:
+        await _clear_runtime_message(runtime, "dalle_message")
+        name = _first_name_for_greeting(runtime, c.from_user)
+        greeting = tr(uid, "INTRO_WELCOME", name=h(name) if name else tr(uid, "INTRO_WELCOME_FALLBACK"))
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data="dalle_stage:brief"))
+        msg = await bot.send_message(chat_id, greeting, reply_markup=kb)
+        runtime["dalle_message"] = (msg.chat.id, msg.message_id)
+        await OnboardFSM.briefing.set()
+        await c.answer()
+        return
 
-    step_raw = c.data.split(":", 1)[1]
-    try:
-        step = int(step_raw)
-    except ValueError:
-        step = 0
-
-    if not registered:
-        if step == 1:
-            msg = await bot.send_message(chat_id, tr(uid, "INTRO_REG_STEPS"), reply_markup=kb_next_step(uid, "intro_next:2"))
-            runtime["intro_flow"] = {"registered": False, "chat_id": chat_id, "message": (msg.chat.id, msg.message_id)}
-        elif step == 2:
-            runtime.pop("intro_flow", None)
-            prompt_msg = await bot.send_message(chat_id, tr(uid, "REGISTER_SURNAME_PROMPT"), reply_markup=ReplyKeyboardRemove())
-            flow_track(uid, prompt_msg)
-            await OnboardFSM.last_name.set()
-            await state.update_data(last_prompt=(prompt_msg.chat.id, prompt_msg.message_id), registration={}, last_name=None,
-                                    first_name=None, middle_name=None, birth_date=None, region=None)
+    if stage == "brief" and current_state == OnboardFSM.briefing.state:
+        await _clear_runtime_message(runtime, "dalle_message")
+        data = await state.get_data()
+        registered = bool(data.get("after_language_registered"))
+        if registered:
+            summary = tr(uid, "INTRO_REGISTERED_BRIEF")
+            next_stage = "done"
         else:
-            runtime.pop("intro_flow", None)
-    else:
-        if step == 1:
-            msg = await bot.send_message(chat_id, tr(uid, "INTRO_SECTIONS"), reply_markup=kb_next_step(uid, "intro_next:2"))
-            runtime["intro_flow"] = {"registered": True, "chat_id": chat_id, "message": (msg.chat.id, msg.message_id)}
-        elif step == 2:
-            runtime.pop("intro_flow", None)
-            await anchor_show_root(uid)
-        else:
-            runtime.pop("intro_flow", None)
-            await anchor_show_root(uid)
+            summary = tr(uid, "INTRO_REGISTRATION_GUIDE")
+            next_stage = "start"
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data=f"dalle_stage:{next_stage}"))
+        msg = await bot.send_message(chat_id, summary, reply_markup=kb)
+        runtime["dalle_message"] = (msg.chat.id, msg.message_id)
+        await OnboardFSM.instructions.set()
+        await state.update_data(dalle_next=next_stage)
+        await c.answer()
+        return
+
+    if stage == "start" and current_state == OnboardFSM.instructions.state:
+        data = await state.get_data()
+        if data.get("dalle_next") != "start":
+            return await c.answer()
+        await _clear_runtime_message(runtime, "dalle_message")
+        prompt_msg = await bot.send_message(chat_id, tr(uid, "REGISTER_FIRSTNAME_PROMPT"), reply_markup=ReplyKeyboardRemove())
+        flow_track(uid, prompt_msg)
+        await OnboardFSM.first_name.set()
+        await state.update_data(
+            last_prompt=(prompt_msg.chat.id, prompt_msg.message_id),
+            registration={},
+            first_name=None,
+            last_name=None,
+            middle_name=None,
+            birth_date=None,
+            region=None,
+            phone_prompt=None,
+        )
+        await c.answer()
+        return
+
+    if stage == "done" and current_state == OnboardFSM.instructions.state:
+        data = await state.get_data()
+        if data.get("dalle_next") != "done":
+            return await c.answer()
+        await _clear_runtime_message(runtime, "dalle_message")
+        await state.finish()
+        await flow_clear(uid)
+        await anchor_show_root(uid)
+        await c.answer()
+        return
+
+    if stage == "region_next" and current_state == OnboardFSM.region_confirm.state:
+        await _clear_runtime_message(runtime, "dalle_message")
+        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+        prompt_msg = await bot.send_message(chat_id, tr(uid, "REGISTER_PHONE_PROMPT"), reply_markup=kb)
+        await state.update_data(phone_prompt=(prompt_msg.chat.id, prompt_msg.message_id))
+        await OnboardFSM.phone.set()
+        await c.answer()
+        return
 
     await c.answer()
-
-
-@dp.message_handler(state=OnboardFSM.last_name, content_types=ContentType.TEXT)
-async def onb_last_name(m: types.Message, state: FSMContext):
-    uid = m.from_user.id
-    raw = (m.text or "").strip()
-    try:
-        await bot.delete_message(m.chat.id, m.message_id)
-    except Exception:
-        pass
-    normalized = normalize_person_name(raw)
-    if not normalized:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_SURNAME_ERROR"))
-        flow_track(uid, warn)
-        return
-    prettified = beautify_name(normalized) or normalized
-    data = await state.get_data()
-    prompt = data.get("last_prompt")
-    if prompt:
-        await _delete_message_safe(prompt[0], prompt[1])
-    await state.update_data(last_name=prettified, last_prompt=None)
-    prompt_msg = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRSTNAME_PROMPT"), reply_markup=ReplyKeyboardRemove())
-    flow_track(uid, prompt_msg)
-    await state.update_data(last_prompt=(prompt_msg.chat.id, prompt_msg.message_id))
-    await OnboardFSM.first_name.set()
 
 
 @dp.message_handler(state=OnboardFSM.first_name, content_types=ContentType.TEXT)
@@ -4623,6 +4660,31 @@ async def onb_first_name(m: types.Message, state: FSMContext):
     if prompt:
         await _delete_message_safe(prompt[0], prompt[1])
     await state.update_data(first_name=prettified, last_prompt=None)
+    prompt_msg = await bot.send_message(m.chat.id, tr(uid, "REGISTER_SURNAME_PROMPT"), reply_markup=ReplyKeyboardRemove())
+    flow_track(uid, prompt_msg)
+    await state.update_data(last_prompt=(prompt_msg.chat.id, prompt_msg.message_id))
+    await OnboardFSM.last_name.set()
+
+
+@dp.message_handler(state=OnboardFSM.last_name, content_types=ContentType.TEXT)
+async def onb_last_name(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    normalized = normalize_person_name(raw)
+    if not normalized:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_SURNAME_ERROR"))
+        flow_track(uid, warn)
+        return
+    prettified = beautify_name(normalized) or normalized
+    data = await state.get_data()
+    prompt = data.get("last_prompt")
+    if prompt:
+        await _delete_message_safe(prompt[0], prompt[1])
+    await state.update_data(last_name=prettified, last_prompt=None)
     prompt_msg = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PATRONYMIC_PROMPT"), reply_markup=ReplyKeyboardRemove())
     flow_track(uid, prompt_msg)
     await state.update_data(last_prompt=(prompt_msg.chat.id, prompt_msg.message_id))
@@ -4700,6 +4762,7 @@ async def onb_region_text(m: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data.startswith("reg_region"), state=OnboardFSM.region)
 async def onb_region_pick(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
     data = await state.get_data()
     prompt = data.get("region_prompt")
     action = c.data.split(":", 2)
@@ -4733,17 +4796,16 @@ async def onb_region_pick(c: types.CallbackQuery, state: FSMContext):
             return
         region = UKRAINE_REGIONS[idx]
         await state.update_data(region=region)
+        text = tr(uid, "REGISTER_REGION_SELECTED", region=h(region))
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("DALL·E", callback_data="dalle_stage:region_next"))
         if prompt:
-            await bot.edit_message_text(tr(uid, "REGISTER_REGION_SELECTED", region=h(region)), prompt[0], prompt[1])
+            await bot.edit_message_text(text, prompt[0], prompt[1], reply_markup=kb)
+            runtime["dalle_message"] = (prompt[0], prompt[1])
         else:
-            msg = await bot.send_message(c.message.chat.id, tr(uid, "REGISTER_REGION_SELECTED", region=h(region)))
-            flow_track(uid, msg)
-        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
-        contact_prompt = await bot.send_message(c.message.chat.id, tr(uid, "REGISTER_PHONE_PROMPT"), reply_markup=kb)
-        flow_track(uid, contact_prompt)
+            msg = await bot.send_message(c.message.chat.id, text, reply_markup=kb)
+            runtime["dalle_message"] = (msg.chat.id, msg.message_id)
         await state.update_data(last_prompt=None, region_prompt=None)
-        await OnboardFSM.phone.set()
+        await OnboardFSM.region_confirm.set()
         await c.answer()
         return
     await c.answer()
@@ -4781,6 +4843,9 @@ async def onb_phone_contact(m: types.Message, state: FSMContext):
     region_prompt = data.get("region_prompt")
     if region_prompt:
         await _delete_message_safe(region_prompt[0], region_prompt[1])
+    phone_prompt = data.get("phone_prompt")
+    if phone_prompt:
+        await _delete_message_safe(phone_prompt[0], phone_prompt[1])
     middle_name = data.get("middle_name") or ""
     runtime = users_runtime.setdefault(uid, {})
     prof = ensure_user(
@@ -4793,7 +4858,7 @@ async def onb_phone_contact(m: types.Message, state: FSMContext):
         birth_date=data.get("birth_date") or "",
         region=data.get("region") or "",
     )
-    await state.update_data(last_prompt=None)
+    await state.update_data(last_prompt=None, phone_prompt=None)
     prompt_msg = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_PROMPT"), reply_markup=kb_registration_photo(uid))
     flow_track(uid, prompt_msg)
     await state.update_data(last_prompt=(prompt_msg.chat.id, prompt_msg.message_id), profile_saved=prof)
@@ -4811,6 +4876,7 @@ async def onb_phone_text_wrong(m: types.Message, state: FSMContext):
     kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
     warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_PROMPT"), reply_markup=kb)
     flow_track(uid, warn)
+    await state.update_data(phone_prompt=(warn.chat.id, warn.message_id))
 
 
 @dp.message_handler(state=OnboardFSM.photo, content_types=ContentType.PHOTO)
@@ -4873,7 +4939,7 @@ async def profile_edit_last_name_prompt(c: types.CallbackQuery, state: FSMContex
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
-    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_LAST_NAME"))
+    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_last_name.set()
     await c.answer()
 
@@ -4883,7 +4949,7 @@ async def profile_edit_first_name_prompt(c: types.CallbackQuery, state: FSMConte
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
-    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_FIRST_NAME"))
+    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_first_name.set()
     await c.answer()
 
@@ -4893,7 +4959,7 @@ async def profile_edit_middle_name_prompt(c: types.CallbackQuery, state: FSMCont
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
-    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"))
+    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_middle_name.set()
     await c.answer()
 
@@ -4903,7 +4969,7 @@ async def profile_edit_birthdate_prompt(c: types.CallbackQuery, state: FSMContex
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
-    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_BIRTHDATE"))
+    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_birthdate.set()
     await c.answer()
 
@@ -4915,6 +4981,7 @@ async def profile_edit_phone_prompt(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+    kb.add(KeyboardButton(tr(uid, "PROFILE_BTN_CANCEL_EDIT")))
     await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_PHONE"), reply_markup=kb)
     await ProfileEditFSM.waiting_phone.set()
     await c.answer()
@@ -4925,9 +4992,18 @@ async def profile_edit_photo_prompt(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     _profile_runtime(uid, c.message.chat.id)
     await state.finish()
-    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_PHOTO"))
+    await profile_send_prompt(uid, c.message.chat.id, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_profile_cancel_inline(uid))
     await ProfileEditFSM.waiting_photo.set()
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit:cancel", state=ProfileEditFSM.all_states)
+async def profile_edit_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    _profile_runtime(uid, c.message.chat.id)
+    await state.finish()
+    await profile_show(uid, chat_id=c.message.chat.id)
+    await c.answer(tr(uid, "PROFILE_UPDATE_CANCELLED"))
 
 
 @dp.callback_query_handler(lambda c: c.data == "profile_edit:region", state="*")
@@ -4957,12 +5033,29 @@ async def profile_photo_remove(c: types.CallbackQuery, state: FSMContext):
     if isinstance(profile, dict):
         profile["profile_photo"] = {}
         save_user(profile)
-    photo_msg = runtime.pop("profile_photo_msg", None)
-    if isinstance(photo_msg, (list, tuple)) and len(photo_msg) == 2:
-        await _delete_message_safe(photo_msg[0], photo_msg[1])
     await profile_show(uid, chat_id=c.message.chat.id)
     notice = await bot.send_message(c.message.chat.id, tr(uid, "PROFILE_PHOTO_REMOVED"), reply_markup=ReplyKeyboardRemove())
     flow_track(uid, notice)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_photo:view", state="*")
+async def profile_photo_view(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    _profile_runtime(uid, c.message.chat.id)
+    profile = load_user(uid) or ensure_user(uid, users_runtime.setdefault(uid, {}).get("tg", {}))
+    path = user_profile_photo_path(profile or {})
+    if not path or not os.path.exists(path):
+        return await c.answer("📸 Фото ще не додано", show_alert=True)
+    await profile_show(uid, chat_id=c.message.chat.id, show_photo=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_photo:hide", state="*")
+async def profile_photo_hide(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    _profile_runtime(uid, c.message.chat.id)
+    await profile_show(uid, chat_id=c.message.chat.id, show_photo=False)
     await c.answer()
 
 
@@ -5140,6 +5233,14 @@ async def profile_edit_phone_text(m: types.Message, state: FSMContext):
         pass
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+    cancel_text = tr(uid, "PROFILE_BTN_CANCEL_EDIT")
+    text = (m.text or "").strip()
+    if text == cancel_text:
+        await state.finish()
+        await profile_show(uid, chat_id=m.chat.id)
+        notice = await bot.send_message(m.chat.id, tr(uid, "PROFILE_UPDATE_CANCELLED"), reply_markup=ReplyKeyboardRemove())
+        flow_track(uid, notice)
+        return
     warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_PHONE_TEXT_PROMPT"), reply_markup=kb)
     flow_track(uid, warn)
 
@@ -9969,25 +10070,38 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     username_raw = (prof.get('tg', {}) or {}).get('username')
     username_disp = h(f"@{username_raw}" if username_raw else "—")
     phone_disp = h(prof.get('phone', '—'))
-    text = (
-        f"👤 <b>{fullname_disp}</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 UserID: <code>{target}</code>\n"
-        f"🧾 BSU: <b>{bsu_disp}</b>\n"
-        f"🆘 Telegram: {username_disp}\n"
-        f"📱 Телефон: {phone_disp}\n"
-        f"🗂 Проектов: <b>{len(projects)}</b>\n"
-        f"🧾 Чеков всего: <b>{cnt_all}</b>\n"
-        f"💰 Сумма чеков: <b>{fmt_money(sum_all)} грн</b>\n"
-        f"✅ Оплачено: <b>{fmt_money(paid_all)} грн</b>\n"
-        f"❌ К выплате: <b>{fmt_money(unpaid_all)} грн</b>"
-    )
+    region_disp = h(prof.get('region', '—'))
+    lang = resolve_lang(uid)
+    birth_display, age_hint = format_birthdate_display(lang, prof.get('birth_date'))
+    birth_line = h(birth_display) if birth_display else '—'
+    age_part = f" ({h(age_hint)})" if age_hint else ""
+    text_lines = [
+        f"👤 <b>{fullname_disp}</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🆔 UserID: <code>{target}</code>",
+        f"🔖 BSU: <b>{bsu_disp}</b>",
+        f"🆘 Telegram: {username_disp}",
+        f"📱 Телефон: {phone_disp}",
+        f"📍 Область: <b>{region_disp}</b>",
+        f"🎂 Дата рождения: <b>{birth_line}</b>{age_part}",
+        f"🗂 Проектов: <b>{len(projects)}</b>",
+        f"🧾 Чеков всего: <b>{cnt_all}</b>",
+        f"💰 Сумма чеков: <b>{fmt_money(sum_all)} грн</b>",
+        f"✅ Оплачено: <b>{fmt_money(paid_all)} грн</b>",
+        f"❌ К выплате: <b>{fmt_money(unpaid_all)} грн</b>",
+    ]
+    text = "\n".join(text_lines)
     kb = InlineKeyboardMarkup()
     if projects:
         kb.add(InlineKeyboardButton("📊 Статистика по проекту", callback_data="adm_stat_choose"))
         kb.add(InlineKeyboardButton("📁 Чеки по проекту", callback_data="adm_recs_choose"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
-    await clear_then_anchor(uid, text, kb)
+    photo_path = user_profile_photo_path(prof)
+    if photo_path and os.path.exists(photo_path):
+        await flow_clear(uid)
+        await anchor_replace_with_photo(uid, text, kb, photo_path)
+    else:
+        await clear_then_anchor(uid, text, kb)
     await c.answer()
 
 
