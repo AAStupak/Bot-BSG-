@@ -3759,6 +3759,52 @@ async def update_all_anchors():
         await anchor_show_root(uid)
 
 
+# ========================== ALERTS PANEL HELPERS ==========================
+async def alerts_clear_panel(uid: int):
+    runtime = users_runtime.setdefault(uid, {})
+    panel = runtime.pop("alerts_panel", None)
+    runtime.pop("alerts_panel_last", None)
+    if isinstance(panel, (list, tuple)) and len(panel) == 2:
+        await _delete_message_safe(panel[0], panel[1])
+
+
+async def alerts_panel_show(uid: int, text: str, kb: InlineKeyboardMarkup, chat_id: Optional[int] = None):
+    runtime = users_runtime.setdefault(uid, {})
+    panel = runtime.get("alerts_panel")
+    kb_sign = inline_kb_signature(kb)
+    normalized_text = str(text or "")
+    payload = runtime.get("alerts_panel_last") or {}
+    if panel and payload.get("text") == normalized_text and payload.get("kb") == kb_sign:
+        return
+    if panel and isinstance(panel, (list, tuple)) and len(panel) == 2:
+        chat_id_existing, message_id = panel
+        try:
+            await bot.edit_message_text(
+                normalized_text,
+                chat_id_existing,
+                message_id,
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+            runtime["alerts_panel_last"] = {"text": normalized_text, "kb": kb_sign}
+            return
+        except MessageNotModified:
+            runtime["alerts_panel_last"] = {"text": normalized_text, "kb": kb_sign}
+            return
+        except MessageCantBeEdited:
+            pass
+        except Exception:
+            pass
+        await alerts_clear_panel(uid)
+    if chat_id is None:
+        chat_id = runtime.get("tg", {}).get("chat_id")
+    if not chat_id:
+        return
+    msg = await bot.send_message(chat_id, normalized_text, reply_markup=kb, disable_web_page_preview=True)
+    runtime["alerts_panel"] = (msg.chat.id, msg.message_id)
+    runtime["alerts_panel_last"] = {"text": normalized_text, "kb": kb_sign}
+
+
 # ========================== FLOW CLEANER ==========================
 def flow_track(uid: int, msg: types.Message):
     users_runtime.setdefault(uid, {}).setdefault("flow_msgs", []).append((msg.chat.id, msg.message_id))
@@ -3777,6 +3823,10 @@ async def flow_clear(uid: int):
     if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
         tasks.append(_delete_message_safe(last_card[0], last_card[1]))
     runtime.pop("alerts_cards", None)
+    panel = runtime.pop("alerts_panel", None)
+    runtime.pop("alerts_panel_last", None)
+    if isinstance(panel, (list, tuple)) and len(panel) == 2:
+        tasks.append(_delete_message_safe(panel[0], panel[1]))
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -4165,7 +4215,9 @@ async def menu_alerts(c: types.CallbackQuery):
     count = alerts_active_oblast_count()
     if count:
         intro = f"{intro}\n\n{alerts_active_summary_line(uid)}"
-    await clear_then_anchor(uid, intro, kb_alerts(uid))
+    await flow_clear(uid)
+    await anchor_show_root(uid)
+    await alerts_panel_show(uid, intro, kb_alerts(uid), chat_id=c.message.chat.id)
     await c.answer()
 
 
@@ -4174,12 +4226,14 @@ async def alerts_active_view(c: types.CallbackQuery):
     uid = c.from_user.id
     regions = alerts_user_regions(uid)
     if not regions:
-        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid))
+        await alerts_panel_show(uid, tr(uid, "ALERTS_NO_REGIONS"), kb_alerts(uid), chat_id=c.message.chat.id)
+        await alerts_clear_cards(uid)
         await c.answer()
         return
     events = alerts_collect_active_for_user(uid)
     if not events:
-        await clear_then_anchor(uid, tr(uid, "ALERTS_NO_ACTIVE"), kb_alerts(uid))
+        await alerts_panel_show(uid, tr(uid, "ALERTS_NO_ACTIVE"), kb_alerts(uid), chat_id=c.message.chat.id)
+        await alerts_clear_cards(uid)
         await c.answer()
         return
     lang = resolve_lang(uid)
@@ -4211,7 +4265,8 @@ async def alerts_active_view(c: types.CallbackQuery):
     lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_TOTAL", count=len(events)))
     lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_USER"))
     lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_PROJECT"))
-    await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
+    await alerts_panel_show(uid, "\n".join(lines), kb_alerts(uid), chat_id=c.message.chat.id)
+    await alerts_clear_cards(uid)
     await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
     await c.answer()
 
@@ -4220,7 +4275,8 @@ async def alerts_active_view(c: types.CallbackQuery):
 async def alerts_overview_view(c: types.CallbackQuery):
     uid = c.from_user.id
     text = alerts_regions_overview_text(uid)
-    await clear_then_anchor(uid, text, kb_alerts(uid))
+    await alerts_panel_show(uid, text, kb_alerts(uid), chat_id=c.message.chat.id)
+    await alerts_clear_cards(uid)
     await c.answer()
 
 
@@ -4228,7 +4284,6 @@ async def alerts_overview_view(c: types.CallbackQuery):
 async def alerts_history_view(c: types.CallbackQuery):
     uid = c.from_user.id
     chat_id = c.message.chat.id
-    await flow_clear(uid)
     regions = alerts_user_regions(uid)
     if not regions:
         msg = await bot.send_message(chat_id, tr(uid, "ALERTS_NO_REGIONS"), disable_web_page_preview=True)
@@ -4241,6 +4296,8 @@ async def alerts_history_view(c: types.CallbackQuery):
         flow_track(uid, msg)
         await c.answer()
         return
+    await alerts_panel_show(uid, tr(uid, "ALERTS_HISTORY_HEADER", count=len(events)), kb_alerts(uid), chat_id=chat_id)
+    await alerts_clear_cards(uid)
     await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
     await c.answer()
 
@@ -4249,7 +4306,8 @@ async def alerts_history_view(c: types.CallbackQuery):
 async def alerts_subscriptions_menu(c: types.CallbackQuery):
     uid = c.from_user.id
     text, kb = alerts_subscription_view(uid, page=0)
-    await clear_then_anchor(uid, text, kb)
+    await alerts_panel_show(uid, text, kb, chat_id=c.message.chat.id)
+    await alerts_clear_cards(uid)
     await c.answer()
 
 
@@ -4261,7 +4319,7 @@ async def alerts_subscriptions_page(c: types.CallbackQuery):
     except ValueError:
         page = 0
     text, kb = alerts_subscription_view(uid, page=page)
-    await anchor_show_text(uid, text, kb)
+    await alerts_panel_show(uid, text, kb, chat_id=c.message.chat.id)
     await c.answer()
 
 
@@ -4281,7 +4339,7 @@ async def alerts_toggle_subscription(c: types.CallbackQuery):
     add = region not in items
     alerts_update_subscription(uid, region_index, add)
     text, kb = alerts_subscription_view(uid, page=page)
-    await anchor_show_text(uid, text, kb)
+    await alerts_panel_show(uid, text, kb, chat_id=c.message.chat.id)
     key = "ALERTS_SUBS_ADDED" if add else "ALERTS_SUBS_REMOVED"
     await c.answer(tr(uid, key, region=h(region)), show_alert=False)
 
@@ -4348,6 +4406,8 @@ async def alerts_close_card(c: types.CallbackQuery):
     runtime = users_runtime.setdefault(uid, {})
     cards = runtime.setdefault("alerts_cards", {})
     cards.pop(context, None)
+    flow_msgs = runtime.get("flow_msgs", [])
+    runtime["flow_msgs"] = [item for item in flow_msgs if item != (c.message.chat.id, c.message.message_id)]
     try:
         await bot.delete_message(c.message.chat.id, c.message.message_id)
     except Exception:
@@ -6614,6 +6674,31 @@ def alerts_card_keyboard(uid: int, context: str, total: int, index: int) -> Inli
     return kb
 
 
+async def alerts_clear_cards(uid: int, context: Optional[str] = None):
+    runtime = users_runtime.setdefault(uid, {})
+    cards = runtime.get("alerts_cards") or {}
+    if context is None:
+        targets = list(cards.keys())
+    else:
+        targets = [context]
+    tasks = []
+    for key in targets:
+        entry = cards.pop(key, None)
+        if not entry:
+            continue
+        message = entry.get("message")
+        if isinstance(message, (list, tuple)) and len(message) == 2:
+            tasks.append(_delete_message_safe(message[0], message[1]))
+            flow_msgs = runtime.get("flow_msgs", [])
+            runtime["flow_msgs"] = [item for item in flow_msgs if item != tuple(message)]
+    if context is None:
+        runtime.pop("alerts_cards", None)
+    else:
+        runtime["alerts_cards"] = cards
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def alerts_push_keyboard(uid: int, token: str, expanded: bool) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
     if expanded:
@@ -6676,34 +6761,57 @@ def alerts_region_snapshot(region_key: str) -> Tuple[str, Optional[Dict[str, Any
     events_map = state.get("events", {})
     regions_map = state.get("regions", {})
     canonical = alerts_canonical_region(region_key) or region_key
-    bucket = regions_map.get(canonical) or regions_map.get(region_key) or {}
+    lookup_candidates = alerts_region_storage_keys(region_key, canonical)
+    normalized_candidates = {
+        (alerts_canonical_region(name) or name or "").strip().lower()
+        for name in lookup_candidates
+        if isinstance(name, str) and name.strip()
+    }
+
+    def matches_region(name: Optional[str]) -> bool:
+        if not name:
+            return False
+        candidate = (alerts_canonical_region(name) or name).strip().lower()
+        if not candidate:
+            return False
+        if normalized_candidates:
+            return candidate in normalized_candidates
+        return candidate == (canonical or "").strip().lower()
+
     active_event: Optional[Dict[str, Any]] = None
-    for event_id in bucket.get("active", []):
-        payload = events_map.get(event_id)
-        if payload and not payload.get("ended_at"):
-            if not active_event or (payload.get("started_at") or "") > (active_event.get("started_at") or ""):
-                active_event = payload
     last_event: Optional[Dict[str, Any]] = None
-    for event_id in bucket.get("history", []):
-        payload = events_map.get(event_id)
-        if payload:
-            if not last_event or (payload.get("ended_at") or "") > (last_event.get("ended_at") or ""):
-                last_event = payload
+
+    for key, bucket in regions_map.items():
+        if not matches_region(key):
+            continue
+        if not isinstance(bucket, dict):
+            continue
+        for event_id in bucket.get("active", []):
+            payload = events_map.get(event_id)
+            if payload and not payload.get("ended_at"):
+                if not active_event or (payload.get("started_at") or "") > (active_event.get("started_at") or ""):
+                    active_event = payload
+        for event_id in bucket.get("history", []):
+            payload = events_map.get(event_id)
+            if payload:
+                if not last_event or (payload.get("ended_at") or "") > (last_event.get("ended_at") or ""):
+                    last_event = payload
+
     if not last_event or not last_event.get("ended_at"):
         timeline = list(_alerts_timeline_bucket(state))
         if timeline:
             for entry in reversed(timeline):
-                region_value = alerts_canonical_region(entry.get("region")) or entry.get("region") or ""
-                if (region_value or "") != canonical:
-                    continue
                 if entry.get("kind") != "end":
+                    continue
+                entry_region = entry.get("region") or entry.get("region_display") or ""
+                if not matches_region(entry_region):
                     continue
                 event_id = str(entry.get("event_id") or "")
                 payload = dict(events_map.get(event_id) or {})
                 if not payload:
                     payload = {"id": event_id or f"timeline|{canonical}|{entry.get('recorded_at') or ''}"}
                 payload.setdefault("region", canonical)
-                payload.setdefault("region_display", entry.get("region") or canonical)
+                payload.setdefault("region_display", entry.get("region") or entry.get("region_display") or canonical)
                 if entry.get("started_at") and not payload.get("started_at"):
                     payload["started_at"] = entry["started_at"]
                 end_value = entry.get("ended_at") or entry.get("recorded_at")
