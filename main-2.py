@@ -4988,6 +4988,21 @@ def alerts_canonical_region(name: Optional[str]) -> Optional[str]:
     return cleaned
 
 
+def alerts_region_storage_keys(*candidates: Optional[str]) -> Set[str]:
+    keys: Set[str] = set()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        cleaned = str(candidate).strip()
+        if not cleaned:
+            continue
+        keys.add(cleaned)
+        canonical = alerts_canonical_region(cleaned)
+        if canonical:
+            keys.add(canonical)
+    return keys
+
+
 def alerts_sanitize_notes(notes: Any) -> List[Dict[str, str]]:
     sanitized: List[Dict[str, str]] = []
     if isinstance(notes, list):
@@ -5333,18 +5348,21 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
                 if event_id not in start_notify:
                     start_notify.append(event_id)
 
-        region_key = event.get("region") or ""
-        bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
-        history = bucket.setdefault("history", [])
-        active = bucket.setdefault("active", [])
-        if event_id not in history:
-            history.insert(0, event_id)
-        if ended_now:
-            if event_id in active:
-                active.remove(event_id)
-        else:
-            if event_id not in active:
-                active.append(event_id)
+        region_keys = alerts_region_storage_keys(event.get("region"), event.get("region_display"))
+        if not region_keys:
+            region_keys = {""}
+        for region_key in region_keys:
+            bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+            history = bucket.setdefault("history", [])
+            active = bucket.setdefault("active", [])
+            if event_id not in history:
+                history.insert(0, event_id)
+            if ended_now:
+                if event_id in active:
+                    active.remove(event_id)
+            else:
+                if event_id not in active:
+                    active.append(event_id)
 
     missing_active = previous_active_ids - seen_ids
     if missing_active:
@@ -5364,11 +5382,12 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
             stored.setdefault("notified_end", False)
             if event_id not in end_notify:
                 end_notify.append(event_id)
-            region_key = stored.get("region") or ""
-            bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
-            active = bucket.setdefault("active", [])
-            if event_id in active:
-                active.remove(event_id)
+            region_keys = alerts_region_storage_keys(stored.get("region"), stored.get("region_display")) or {""}
+            for region_key in region_keys:
+                bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+                active = bucket.setdefault("active", [])
+                if event_id in active:
+                    active.remove(event_id)
 
     for region_key, bucket in regions_map.items():
         active = bucket.get("active", [])
