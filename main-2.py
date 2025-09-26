@@ -54,7 +54,7 @@ from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     InputFile, ContentType, ReplyKeyboardRemove,
-    KeyboardButton, ReplyKeyboardMarkup
+    KeyboardButton, ReplyKeyboardMarkup, InputMediaPhoto
 )
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
@@ -4276,13 +4276,14 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
     last_text = ur.get("last_anchor_text"); last_kb = ur.get("last_anchor_kb")
     anchor = ur.get("anchor")
 
-    if anchor and last_text == text and last_kb == kb_sign:
+    if anchor and last_text == text and last_kb == kb_sign and ur.get("anchor_mode") == "text":
         return
 
     if anchor:
         try:
             await bot.edit_message_text(text, chat_id, anchor, reply_markup=kb)
             ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+            ur["anchor_mode"] = "text"
             return
         except MessageNotModified:
             return
@@ -4295,6 +4296,7 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     ur["anchor"] = msg.message_id
     ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+    ur["anchor_mode"] = "text"
 
 
 async def anchor_show_root(uid: int):
@@ -4318,6 +4320,34 @@ async def anchor_replace_with_photo(uid: int, caption: str, kb: InlineKeyboardMa
     if not chat_id:
         return
     anchor_id = runtime.get("anchor")
+    kb_signature = inline_kb_signature(kb)
+    media = InputMediaPhoto(InputFile(photo_path), caption=caption, parse_mode="HTML")
+
+    if anchor_id and runtime.get("anchor_mode") == "photo":
+        try:
+            await bot.edit_message_media(chat_id=chat_id, message_id=anchor_id, media=media, reply_markup=kb)
+            runtime["last_anchor_text"] = caption
+            runtime["last_anchor_kb"] = kb_signature
+            runtime["anchor_mode"] = "photo"
+            runtime["anchor"] = anchor_id
+            return
+        except MessageNotModified:
+            try:
+                await bot.edit_message_caption(chat_id, anchor_id, caption=caption, parse_mode="HTML", reply_markup=kb)
+            except MessageNotModified:
+                pass
+            except Exception:
+                pass
+            runtime["last_anchor_text"] = caption
+            runtime["last_anchor_kb"] = kb_signature
+            runtime["anchor_mode"] = "photo"
+            runtime["anchor"] = anchor_id
+            return
+        except MessageCantBeEdited:
+            pass
+        except Exception:
+            pass
+
     if anchor_id:
         try:
             await bot.delete_message(chat_id, anchor_id)
@@ -4329,7 +4359,8 @@ async def anchor_replace_with_photo(uid: int, caption: str, kb: InlineKeyboardMa
         return
     runtime["anchor"] = msg.message_id
     runtime["last_anchor_text"] = caption
-    runtime["last_anchor_kb"] = inline_kb_signature(kb)
+    runtime["last_anchor_kb"] = kb_signature
+    runtime["anchor_mode"] = "photo"
 
 
 # ========================== FLOW CLEANER ==========================
