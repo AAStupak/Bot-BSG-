@@ -216,11 +216,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "💵 Финансы",
     },
     "BTN_ALERTS": {
-        "uk": "🚨 Тривоги",
-        "en": "🚨 Alerts",
-        "de": "🚨 Alarme",
-        "pl": "🚨 Alarmy",
-        "ru": "🚨 Тревоги",
+        "uk": "🛡️ Тривоги",
+        "en": "🛡️ Alerts",
+        "de": "🛡️ Alarme",
+        "pl": "🛡️ Alarmy",
+        "ru": "🛡️ Тревоги",
     },
     "BTN_SOS": {
         "uk": "🆘 SOS",
@@ -251,32 +251,32 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
     },
     "ALERTS_BTN_ACTIVE": {
-        "uk": "🔥 Поточні тривоги",
-        "en": "🔥 Active alerts",
-        "de": "🔥 Aktive Alarme",
-        "pl": "🔥 Aktywne alarmy",
-        "ru": "🔥 Активные тревоги",
+        "uk": "🛎️ Негайні тривоги",
+        "en": "🛎️ Live alerts",
+        "de": "🛎️ Laufende Alarme",
+        "pl": "🛎️ Bieżące alarmy",
+        "ru": "🛎️ Текущие тревоги",
     },
     "ALERTS_BTN_OVERVIEW": {
-        "uk": "🗺️ Статус областей",
-        "en": "🗺️ Region status",
-        "de": "🗺️ Regionenstatus",
-        "pl": "🗺️ Status regionów",
-        "ru": "🗺️ Статус областей",
+        "uk": "🗺️ Карта тривог",
+        "en": "🗺️ Alert map",
+        "de": "🗺️ Alarmkarte",
+        "pl": "🗺️ Mapa alarmów",
+        "ru": "🗺️ Карта тревог",
     },
     "ALERTS_BTN_HISTORY": {
-        "uk": "📜 Історія",
-        "en": "📜 History",
-        "de": "📜 Verlauf",
-        "pl": "📜 Historia",
-        "ru": "📜 История",
+        "uk": "🕓 Хронологія",
+        "en": "🕓 Timeline",
+        "de": "🕓 Verlauf",
+        "pl": "🕓 Oś czasu",
+        "ru": "🕓 Хронология",
     },
     "ALERTS_BTN_SUBSCRIPTIONS": {
-        "uk": "🧭 Керувати областями",
-        "en": "🧭 Manage regions",
-        "de": "🧭 Regionen verwalten",
-        "pl": "🧭 Zarządzaj regionami",
-        "ru": "🧭 Управлять регионами",
+        "uk": "📍 Мої області",
+        "en": "📍 My regions",
+        "de": "📍 Meine Regionen",
+        "pl": "📍 Moje regiony",
+        "ru": "📍 Мои области",
     },
     "ALERTS_ACTIVE_HEADER": {
         "uk": "🔥 <b>Поточні тривоги</b> ({count})",
@@ -284,6 +284,27 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "🔥 <b>Aktive Alarme</b> ({count})",
         "pl": "🔥 <b>Aktywne alarmy</b> ({count})",
         "ru": "🔥 <b>Активные тревоги</b> ({count})",
+    },
+    "ALERTS_PUSH_STARTED": {
+        "uk": "🚨 <b>{region}</b>: почалася тривога ({type}, {severity}) о {started}.",
+        "en": "🚨 <b>{region}</b>: alert started ({type}, {severity}) at {started}.",
+        "de": "🚨 <b>{region}</b>: Alarm gestartet ({type}, {severity}) um {started}.",
+        "pl": "🚨 <b>{region}</b>: rozpoczął się alarm ({type}, {severity}) o {started}.",
+        "ru": "🚨 <b>{region}</b>: началась тревога ({type}, {severity}) в {started}.",
+    },
+    "ALERTS_PUSH_ENDED": {
+        "uk": "✅ <b>{region}</b>: відбій тривоги ({type}, {severity}). Початок {started}, завершення {ended}.",
+        "en": "✅ <b>{region}</b>: alert ended ({type}, {severity}). Started {started}, cleared {ended}.",
+        "de": "✅ <b>{region}</b>: Alarm beendet ({type}, {severity}). Beginn {started}, Ende {ended}.",
+        "pl": "✅ <b>{region}</b>: alarm zakończony ({type}, {severity}). Start {started}, koniec {ended}.",
+        "ru": "✅ <b>{region}</b>: отбой тревоги ({type}, {severity}). Начало {started}, окончание {ended}.",
+    },
+    "ALERTS_PUSH_DETAILS": {
+        "uk": "ℹ️ Деталі нижче.",
+        "en": "ℹ️ Details below.",
+        "de": "ℹ️ Details unten.",
+        "pl": "ℹ️ Szczegóły poniżej.",
+        "ru": "ℹ️ Подробности ниже.",
     },
     "ALERTS_HISTORY_HEADER": {
         "uk": "📜 <b>Історія тривог</b> ({count})",
@@ -642,12 +663,110 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "⚙️ <b>Ustawienia</b>\nWybierz działanie:",
         "ru": "⚙️ <b>Настройки</b>\nВыберите действие:",
     },
+    "SETTINGS_PROFILE": {
+        "uk": "👤 Мій профіль",
+        "en": "👤 My profile",
+        "de": "👤 Mein Profil",
+        "pl": "👤 Mój profil",
+        "ru": "👤 Мой профиль",
+    },
     "SETTINGS_LANGUAGE": {
         "uk": "🌐 Змінити мову",
         "en": "🌐 Change language",
         "de": "🌐 Sprache ändern",
         "pl": "🌐 Zmień język",
         "ru": "🌐 Изменить язык",
+    },
+    "PROFILE_OVERVIEW": {
+        "uk": "👤 <b>Ваш профіль</b>\n━━━━━━━━━━━━━━━━━━\nІм'я: <b>{name}</b>\nТелефон: {phone}\nBSU код: <code>{code}</code>\nМова інтерфейсу: {language}\nЗареєстровано: {registered}\nОстаннє оновлення: {updated}",
+        "en": "👤 <b>Your profile</b>\n━━━━━━━━━━━━━━━━━━\nName: <b>{name}</b>\nPhone: {phone}\nBSU code: <code>{code}</code>\nInterface language: {language}\nRegistered: {registered}\nLast update: {updated}",
+        "de": "👤 <b>Ihr Profil</b>\n━━━━━━━━━━━━━━━━━━\nName: <b>{name}</b>\nTelefon: {phone}\nBSU-Code: <code>{code}</code>\nInterface-Sprache: {language}\nRegistriert: {registered}\nZuletzt aktualisiert: {updated}",
+        "pl": "👤 <b>Twój profil</b>\n━━━━━━━━━━━━━━━━━━\nImię i nazwisko: <b>{name}</b>\nTelefon: {phone}\nKod BSU: <code>{code}</code>\nJęzyk interfejsu: {language}\nRejestracja: {registered}\nOstatnia aktualizacja: {updated}",
+        "ru": "👤 <b>Ваш профиль</b>\n━━━━━━━━━━━━━━━━━━\nИмя: <b>{name}</b>\nТелефон: {phone}\nBSU код: <code>{code}</code>\nЯзык интерфейса: {language}\nЗарегистрирован: {registered}\nПоследнее обновление: {updated}",
+    },
+    "PROFILE_HINT": {
+        "uk": "Використовуйте кнопки нижче, щоб оновити дані або повернутися до налаштувань.",
+        "en": "Use the buttons below to update your data or return to the settings menu.",
+        "de": "Nutzen Sie die Schaltflächen unten, um Ihre Daten zu aktualisieren oder zu den Einstellungen zurückzukehren.",
+        "pl": "Skorzystaj z przycisków poniżej, aby zaktualizować dane lub wrócić do ustawień.",
+        "ru": "Используйте кнопки ниже, чтобы обновить данные или вернуться к настройкам.",
+    },
+    "PROFILE_PHONE_MISSING": {
+        "uk": "не вказано",
+        "en": "not provided",
+        "de": "nicht angegeben",
+        "pl": "nie podano",
+        "ru": "не указан",
+    },
+    "PROFILE_BTN_EDIT_NAME": {
+        "uk": "✏️ Змінити ім'я",
+        "en": "✏️ Update name",
+        "de": "✏️ Namen ändern",
+        "pl": "✏️ Zmień imię",
+        "ru": "✏️ Изменить имя",
+    },
+    "PROFILE_BTN_EDIT_PHONE": {
+        "uk": "📞 Оновити телефон",
+        "en": "📞 Update phone",
+        "de": "📞 Telefonnummer aktualisieren",
+        "pl": "📞 Zaktualizuj telefon",
+        "ru": "📞 Обновить телефон",
+    },
+    "PROFILE_BTN_CANCEL": {
+        "uk": "⬅️ Скасувати",
+        "en": "⬅️ Cancel",
+        "de": "⬅️ Abbrechen",
+        "pl": "⬅️ Anuluj",
+        "ru": "⬅️ Отменить",
+    },
+    "PROFILE_NAME_PROMPT": {
+        "uk": "✏️ Введіть нове повне ім'я одним повідомленням (мінімум ім'я та прізвище). Щоб скасувати, надішліть «{cancel}».",
+        "en": "✏️ Enter your new full name in one message (at least first and last name). Send “{cancel}” to cancel.",
+        "de": "✏️ Geben Sie Ihren neuen vollständigen Namen in einer Nachricht ein (mindestens Vor- und Nachname). Senden Sie „{cancel}“, um abzubrechen.",
+        "pl": "✏️ Wpisz nowe pełne imię i nazwisko w jednej wiadomości (co najmniej imię i nazwisko). Aby anulować, wyślij „{cancel}”.",
+        "ru": "✏️ Введите новое полное имя одним сообщением (минимум имя и фамилию). Чтобы отменить, отправьте «{cancel}».",
+    },
+    "PROFILE_NAME_INVALID": {
+        "uk": "❗ Не вдалося розпізнати ім'я. Перевірте написання та спробуйте ще раз.",
+        "en": "❗ Couldn't recognise the name. Check the spelling and try again.",
+        "de": "❗ Name konnte nicht erkannt werden. Bitte prüfen Sie die Schreibweise und versuchen Sie es erneut.",
+        "pl": "❗ Nie udało się rozpoznać imienia i nazwiska. Sprawdź pisownię i spróbuj ponownie.",
+        "ru": "❗ Не удалось распознать имя. Проверьте написание и попробуйте снова.",
+    },
+    "PROFILE_NAME_SAVED": {
+        "uk": "✅ Ім'я оновлено: <b>{name}</b>",
+        "en": "✅ Name updated: <b>{name}</b>",
+        "de": "✅ Name aktualisiert: <b>{name}</b>",
+        "pl": "✅ Zaktualizowano imię: <b>{name}</b>",
+        "ru": "✅ Имя обновлено: <b>{name}</b>",
+    },
+    "PROFILE_PHONE_PROMPT": {
+        "uk": "📞 Надішліть актуальний номер кнопкою «{button}» або введіть його вручну у міжнародному форматі. Щоб вийти без змін, натисніть «{cancel}».",
+        "en": "📞 Send your current number via “{button}” or type it manually in the international format. Tap “{cancel}” to exit without changes.",
+        "de": "📞 Senden Sie Ihre aktuelle Nummer über „{button}“ oder geben Sie sie manuell im internationalen Format ein. Tippen Sie auf „{cancel}“, um ohne Änderungen zu schließen.",
+        "pl": "📞 Wyślij aktualny numer przyciskiem „{button}” lub wpisz go ręcznie w formacie międzynarodowym. Naciśnij „{cancel}”, aby wyjść bez zmian.",
+        "ru": "📞 Отправьте текущий номер кнопкой «{button}» или введите вручную в международном формате. Нажмите «{cancel}», чтобы выйти без изменений.",
+    },
+    "PROFILE_PHONE_INVALID": {
+        "uk": "❗ Не вдалося розпізнати номер. Вкажіть його у міжнародному форматі або скористайтеся кнопкою.",
+        "en": "❗ We couldn't read the number. Provide it in international format or use the button.",
+        "de": "❗ Nummer konnte nicht erkannt werden. Geben Sie sie im internationalen Format ein oder nutzen Sie die Schaltfläche.",
+        "pl": "❗ Nie udało się odczytać numeru. Podaj go w formacie międzynarodowym lub użyj przycisku.",
+        "ru": "❗ Не удалось распознать номер. Укажите его в международном формате или воспользуйтесь кнопкой.",
+    },
+    "PROFILE_PHONE_SAVED": {
+        "uk": "✅ Телефон оновлено: <b>{phone}</b>",
+        "en": "✅ Phone number updated: <b>{phone}</b>",
+        "de": "✅ Telefonnummer aktualisiert: <b>{phone}</b>",
+        "pl": "✅ Zaktualizowano numer telefonu: <b>{phone}</b>",
+        "ru": "✅ Телефон обновлён: <b>{phone}</b>",
+    },
+    "PROFILE_EDIT_CANCELLED": {
+        "uk": "ℹ️ Оновлення скасовано.",
+        "en": "ℹ️ Update cancelled.",
+        "de": "ℹ️ Aktualisierung abgebrochen.",
+        "pl": "ℹ️ Aktualizację anulowano.",
+        "ru": "ℹ️ Обновление отменено.",
     },
     "INVALID_COMMAND": {
         "uk": "⚠️ Команда не розпізнана. Скористайтеся меню нижче.",
@@ -699,32 +818,32 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📋 <b>Ключевые разделы</b>\n━━━━━━━━━━━━━━━━━━\n• «🧾 Чеки» — загрузка и история документов.\n• «💵 Финансы» — статистика, запросы и подтверждения выплат.\n• «📑 Документы» — файлы и инструкции по объекту.\n\nНажмите «ДАЛЕЕ», чтобы открыть главное меню.",
     },
     "REGISTER_NAME_ERROR": {
-        "uk": "❗ Здається, бракує частини ПІБ. Будь ласка, вкажіть ім'я, прізвище та по батькові повністю.",
-        "en": "❗ It looks like part of the full name is missing. Please provide first name, last name, and patronymic (if applicable).",
-        "de": "❗ Es scheint, dass Teile des vollständigen Namens fehlen. Bitte geben Sie Vorname, Nachname und ggf. zweiten Namen vollständig an.",
-        "pl": "❗ Wygląda na to, że brakuje części pełnego imienia i nazwiska. Podaj imię, nazwisko i, jeśli dotyczy, drugie imię.",
-        "ru": "❗ Похоже, не хватает части ФИО. Укажите имя, фамилию и отчество полностью.",
+        "uk": "❗ Будь ласка, вкажіть щонайменше ім'я та прізвище (по батькові — за бажанням).",
+        "en": "❗ Please provide at least first and last name (middle name optional).",
+        "de": "❗ Bitte geben Sie mindestens Vor- und Nachnamen an (zweiter Name optional).",
+        "pl": "❗ Podaj co najmniej imię i nazwisko (drugie imię opcjonalnie).",
+        "ru": "❗ Укажите как минимум имя и фамилию (отчество по желанию).",
     },
     "REGISTER_PHONE_PROMPT": {
-        "uk": "📞 Залишився номер телефону. Натисніть «📱 Надіслати номер», і бот автоматично додасть його до анкети.",
-        "en": "📞 We still need your phone number. Tap “📱 Share phone number” and the bot will fill it in automatically.",
-        "de": "📞 Uns fehlt noch Ihre Telefonnummer. Tippen Sie auf „📱 Telefonnummer senden“, und der Bot trägt sie automatisch ein.",
-        "pl": "📞 Potrzebujemy jeszcze numeru telefonu. Kliknij „📱 Wyślij numer”, a bot uzupełni go automatycznie.",
-        "ru": "📞 Остался телефон для связи. Нажмите «📱 Отправить номер», и бот автоматически подставит его в анкету.",
+        "uk": "📞 Залишився номер телефону. Скористайтеся кнопкою «📱 Надіслати номер» або введіть його вручну у міжнародному форматі.",
+        "en": "📞 We still need your phone number. Use “📱 Share phone number” or type it manually in international format.",
+        "de": "📞 Uns fehlt noch Ihre Telefonnummer. Nutzen Sie „📱 Telefonnummer senden“ oder geben Sie sie manuell im internationalen Format ein.",
+        "pl": "📞 Potrzebujemy jeszcze numeru telefonu. Użyj „📱 Wyślij numer” lub wpisz go ręcznie w formacie międzynarodowym.",
+        "ru": "📞 Остался телефон для связи. Нажмите «📱 Отправить номер» или введите его вручную в международном формате.",
     },
-    "REGISTER_PHONE_ERROR": {
-        "uk": "❗ Не вдалося отримати номер. Спробуйте ще раз кнопкою «📱 Надіслати номер».",
-        "en": "❗ We couldn't read the number. Try again using the “📱 Share phone number” button.",
-        "de": "❗ Telefonnummer konnte nicht erkannt werden. Versuchen Sie es erneut über die Schaltfläche „📱 Telefonnummer senden“.",
-        "pl": "❗ Nie udało się pobrać numeru. Spróbuj ponownie przyciskiem „📱 Wyślij numer”.",
-        "ru": "❗ Номер не получен. Попробуйте ещё раз кнопкой «📱 Отправить номер».",
+    "REGISTER_PHONE_INVALID": {
+        "uk": "❗ Не вдалося розпізнати номер. Перевірте формат або скористайтеся кнопкою нижче.",
+        "en": "❗ Couldn't read the number. Check the format or use the button below.",
+        "de": "❗ Nummer konnte nicht erkannt werden. Prüfen Sie das Format oder nutzen Sie die Schaltfläche unten.",
+        "pl": "❗ Nie udało się odczytać numeru. Sprawdź format lub użyj przycisku poniżej.",
+        "ru": "❗ Не удалось распознать номер. Проверьте формат или воспользуйтесь кнопкой ниже.",
     },
     "REGISTER_PHONE_TEXT_PROMPT": {
-        "uk": "❗ Щоб продовжити, відправте номер телефона кнопкою «📱 Надіслати номер» нижче — так уникнемо помилок.",
-        "en": "❗ To continue, send your phone number using the “📱 Share phone number” button below to avoid mistakes.",
-        "de": "❗ Um fortzufahren, senden Sie Ihre Telefonnummer über die Schaltfläche „📱 Telefonnummer senden“, um Fehler zu vermeiden.",
-        "pl": "❗ Aby kontynuować, wyślij numer telefonu przyciskiem „📱 Wyślij numer” poniżej – unikniemy pomyłek.",
-        "ru": "❗ Чтобы продолжить регистрацию, отправьте номер телефона кнопкой «📱 Отправить номер» ниже, чтобы избежать ошибок.",
+        "uk": "❗ Введіть номер телефону у міжнародному форматі (наприклад, +380501112233) або скористайтеся кнопкою нижче.",
+        "en": "❗ Enter your phone number in the international format (e.g., +441122334455) or use the button below.",
+        "de": "❗ Geben Sie die Telefonnummer im internationalen Format ein (z. B. +4915112345678) oder nutzen Sie die Schaltfläche unten.",
+        "pl": "❗ Wpisz numer telefonu w formacie międzynarodowym (np. +48123123123) lub użyj przycisku poniżej.",
+        "ru": "❗ Введите номер телефона в международном формате (например, +380501112233) или воспользуйтесь кнопкой ниже.",
     },
     "BTN_SEND_PHONE": {
         "uk": "📱 Надіслати номер",
@@ -1025,6 +1144,10 @@ TEXTS: Dict[str, Dict[str, str]] = {
 LANG_CODES = {code for code, _ in LANG_ORDER}
 LANG_LABELS = {code: label for code, label in LANG_ORDER}
 
+PROFILE_CANCEL_KEYWORDS = {
+    "cancel", "скасувати", "відміна", "отмена", "стоп", "stop"
+}
+
 
 def normalize_lang(code: Optional[str]) -> str:
     if isinstance(code, str) and code in LANG_CODES:
@@ -1108,6 +1231,11 @@ class NovaPoshtaFSM(StatesGroup):
     waiting_assign_ttn = State()
     waiting_assign_user = State()
     waiting_assign_note = State()
+
+
+class ProfileUpdateFSM(StatesGroup):
+    edit_name = State()
+    edit_phone = State()
 
 
 # ========================== FS HELPERS ==========================
@@ -1623,16 +1751,70 @@ def _sanitize_filename(name: str) -> str:
     base = re.sub(r"_+", "_", base).strip("_")
     return base or "file"
 
+
+def _normalize_name_token(token: str) -> str:
+    token = (token or "").strip()
+    if not token:
+        return ""
+    for sep in ("-", "'", "’"):
+        if sep in token:
+            return sep.join(_normalize_name_token(part) for part in token.split(sep))
+    if len(token) == 1:
+        return token.upper()
+    if re.search(r"[A-Za-zА-Яа-яЁёІіЇїЄєҐґ]", token):
+        return token[0].upper() + token[1:].lower()
+    return token
+
+
+def normalize_fullname(full: str) -> Optional[str]:
+    text = re.sub(r"\s+", " ", (full or "").strip())
+    if not text:
+        return None
+    parts = [part for part in text.split(" ") if part]
+    if len(parts) < 2:
+        return None
+    normalized = [token for token in (_normalize_name_token(part) for part in parts) if token]
+    if len(normalized) < 2:
+        return None
+    return " ".join(normalized)
+
+
+def normalize_phone_number(phone: str) -> Optional[str]:
+    raw = re.sub(r"[^0-9+]+", "", (phone or "").strip())
+    if not raw:
+        return None
+    if raw.startswith("00"):
+        raw = "+" + raw[2:]
+    elif not raw.startswith("+"):
+        raw = "+" + raw
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) < 10:
+        return None
+    return raw
+
+
+def profile_language_label(profile: dict) -> str:
+    code = normalize_lang(profile.get("lang"))
+    return LANG_LABELS.get(code) or LANG_LABELS.get(DEFAULT_LANG) or code
+
+
+def profile_timestamp_display(value: Optional[str]) -> str:
+    formatted = format_datetime_short(value)
+    return formatted or "—"
+
 def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str]=None, phone: Optional[str]=None,
                 lang: Optional[str]=None, lang_confirmed: Optional[bool]=None) -> dict:
+    now_iso = datetime.now().isoformat()
+    normalized_name = normalize_fullname(fullname) if fullname else None
+    normalized_phone = normalize_phone_number(phone) if phone else None
     prof = load_user(uid)
     if not prof:
         # генерируем BSU-код пользователя (четырёхзначный)
         bsu = f"BSU-{random.randint(1000, 9999)}"
         prof = {
             "user_id": uid,
-            "fullname": fullname or tg_payload.get("first_name") or f"User{uid}",
-            "phone": phone or "",
+            "fullname": normalized_name or fullname or tg_payload.get("first_name") or f"User{uid}",
+            "phone": normalized_phone or phone or "",
             "tg": tg_payload,
             "bsu": bsu,                 # УНИКАЛЬНЫЙ КОД ПОЛЬЗОВАТЕЛЯ
             "counters": {"receipt_seq": 0},
@@ -1640,11 +1822,28 @@ def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str]=None, phone:
             "payouts": [],              # ссылки на запросы выплат
             "lang": normalize_lang(lang) if lang else DEFAULT_LANG,
             "lang_confirmed": bool(lang),
+            "registered_at": now_iso,
+            "updated_at": now_iso,
         }
     else:
+        changed = False
         prof["tg"] = {**prof.get("tg", {}), **tg_payload}
-        if fullname: prof["fullname"] = fullname
-        if phone: prof["phone"] = phone
+        if normalized_name:
+            if prof.get("fullname") != normalized_name:
+                prof["fullname"] = normalized_name
+                changed = True
+        elif fullname and fullname.strip():
+            if prof.get("fullname") != fullname.strip():
+                prof["fullname"] = fullname.strip()
+                changed = True
+        if normalized_phone:
+            if prof.get("phone") != normalized_phone:
+                prof["phone"] = normalized_phone
+                changed = True
+        elif phone and phone.strip():
+            if prof.get("phone") != phone.strip():
+                prof["phone"] = phone.strip()
+                changed = True
         if lang is not None:
             prof["lang"] = normalize_lang(lang)
         elif "lang" not in prof:
@@ -1663,6 +1862,13 @@ def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str]=None, phone:
             prof["lang"] = DEFAULT_LANG
         if "lang_confirmed" not in prof:
             prof["lang_confirmed"] = bool(prof.get("lang") in LANG_CODES)
+        if "registered_at" not in prof:
+            prof["registered_at"] = now_iso
+            changed = True
+        if changed:
+            prof["updated_at"] = now_iso
+        elif "updated_at" not in prof:
+            prof["updated_at"] = prof.get("registered_at", now_iso)
     if normalize_profile_receipts(prof):
         pass
     save_user(prof)
@@ -3412,6 +3618,7 @@ def kb_next_step(target: Any, callback_data: str) -> InlineKeyboardMarkup:
 
 def kb_settings(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "SETTINGS_PROFILE"), callback_data="settings_profile"))
     kb.add(InlineKeyboardButton(tr(uid, "SETTINGS_LANGUAGE"), callback_data="settings_language"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
     return kb
@@ -3421,6 +3628,42 @@ def kb_language_settings(uid: int) -> InlineKeyboardMarkup:
     kb = kb_language_picker("settings_lang")
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_SETTINGS"), callback_data="settings_back"))
     return kb
+
+
+def kb_profile(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_NAME"), callback_data="profile_edit_name"))
+    kb.add(InlineKeyboardButton(tr(uid, "PROFILE_BTN_EDIT_PHONE"), callback_data="profile_edit_phone"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_SETTINGS"), callback_data="settings_back"))
+    return kb
+
+
+def profile_overview_text(uid: int) -> str:
+    profile = load_user(uid) or {"user_id": uid}
+    name = profile.get("fullname") or (profile.get("tg") or {}).get("first_name") or f"User {uid}"
+    phone = profile.get("phone") or tr(uid, "PROFILE_PHONE_MISSING")
+    code = profile.get("bsu") or "—"
+    language = profile_language_label(profile)
+    registered = profile_timestamp_display(profile.get("registered_at"))
+    updated = profile_timestamp_display(profile.get("updated_at"))
+    return tr(
+        uid,
+        "PROFILE_OVERVIEW",
+        name=h(name),
+        phone=h(phone),
+        code=h(code),
+        language=h(language),
+        registered=h(registered),
+        updated=h(updated),
+    )
+
+
+async def settings_profile_view(uid: int, flash: Optional[str] = None):
+    text = profile_overview_text(uid)
+    if flash:
+        text = f"{flash}\n\n{text}"
+    text = "\n".join([text, tr(uid, "PROFILE_HINT")]).strip()
+    await clear_then_anchor(uid, text, kb_profile(uid))
 
 
 def inline_kb_signature(kb: Optional[InlineKeyboardMarkup]) -> Any:
@@ -3774,8 +4017,8 @@ async def onb_fullname(m: types.Message, state: FSMContext):
     full = (m.text or "").strip()
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
-    parts = full.split()
-    if len(parts) < 3:
+    normalized = normalize_fullname(full)
+    if not normalized:
         x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_NAME_ERROR"))
         flow_track(uid, x); return
     data = await state.get_data()
@@ -3783,7 +4026,7 @@ async def onb_fullname(m: types.Message, state: FSMContext):
     if prompt_id:
         try: await bot.delete_message(m.chat.id, prompt_id)
         except Exception: pass
-    await state.update_data(fullname=full, name_prompt_id=None)
+    await state.update_data(fullname=normalized, name_prompt_id=None)
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
     x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_PROMPT"), reply_markup=kb)
@@ -3797,11 +4040,16 @@ async def onb_phone_contact(m: types.Message, state: FSMContext):
     phone = (m.contact.phone_number if m.contact else "").strip()
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
-    if not phone:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_ERROR"))
+    normalized_phone = normalize_phone_number(phone)
+    if not normalized_phone:
+        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_INVALID"), reply_markup=kb)
         flow_track(uid, warn); return
     data = await state.get_data()
-    prof = ensure_user(uid, users_runtime[uid]["tg"], fullname=data.get("fullname"), phone=phone)
+    runtime = users_runtime.setdefault(uid, {})
+    tg_payload = runtime.get("tg") or {"user_id": uid}
+    prof = ensure_user(uid, tg_payload, fullname=data.get("fullname"), phone=normalized_phone)
     save_user(prof)
     await state.finish()
     ok = await bot.send_message(m.chat.id, tr(uid, "START_PROFILE_SAVED", code=h(prof['bsu'])), reply_markup=ReplyKeyboardRemove())
@@ -3811,14 +4059,30 @@ async def onb_phone_contact(m: types.Message, state: FSMContext):
 
 
 @dp.message_handler(state=OnboardFSM.phone, content_types=ContentType.TEXT)
-async def onb_phone_text_wrong(m: types.Message, state: FSMContext):
+async def onb_phone_text(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
-    x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_PROMPT"), reply_markup=kb)
-    flow_track(uid, x)
+    text = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    normalized_phone = normalize_phone_number(text)
+    if not normalized_phone:
+        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_INVALID"), reply_markup=kb)
+        flow_track(uid, warn)
+        return
+    data = await state.get_data()
+    runtime = users_runtime.setdefault(uid, {})
+    tg_payload = runtime.get("tg") or {"user_id": uid}
+    prof = ensure_user(uid, tg_payload, fullname=data.get("fullname"), phone=normalized_phone)
+    save_user(prof)
+    await state.finish()
+    ok = await bot.send_message(m.chat.id, tr(uid, "START_PROFILE_SAVED", code=h(prof['bsu'])), reply_markup=ReplyKeyboardRemove())
+    flow_track(uid, ok)
+    await anchor_show_root(uid)
+    await flow_clear(uid)
 
 
 # ========================== ADMIN PROMOTE ==========================
@@ -5355,9 +5619,44 @@ def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[s
     return recipients
 
 
+def alerts_notification_intro(event: Dict[str, Any], lang: str, kind: str) -> str:
+    region_raw = event.get("region_display") or event.get("region") or "—"
+    region = alerts_display_region_name(region_raw, lang)
+    event_type = alerts_type_label(event, lang)
+    severity = alerts_severity_label(event, lang)
+    started = alerts_format_timestamp(event.get("started_at")) or "—"
+    ended = alerts_format_timestamp(event.get("ended_at")) or "—"
+    if kind == "end":
+        return tr(
+            lang,
+            "ALERTS_PUSH_ENDED",
+            region=h(region),
+            type=h(event_type),
+            severity=h(severity),
+            started=h(started),
+            ended=h(ended),
+        )
+    return tr(
+        lang,
+        "ALERTS_PUSH_STARTED",
+        region=h(region),
+        type=h(event_type),
+        severity=h(severity),
+        started=h(started),
+    )
+
+
 def alerts_notification_text(uid: int, event: Dict[str, Any], kind: str) -> str:
     lang = resolve_lang(uid)
-    return alerts_format_card(event, lang)
+    intro = alerts_notification_intro(event, lang, kind)
+    details = tr(lang, "ALERTS_PUSH_DETAILS")
+    card = alerts_format_card(event, lang)
+    parts = [intro]
+    if details:
+        parts.append(details)
+    if card:
+        parts.append(card)
+    return "\n\n".join(parts)
 
 
 async def alerts_broadcast(event_id: str, kind: str) -> None:
@@ -6494,6 +6793,16 @@ async def menu_settings(c: types.CallbackQuery):
     await c.answer()
 
 
+@dp.callback_query_handler(lambda c: c.data == "settings_profile")
+async def settings_profile(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    current = await state.get_state()
+    if current:
+        await state.finish()
+    await settings_profile_view(uid)
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "settings_language")
 async def settings_language(c: types.CallbackQuery):
     uid = c.from_user.id
@@ -6506,6 +6815,133 @@ async def settings_back(c: types.CallbackQuery):
     uid = c.from_user.id
     await clear_then_anchor(uid, tr(uid, "SETTINGS_TITLE"), kb_settings(uid))
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_name")
+async def profile_edit_name_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    current = await state.get_state()
+    if current:
+        await state.finish()
+    await ProfileUpdateFSM.edit_name.set()
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        tr(uid, "PROFILE_NAME_PROMPT", cancel=tr(uid, "PROFILE_BTN_CANCEL")),
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    flow_track(uid, prompt)
+    await c.answer()
+
+
+@dp.message_handler(state=ProfileUpdateFSM.edit_name, content_types=ContentType.TEXT)
+async def profile_edit_name_receive(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    lower = text.lower()
+    cancel_match = tr(uid, "PROFILE_BTN_CANCEL").lower()
+    if lower in PROFILE_CANCEL_KEYWORDS or lower == cancel_match:
+        await state.finish()
+        await settings_profile_view(uid, tr(uid, "PROFILE_EDIT_CANCELLED"))
+        return
+    normalized = normalize_fullname(text)
+    if not normalized:
+        warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_NAME_INVALID"))
+        flow_track(uid, warn)
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    tg_payload = runtime.get("tg") or {"user_id": uid}
+    ensure_user(uid, tg_payload, fullname=normalized)
+    await state.finish()
+    await settings_profile_view(uid, tr(uid, "PROFILE_NAME_SAVED", name=h(normalized)))
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_phone")
+async def profile_edit_phone_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    current = await state.get_state()
+    if current:
+        await state.finish()
+    await ProfileUpdateFSM.edit_phone.set()
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+    kb.add(KeyboardButton(tr(uid, "PROFILE_BTN_CANCEL")))
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        tr(
+            uid,
+            "PROFILE_PHONE_PROMPT",
+            button=tr(uid, "BTN_SEND_PHONE"),
+            cancel=tr(uid, "PROFILE_BTN_CANCEL"),
+        ),
+        reply_markup=kb,
+    )
+    flow_track(uid, prompt)
+    await state.update_data(phone_keyboard=True)
+    await c.answer()
+
+
+async def _profile_remove_keyboard(chat_id: int):
+    ack = await bot.send_message(chat_id, "\u2063", reply_markup=ReplyKeyboardRemove())
+    await _delete_message_safe(ack.chat.id, ack.message_id)
+
+
+async def _profile_handle_phone_success(uid: int, state: FSMContext, chat_id: int, phone: str):
+    data = await state.get_data()
+    await state.finish()
+    if data.get("phone_keyboard"):
+        await _profile_remove_keyboard(chat_id)
+    await settings_profile_view(uid, tr(uid, "PROFILE_PHONE_SAVED", phone=h(phone)))
+
+
+@dp.message_handler(content_types=ContentType.CONTACT, state=ProfileUpdateFSM.edit_phone)
+async def profile_edit_phone_contact(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    phone = (m.contact.phone_number if m.contact else "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    normalized = normalize_phone_number(phone)
+    if not normalized:
+        warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_PHONE_INVALID"))
+        flow_track(uid, warn)
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    tg_payload = runtime.get("tg") or {"user_id": uid}
+    ensure_user(uid, tg_payload, phone=normalized)
+    await _profile_handle_phone_success(uid, state, m.chat.id, normalized)
+
+
+@dp.message_handler(state=ProfileUpdateFSM.edit_phone, content_types=ContentType.TEXT)
+async def profile_edit_phone_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    lower = text.lower()
+    cancel_text = tr(uid, "PROFILE_BTN_CANCEL").lower()
+    if lower in PROFILE_CANCEL_KEYWORDS or lower == cancel_text:
+        data = await state.get_data()
+        await state.finish()
+        if data.get("phone_keyboard"):
+            await _profile_remove_keyboard(m.chat.id)
+        await settings_profile_view(uid, tr(uid, "PROFILE_EDIT_CANCELLED"))
+        return
+    normalized = normalize_phone_number(text)
+    if not normalized:
+        warn = await bot.send_message(m.chat.id, tr(uid, "PROFILE_PHONE_INVALID"))
+        flow_track(uid, warn)
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    tg_payload = runtime.get("tg") or {"user_id": uid}
+    ensure_user(uid, tg_payload, phone=normalized)
+    await _profile_handle_phone_success(uid, state, m.chat.id, normalized)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("settings_lang:"))
