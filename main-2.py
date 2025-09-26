@@ -6692,7 +6692,7 @@ def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
             progress=progress,
         )
     lines: List[str] = []
-    if lead_line:
+    if ended and lead_line:
         lines.append(lead_line)
         lines.append("")
     lines.append(header)
