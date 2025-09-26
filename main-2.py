@@ -770,6 +770,104 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "📬 Przypisz TTN użytkownikowi",
         "ru": "📬 Закрепить ТТН за пользователем",
     },
+    "BTN_PROFILE": {
+        "uk": "👤 Мій профіль",
+        "en": "👤 My profile",
+        "de": "👤 Mein Profil",
+        "pl": "👤 Mój profil",
+        "ru": "👤 Мой профиль",
+    },
+    "BTN_PROFILE_EDIT": {
+        "uk": "✏️ Редагувати профіль",
+        "en": "✏️ Edit profile",
+        "de": "✏️ Profil bearbeiten",
+        "pl": "✏️ Edytuj profil",
+        "ru": "✏️ Редактировать профиль",
+    },
+    "BTN_PROFILE_VIEW_PHOTO": {
+        "uk": "👁 Переглянути фото",
+        "en": "👁 View photo",
+        "de": "👁 Foto anzeigen",
+        "pl": "👁 Zobacz zdjęcie",
+        "ru": "👁 Просмотреть фото",
+    },
+    "BTN_PROFILE_HIDE_PHOTO": {
+        "uk": "📝 Повернутись до тексту",
+        "en": "📝 Back to summary",
+        "de": "📝 Zurück zur Übersicht",
+        "pl": "📝 Wróć do podsumowania",
+        "ru": "📝 Вернуться к тексту",
+    },
+    "BTN_PROFILE_DONE": {
+        "uk": "✅ Готово",
+        "en": "✅ Done",
+        "de": "✅ Fertig",
+        "pl": "✅ Gotowe",
+        "ru": "✅ Готово",
+    },
+    "BTN_PROFILE_UPDATE_PHOTO": {
+        "uk": "🖼 Оновити фото",
+        "en": "🖼 Update photo",
+        "de": "🖼 Foto aktualisieren",
+        "pl": "🖼 Zaktualizuj zdjęcie",
+        "ru": "🖼 Обновить фото",
+    },
+    "BTN_PROFILE_REMOVE_PHOTO": {
+        "uk": "🗑 Видалити фото",
+        "en": "🗑 Remove photo",
+        "de": "🗑 Foto löschen",
+        "pl": "🗑 Usuń zdjęcie",
+        "ru": "🗑 Удалить фото",
+    },
+    "BTN_PROFILE_FIELD_LAST": {
+        "uk": "1. Прізвище",
+        "en": "1. Last name",
+        "de": "1. Nachname",
+        "pl": "1. Nazwisko",
+        "ru": "1. Фамилия",
+    },
+    "BTN_PROFILE_FIELD_FIRST": {
+        "uk": "2. Ім'я",
+        "en": "2. First name",
+        "de": "2. Vorname",
+        "pl": "2. Imię",
+        "ru": "2. Имя",
+    },
+    "BTN_PROFILE_FIELD_MIDDLE": {
+        "uk": "3. По батькові",
+        "en": "3. Patronymic",
+        "de": "3. Vatersname",
+        "pl": "3. Drugie imię",
+        "ru": "3. Отчество",
+    },
+    "BTN_PROFILE_FIELD_BIRTHDATE": {
+        "uk": "4. Дата народження",
+        "en": "4. Birth date",
+        "de": "4. Geburtsdatum",
+        "pl": "4. Data urodzenia",
+        "ru": "4. Дата рождения",
+    },
+    "BTN_PROFILE_FIELD_REGION": {
+        "uk": "5. Область",
+        "en": "5. Region",
+        "de": "5. Region",
+        "pl": "5. Obwód",
+        "ru": "5. Область",
+    },
+    "BTN_PROFILE_FIELD_PHONE": {
+        "uk": "6. Телефон",
+        "en": "6. Phone",
+        "de": "6. Telefon",
+        "pl": "6. Telefon",
+        "ru": "6. Телефон",
+    },
+    "BTN_PROFILE_CANCEL": {
+        "uk": "⬅️ Скасувати",
+        "en": "⬅️ Cancel",
+        "de": "⬅️ Abbrechen",
+        "pl": "⬅️ Anuluj",
+        "ru": "⬅️ Отменить",
+    },
     "BTN_BACK_ROOT": {
         "uk": "⬅️ На головну",
         "en": "⬅️ Main menu",
@@ -1077,6 +1175,209 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "Registrierung abgeschlossen. Ihre BSG-Kennung lautet <b>{code}</b>.",
         "pl": "Rejestracja zakończona. Twój kod BSG to <b>{code}</b>.",
         "ru": "Регистрация завершена. Ваш артикул BSG — <b>{code}</b>.",
+    },
+    "PROFILE_HEADER": {
+        "uk": "👤 <b>Мій профіль</b>",
+        "en": "👤 <b>My profile</b>",
+        "de": "👤 <b>Mein Profil</b>",
+        "pl": "👤 <b>Mój profil</b>",
+        "ru": "👤 <b>Мой профиль</b>",
+    },
+    "PROFILE_EDIT_HINT": {
+        "uk": "✏️ Режим редагування активний. Оберіть поле нижче, щоб оновити дані.",
+        "en": "✏️ Edit mode is active. Pick a field below to update your data.",
+        "de": "✏️ Bearbeitungsmodus aktiv. Wählen Sie unten ein Feld, um die Daten zu aktualisieren.",
+        "pl": "✏️ Tryb edycji jest aktywny. Wybierz pole poniżej, aby zaktualizować dane.",
+        "ru": "✏️ Режим редактирования активен. Выберите поле ниже, чтобы обновить данные.",
+    },
+    "PROFILE_FIELD_LAST_NAME": {
+        "uk": "Прізвище",
+        "en": "Last name",
+        "de": "Nachname",
+        "pl": "Nazwisko",
+        "ru": "Фамилия",
+    },
+    "PROFILE_FIELD_FIRST_NAME": {
+        "uk": "Ім'я",
+        "en": "First name",
+        "de": "Vorname",
+        "pl": "Imię",
+        "ru": "Имя",
+    },
+    "PROFILE_FIELD_MIDDLE_NAME": {
+        "uk": "По батькові",
+        "en": "Patronymic",
+        "de": "Vatersname",
+        "pl": "Drugie imię",
+        "ru": "Отчество",
+    },
+    "PROFILE_FIELD_BIRTHDATE": {
+        "uk": "Дата народження",
+        "en": "Birth date",
+        "de": "Geburtsdatum",
+        "pl": "Data urodzenia",
+        "ru": "Дата рождения",
+    },
+    "PROFILE_FIELD_REGION": {
+        "uk": "Область",
+        "en": "Region",
+        "de": "Region",
+        "pl": "Obwód",
+        "ru": "Область",
+    },
+    "PROFILE_FIELD_PHONE": {
+        "uk": "Телефон",
+        "en": "Phone",
+        "de": "Telefon",
+        "pl": "Telefon",
+        "ru": "Телефон",
+    },
+    "PROFILE_FIELD_TG_ID": {
+        "uk": "Telegram ID",
+        "en": "Telegram ID",
+        "de": "Telegram-ID",
+        "pl": "ID Telegram",
+        "ru": "Telegram ID",
+    },
+    "PROFILE_FIELD_TG_USERNAME": {
+        "uk": "Telegram юзер",
+        "en": "Telegram username",
+        "de": "Telegram-Benutzername",
+        "pl": "Nazwa w Telegramie",
+        "ru": "Имя в Telegram",
+    },
+    "PROFILE_FIELD_BSU": {
+        "uk": "BSU код",
+        "en": "BSU code",
+        "de": "BSU-Code",
+        "pl": "Kod BSU",
+        "ru": "BSU код",
+    },
+    "PROFILE_FIELD_PHOTO": {
+        "uk": "Фото профілю",
+        "en": "Profile photo",
+        "de": "Profilfoto",
+        "pl": "Zdjęcie profilu",
+        "ru": "Фото профиля",
+    },
+    "PROFILE_VALUE_MISSING": {
+        "uk": "—",
+        "en": "—",
+        "de": "—",
+        "pl": "—",
+        "ru": "—",
+    },
+    "PROFILE_PHOTO_STATUS_OK": {
+        "uk": "завантажено",
+        "en": "uploaded",
+        "de": "hochgeladen",
+        "pl": "dodano",
+        "ru": "загружено",
+    },
+    "PROFILE_PHOTO_STATUS_MISSING": {
+        "uk": "відсутнє",
+        "en": "missing",
+        "de": "fehlt",
+        "pl": "brak",
+        "ru": "отсутствует",
+    },
+    "PROFILE_PHOTO_STATUS_SKIPPED": {
+        "uk": "поки пропущено",
+        "en": "skipped for now",
+        "de": "vorerst übersprungen",
+        "pl": "pominięto",
+        "ru": "пропущено пока",
+    },
+    "PROFILE_PROMPT_LAST_NAME": {
+        "uk": "1. Вкажіть нове прізвище (лише літери).",
+        "en": "1. Enter the new last name (letters only).",
+        "de": "1. Geben Sie den neuen Nachnamen ein (nur Buchstaben).",
+        "pl": "1. Podaj nowe nazwisko (tylko litery).",
+        "ru": "1. Укажите новую фамилию (только буквы).",
+    },
+    "PROFILE_PROMPT_FIRST_NAME": {
+        "uk": "2. Вкажіть нове ім'я (лише літери).",
+        "en": "2. Enter the new first name (letters only).",
+        "de": "2. Geben Sie den neuen Vornamen ein (nur Buchstaben).",
+        "pl": "2. Podaj nowe imię (tylko litery).",
+        "ru": "2. Укажите новое имя (только буквы).",
+    },
+    "PROFILE_PROMPT_MIDDLE_NAME": {
+        "uk": "3. Введіть по батькові або напишіть «немає», щоб очистити поле.",
+        "en": "3. Provide a patronymic or type “none” to clear the field.",
+        "de": "3. Geben Sie den Vatersnamen an oder schreiben Sie „kein“, um das Feld zu leeren.",
+        "pl": "3. Podaj drugie imię lub wpisz „brak”, aby wyczyścić pole.",
+        "ru": "3. Введите отчество или напишите «нет», чтобы очистить поле.",
+    },
+    "PROFILE_PROMPT_BIRTHDATE": {
+        "uk": "4. Вкажіть дату народження у форматі ДД.ММ.РРРР.",
+        "en": "4. Enter the birth date in DD.MM.YYYY format.",
+        "de": "4. Geben Sie das Geburtsdatum im Format TT.MM.JJJJ ein.",
+        "pl": "4. Podaj datę urodzenia w formacie DD.MM.RRRR.",
+        "ru": "4. Укажите дату рождения в формате ДД.ММ.ГГГГ.",
+    },
+    "PROFILE_PROMPT_REGION": {
+        "uk": "5. Оберіть область проживання кнопкою нижче.",
+        "en": "5. Choose your region using the button below.",
+        "de": "5. Wählen Sie Ihre Region über die Schaltfläche unten.",
+        "pl": "5. Wybierz swój obwód za pomocą przycisku poniżej.",
+        "ru": "5. Выберите область проживания кнопкой ниже.",
+    },
+    "PROFILE_PROMPT_PHONE": {
+        "uk": "6. Надішліть номер телефону через кнопку «📱 Надіслати номер».",
+        "en": "6. Send your phone number via the “📱 Share phone number” button.",
+        "de": "6. Senden Sie Ihre Telefonnummer über die Schaltfläche „📱 Nummer senden“.",
+        "pl": "6. Wyślij numer telefonu przyciskiem „📱 Wyślij numer”.",
+        "ru": "6. Отправьте номер телефона кнопкой «📱 Отправить номер».",
+    },
+    "PROFILE_PROMPT_PHOTO": {
+        "uk": "7. Завантажте оновлене паспортне фото.\n━━━━━━━━━━━━━━━━━━\n• фронтальний ракурс\n• нейтральний фон\n• рівне освітлення",
+        "en": "7. Upload an updated passport-style photo.\n━━━━━━━━━━━━━━━━━━\n• frontal view\n• neutral background\n• even lighting",
+        "de": "7. Laden Sie ein aktualisiertes Passfoto hoch.\n━━━━━━━━━━━━━━━━━━\n• frontale Ansicht\n• neutraler Hintergrund\n• gleichmäßige Beleuchtung",
+        "pl": "7. Dodaj zaktualizowane zdjęcie paszportowe.\n━━━━━━━━━━━━━━━━━━\n• ujęcie frontalne\n• neutralne tło\n• równomierne oświetlenie",
+        "ru": "7. Загрузите обновлённое фото формата «на документы».\n━━━━━━━━━━━━━━━━━━\n• фронтальный ракурс\n• нейтральный фон\n• ровное освещение",
+    },
+    "PROFILE_UPDATE_SUCCESS": {
+        "uk": "✅ Дані оновлено",
+        "en": "✅ Data updated",
+        "de": "✅ Daten aktualisiert",
+        "pl": "✅ Dane zaktualizowano",
+        "ru": "✅ Данные обновлены",
+    },
+    "PROFILE_PHOTO_UPDATED": {
+        "uk": "🖼 Фото профілю збережено",
+        "en": "🖼 Profile photo saved",
+        "de": "🖼 Profilfoto gespeichert",
+        "pl": "🖼 Zdjęcie profilu zapisane",
+        "ru": "🖼 Фото профиля сохранено",
+    },
+    "PROFILE_PHOTO_REMOVED": {
+        "uk": "🗑 Фото профілю видалено",
+        "en": "🗑 Profile photo removed",
+        "de": "🗑 Profilfoto gelöscht",
+        "pl": "🗑 Zdjęcie profilu usunięto",
+        "ru": "🗑 Фото профиля удалено",
+    },
+    "PROFILE_PHONE_SAVED": {
+        "uk": "📱 Телефон збережено",
+        "en": "📱 Phone saved",
+        "de": "📱 Telefon gespeichert",
+        "pl": "📱 Numer zapisano",
+        "ru": "📱 Телефон сохранён",
+    },
+    "PROFILE_CANCELLED": {
+        "uk": "❌ Редагування скасовано",
+        "en": "❌ Edit cancelled",
+        "de": "❌ Bearbeitung abgebrochen",
+        "pl": "❌ Edycję anulowano",
+        "ru": "❌ Редактирование отменено",
+    },
+    "PROFILE_NO_PHOTO": {
+        "uk": "📷 Фото профілю ще не завантажено.",
+        "en": "📷 A profile photo has not been uploaded yet.",
+        "de": "📷 Es wurde noch kein Profilfoto hochgeladen.",
+        "pl": "📷 Zdjęcie profilu nie zostało jeszcze dodane.",
+        "ru": "📷 Фото профиля ещё не загружено.",
     },
     "LANGUAGE_PROMPT": {
         "uk": "🌐 Оберіть мову спілкування з ботом:",
@@ -1549,6 +1850,18 @@ class OnboardFSM(StatesGroup):
     region_confirm = State()
     phone = State()
     photo = State()
+
+
+class ProfileEditFSM(StatesGroup):
+    waiting_last_name = State()
+    waiting_first_name = State()
+    waiting_middle_name = State()
+    waiting_birthdate = State()
+    waiting_region = State()
+    region_confirm = State()
+    waiting_phone = State()
+    waiting_photo = State()
+
 
 class ReceiptFSM(StatesGroup):
     waiting_photo = State()
@@ -3804,10 +4117,150 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(tr(uid, "BTN_NOVA_POSHTA"), callback_data="menu_np"),
     )
     kb.add(InlineKeyboardButton(tr(uid, "BTN_SETTINGS"), callback_data="menu_settings"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE"), callback_data="menu_profile"))
     if uid in admins:
         kb.add(InlineKeyboardButton(tr(uid, "BTN_ADMIN"), callback_data="menu_admin"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_ABOUT"), callback_data="menu_about"))
     return kb
+
+
+def kb_profile_cancel(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def profile_has_photo(profile: dict) -> bool:
+    photo = profile.get("photo") or {}
+    if not isinstance(photo, dict):
+        return False
+    path = user_profile_photo_path(profile.get("user_id")) if profile.get("user_id") else None
+    return bool(path and os.path.exists(path) and photo.get("status") != "skipped")
+
+
+def profile_photo_status_label(uid: int, profile: dict) -> str:
+    photo = profile.get("photo") or {}
+    if not photo:
+        return tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+    status = photo.get("status")
+    if status == "skipped":
+        return tr(uid, "PROFILE_PHOTO_STATUS_SKIPPED")
+    if profile_has_photo(profile):
+        return tr(uid, "PROFILE_PHOTO_STATUS_OK")
+    return tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+
+
+def profile_summary_text(uid: int, profile: dict, edit_mode: bool = False) -> str:
+    missing = tr(uid, "PROFILE_VALUE_MISSING")
+    last_name = h(profile.get("last_name") or missing)
+    first_name = h(profile.get("first_name") or missing)
+    middle_name = h(profile.get("middle_name") or missing)
+    birthdate = format_birthdate_display(profile.get("birthdate"), resolve_lang(uid))
+    region = h(profile.get("region") or missing)
+    phone = h(profile.get("phone") or missing)
+    tg = profile.get("tg") or {}
+    tg_id = str(profile.get("user_id", "—"))
+    tg_username = tg.get("username")
+    username_disp = h(f"@{tg_username}" if tg_username else missing)
+    bsu = h(profile.get("bsu") or missing)
+    photo_status = h(profile_photo_status_label(uid, profile))
+    lines = [
+        tr(uid, "PROFILE_HEADER"),
+        "━━━━━━━━━━━━━━━━━━",
+        f"{tr(uid, 'PROFILE_FIELD_LAST_NAME')}: <b>{last_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_FIRST_NAME')}: <b>{first_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_MIDDLE_NAME')}: <b>{middle_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_BIRTHDATE')}: <b>{h(birthdate)}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_REGION')}: <b>{region}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_PHONE')}: <b>{phone}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_BSU')}: <b>{bsu}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_TG_USERNAME')}: <b>{username_disp}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_TG_ID')}: <code>{tg_id}</code>",
+        f"{tr(uid, 'PROFILE_FIELD_PHOTO')}: <b>{photo_status}</b>",
+    ]
+    if edit_mode:
+        lines.append("")
+        lines.append(tr(uid, "PROFILE_EDIT_HINT"))
+    return "\n".join(lines)
+
+
+def kb_profile_menu(uid: int, profile: dict, edit_mode: bool = False, show_photo: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    has_photo = profile_has_photo(profile)
+    if edit_mode:
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_LAST"), callback_data="profile_edit_last"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_FIRST"), callback_data="profile_edit_first"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_MIDDLE"), callback_data="profile_edit_middle"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_BIRTHDATE"), callback_data="profile_edit_birthdate"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_REGION"), callback_data="profile_edit_region"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_PHONE"), callback_data="profile_edit_phone"),
+        )
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_UPDATE_PHOTO"), callback_data="profile_edit_photo"))
+        if has_photo:
+            kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_REMOVE_PHOTO"), callback_data="profile_remove_photo"))
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_DONE"), callback_data="profile_done"))
+    else:
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_EDIT"), callback_data="profile_edit"))
+        if has_photo:
+            if show_photo:
+                kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_HIDE_PHOTO"), callback_data="profile_hide_photo"))
+            else:
+                kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_VIEW_PHOTO"), callback_data="profile_view_photo"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def kb_profile_region_prompt(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_BUTTON"), callback_data="profile_region_open"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_region_picker(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"profile_region_pick:{idx}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_phone_keyboard(uid: int) -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+    kb.add(KeyboardButton(tr(uid, "BTN_PROFILE_CANCEL")))
+    return kb
+
+
+async def show_profile(uid: int, *, edit_mode: Optional[bool] = None, show_photo: Optional[bool] = None):
+    runtime = profile_runtime(uid)
+    if edit_mode is None or show_photo is None:
+        current_edit, current_photo = profile_get_flags(uid)
+        if edit_mode is None:
+            edit_mode = current_edit
+        if show_photo is None:
+            show_photo = current_photo
+    profile = load_user(uid) or ensure_user(uid, runtime.get("tg", {}))
+    profile.setdefault("user_id", uid)
+    has_photo = profile_has_photo(profile)
+    if show_photo and not has_photo:
+        await profile_send_notification(uid, tr(uid, "PROFILE_NO_PHOTO"))
+        show_photo = False
+    profile_set_flags(uid, edit_mode=edit_mode, show_photo=show_photo and has_photo)
+    caption = profile_summary_text(uid, profile, edit_mode=edit_mode)
+    kb = kb_profile_menu(uid, profile, edit_mode=edit_mode, show_photo=show_photo and has_photo)
+    if show_photo and has_photo:
+        await anchor_replace_with_photo(uid, user_profile_photo_path(uid), caption, kb)
+    else:
+        profile_set_flags(uid, show_photo=False)
+        chat = profile_chat_id(uid)
+        if chat:
+            await anchor_upsert(uid, chat, caption, kb)
 
 
 def kb_alerts(uid: int) -> InlineKeyboardMarkup:
@@ -4022,6 +4475,71 @@ def kb_admin_projects() -> InlineKeyboardMarkup:
     return kb
 
 
+def admin_collect_user_stats(profile: dict) -> dict:
+    receipts = profile.get("receipts") or {}
+    projects = sorted(receipts.keys()) if isinstance(receipts, dict) else []
+    total_count = 0
+    total_sum = 0.0
+    paid_sum = 0.0
+    unpaid_sum = 0.0
+    for recs in receipts.values():
+        if not isinstance(recs, list):
+            continue
+        for entry in recs:
+            try:
+                amount = float(entry.get("sum") or 0.0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            total_count += 1
+            total_sum += amount
+            if entry.get("paid") is True:
+                paid_sum += amount
+            elif entry.get("paid") is False:
+                unpaid_sum += amount
+    payouts = profile.get("payouts") or []
+    pending_payouts = [p for p in payouts if (p.get("status") not in {"confirmed", "closed"})]
+    confirmed_payouts = [p for p in payouts if p.get("status") in {"confirmed", "closed"}]
+    return {
+        "projects": projects,
+        "total_count": total_count,
+        "total_sum": total_sum,
+        "paid_sum": paid_sum,
+        "unpaid_sum": unpaid_sum,
+        "pending_payouts": pending_payouts,
+        "confirmed_payouts": confirmed_payouts,
+    }
+
+
+def admin_user_card_text(viewer_uid: int, profile: dict) -> str:
+    stats = admin_collect_user_stats(profile)
+    base = profile_summary_text(viewer_uid, profile, edit_mode=False)
+    lines = [base, "", "💼 <b>Активність</b>"]
+    lines.append(f"📂 Проєктів: <b>{len(stats['projects'])}</b>")
+    lines.append(f"🧾 Чеків: <b>{stats['total_count']}</b>")
+    lines.append(f"💰 Сума чеків: <b>{fmt_money(stats['total_sum'])} грн</b>")
+    lines.append(f"✅ Оплачено: <b>{fmt_money(stats['paid_sum'])} грн</b>")
+    lines.append(f"⏳ Очікує виплат: <b>{fmt_money(stats['unpaid_sum'])} грн</b>")
+    lines.append("")
+    lines.append("💵 <b>Запити на виплати</b>")
+    lines.append(f"⌛ В роботі: <b>{len(stats['pending_payouts'])}</b>")
+    lines.append(f"📗 Завершено: <b>{len(stats['confirmed_payouts'])}</b>")
+    return "\n".join(lines)
+
+
+def kb_admin_user(profile: dict, show_photo: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if profile_has_photo(profile):
+        label = "📝 Повернути текст" if show_photo else "👁 Показати фото"
+        kb.add(InlineKeyboardButton(label, callback_data="adm_user_photo_toggle"))
+    kb.row(
+        InlineKeyboardButton("📊 Статистика", callback_data="adm_stat_choose"),
+        InlineKeyboardButton("🧾 Чеки", callback_data="adm_recs_choose"),
+    )
+    kb.add(InlineKeyboardButton("💵 Фінанси", callback_data="adm_user_finance"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
+    return kb
+
+
 def kb_region_select() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     for idx, region in enumerate(UKRAINE_REGIONS):
@@ -4138,6 +4656,7 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
         try:
             await bot.edit_message_text(text, chat_id, anchor, reply_markup=kb)
             ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+            ur["anchor_mode"] = "text"
             return
         except MessageNotModified:
             return
@@ -4150,11 +4669,44 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     ur["anchor"] = msg.message_id
     ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+    ur["anchor_mode"] = "text"
 
 
 async def anchor_show_root(uid: int):
     chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
     if chat: await anchor_upsert(uid, chat, project_status_text(uid), kb_root(uid))
+
+
+async def anchor_replace_with_photo(uid: int, photo_path: str, caption: str, kb: InlineKeyboardMarkup):
+    runtime = users_runtime.setdefault(uid, {})
+    chat = runtime.get("tg", {}).get("chat_id")
+    if not chat:
+        return
+    if not os.path.exists(photo_path):
+        await anchor_upsert(uid, chat, caption, kb)
+        return
+    anchor = runtime.get("anchor")
+    kb_sign = inline_kb_signature(kb)
+    media = types.InputMediaPhoto(InputFile(photo_path), caption=caption, parse_mode="HTML")
+    try:
+        if anchor:
+            await bot.edit_message_media(chat_id=chat, message_id=anchor, media=media, reply_markup=kb)
+        else:
+            msg = await bot.send_photo(chat, InputFile(photo_path), caption=caption, reply_markup=kb)
+            runtime["anchor"] = msg.message_id
+    except MessageNotModified:
+        pass
+    except Exception:
+        try:
+            if anchor:
+                await bot.delete_message(chat, anchor)
+        except Exception:
+            pass
+        msg = await bot.send_photo(chat, InputFile(photo_path), caption=caption, reply_markup=kb)
+        runtime["anchor"] = msg.message_id
+    runtime["last_anchor_text"] = caption
+    runtime["last_anchor_kb"] = kb_sign
+    runtime["anchor_mode"] = "photo"
 
 
 async def anchor_show_text(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -4165,6 +4717,68 @@ async def anchor_show_text(uid: int, text: str, kb: InlineKeyboardMarkup):
 async def update_all_anchors():
     for uid in list(users_runtime.keys()):
         await anchor_show_root(uid)
+
+
+def profile_runtime(uid: int) -> dict:
+    return users_runtime.setdefault(uid, {})
+
+
+def profile_chat_id(uid: int) -> Optional[int]:
+    return profile_runtime(uid).get("tg", {}).get("chat_id")
+
+
+async def profile_clear_prompt(uid: int):
+    runtime = profile_runtime(uid)
+    prompt = runtime.pop("profile_prompt", None)
+    if isinstance(prompt, (list, tuple)) and len(prompt) == 2:
+        await _delete_message_safe(prompt[0], prompt[1])
+
+
+async def profile_send_prompt(uid: int, text: str, reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None):
+    chat = profile_chat_id(uid)
+    if not chat:
+        return None
+    await profile_clear_prompt(uid)
+    runtime = profile_runtime(uid)
+    if isinstance(reply_markup, ReplyKeyboardMarkup):
+        runtime["profile_reply_keyboard"] = True
+    else:
+        runtime.pop("profile_reply_keyboard", None)
+    msg = await bot.send_message(chat, text, reply_markup=reply_markup)
+    runtime["profile_prompt"] = (msg.chat.id, msg.message_id)
+    flow_track(uid, msg)
+    return msg
+
+
+async def profile_send_notification(uid: int, text: str, *, remove_keyboard: bool = False):
+    chat = profile_chat_id(uid)
+    if not chat:
+        return
+    markup = ReplyKeyboardRemove() if remove_keyboard else None
+    msg = await bot.send_message(chat, text, reply_markup=markup)
+    flow_track(uid, msg)
+    schedule_auto_delete(msg.chat.id, msg.message_id, delay=8)
+
+
+def profile_set_flags(uid: int, *, edit_mode: Optional[bool] = None, show_photo: Optional[bool] = None):
+    runtime = profile_runtime(uid)
+    if edit_mode is not None:
+        runtime["profile_edit_mode"] = bool(edit_mode)
+    if show_photo is not None:
+        runtime["profile_show_photo"] = bool(show_photo)
+
+
+def profile_get_flags(uid: int) -> Tuple[bool, bool]:
+    runtime = profile_runtime(uid)
+    return bool(runtime.get("profile_edit_mode")), bool(runtime.get("profile_show_photo"))
+
+
+async def profile_abort(uid: int, state: FSMContext, *, remove_keyboard: bool = False):
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=remove_keyboard)
+    await show_profile(uid, edit_mode=True, show_photo=False)
 
 
 # ========================== FLOW CLEANER ==========================
@@ -4805,6 +5419,232 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo
     confirm = await bot.send_message(chat_id, tr(uid, "REGISTER_FINISH_CONFIRM", code=h(profile.get("bsu", "—"))))
     schedule_auto_delete(confirm.chat.id, confirm.message_id, delay=20)
     await anchor_show_root(uid)
+
+
+# ========================== PROFILE EDIT HANDLERS ==========================
+@dp.message_handler(state=ProfileEditFSM.waiting_last_name, content_types=ContentType.TEXT)
+async def profile_last_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if not raw or not NAME_VALID_RE.match(raw):
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["last_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile["last_name"], profile.get("first_name", ""), profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_first_name, content_types=ContentType.TEXT)
+async def profile_first_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if not raw or not NAME_VALID_RE.match(raw):
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["first_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile["first_name"], profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_middle_name, content_types=ContentType.TEXT)
+async def profile_middle_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if raw and raw.lower() in SKIP_KEYWORDS:
+        cleaned = ""
+    else:
+        if raw and NAME_VALID_RE.match(raw):
+            cleaned = beautify_name(raw)
+        else:
+            await flow_delete_message(uid, m)
+            warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+            flow_track_warning(uid, warn)
+            return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["middle_name"] = cleaned
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), cleaned)
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_birthdate, content_types=ContentType.TEXT)
+async def profile_birthdate_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    dt = parse_birthdate_text(m.text)
+    if not dt:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["birthdate"] = dt.strftime("%Y-%m-%d")
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_region, content_types=ContentType.TEXT)
+async def profile_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_profile_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_open", state=ProfileEditFSM.waiting_region)
+async def profile_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_profile_region_picker(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("profile_region_pick:"), state=ProfileEditFSM.waiting_region)
+async def profile_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    try:
+        idx = int(c.data.split(":", 1)[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+        return
+    await state.update_data(profile_region=region)
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_SELECTED", region=h(region)), reply_markup=kb_registration_next(uid, "profile_region_confirm"))
+    await ProfileEditFSM.region_confirm.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_confirm", state=ProfileEditFSM.region_confirm)
+async def profile_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    region = data.get("profile_region")
+    if not region:
+        await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+        return
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["region"] = region
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+@dp.message_handler(content_types=ContentType.CONTACT, state=ProfileEditFSM.waiting_phone)
+async def profile_phone_contact(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    contact = m.contact
+    if not contact or not contact.phone_number:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["phone"] = contact.phone_number
+    profile.setdefault("tg", {})["contact_user_id"] = contact.user_id
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    runtime = profile_runtime(uid)
+    runtime.pop("profile_reply_keyboard", None)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHONE_SAVED"), remove_keyboard=True)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_phone, content_types=ContentType.TEXT)
+async def profile_phone_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    cancel_label = tr(uid, "BTN_PROFILE_CANCEL")
+    if text == cancel_label:
+        runtime = profile_runtime(uid)
+        runtime.pop("profile_reply_keyboard", None)
+        await flow_delete_message(uid, m)
+        await profile_abort(uid, state, remove_keyboard=True)
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_photo, content_types=ContentType.PHOTO)
+async def profile_photo_received(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    try:
+        meta = await store_profile_photo(uid, m.photo[-1])
+    except Exception:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["photo"] = meta or {"status": "uploaded", "updated_at": datetime.now(timezone.utc).isoformat()}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHOTO_UPDATED"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_photo, content_types=ContentType.ANY)
+async def profile_photo_invalid(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_remove_photo")
+async def profile_remove_photo_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    remove_profile_photo(uid)
+    profile["photo"] = {}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await flow_clear_warnings(uid)
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHOTO_REMOVED"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
 
 
 # ========================== ADMIN PROMOTE ==========================
@@ -8726,6 +9566,142 @@ async def np_cancel_flow(c: types.CallbackQuery, state: FSMContext):
     await c.answer(tr(uid, "NP_CANCELLED_TOAST"))
 
 # ========================== CHECKS ==========================
+@dp.callback_query_handler(lambda c: c.data == "menu_profile")
+async def menu_profile(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.finish()
+    await flow_clear(uid)
+    profile_set_flags(uid, edit_mode=False, show_photo=False)
+    await show_profile(uid, edit_mode=False, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit")
+async def profile_enter_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.finish()
+    await flow_clear(uid)
+    profile_set_flags(uid, edit_mode=True, show_photo=False)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_done", state="*")
+async def profile_exit_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    runtime = profile_runtime(uid)
+    remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+    await state.finish()
+    profile_set_flags(uid, edit_mode=False, show_photo=False)
+    if remove_keyboard:
+        await profile_send_notification(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=True)
+    await show_profile(uid, edit_mode=False, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_view_photo")
+async def profile_view_photo(c: types.CallbackQuery):
+    uid = c.from_user.id
+    profile_set_flags(uid, show_photo=True)
+    await show_profile(uid, show_photo=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_hide_photo")
+async def profile_hide_photo(c: types.CallbackQuery):
+    uid = c.from_user.id
+    profile_set_flags(uid, show_photo=False)
+    await show_profile(uid, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(
+    lambda c: c.data == "profile_cancel",
+    state=[
+        ProfileEditFSM.waiting_last_name,
+        ProfileEditFSM.waiting_first_name,
+        ProfileEditFSM.waiting_middle_name,
+        ProfileEditFSM.waiting_birthdate,
+        ProfileEditFSM.waiting_region,
+        ProfileEditFSM.region_confirm,
+        ProfileEditFSM.waiting_phone,
+        ProfileEditFSM.waiting_photo,
+    ]
+)
+async def profile_cancel_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = profile_runtime(uid)
+    remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+    await profile_abort(uid, state, remove_keyboard=remove_keyboard)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_last")
+async def profile_prompt_last(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_last_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_first")
+async def profile_prompt_first(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_first_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_middle")
+async def profile_prompt_middle(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_middle_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_birthdate")
+async def profile_prompt_birthdate(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_birthdate.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_region")
+async def profile_prompt_region(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_REGION"), reply_markup=kb_profile_region_prompt(uid))
+    await ProfileEditFSM.waiting_region.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_phone")
+async def profile_prompt_phone(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    kb = kb_profile_phone_keyboard(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHONE"), reply_markup=kb)
+    await ProfileEditFSM.waiting_phone.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_photo")
+async def profile_prompt_photo(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_photo.set()
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "menu_checks")
 async def menu_checks(c: types.CallbackQuery):
     uid = c.from_user.id
@@ -9049,6 +10025,15 @@ async def check_add(c: types.CallbackQuery, state: FSMContext):
 async def cancel_any(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     current_state = await state.get_state()
+    if current_state and current_state.startswith(ProfileEditFSM.__name__):
+        runtime = profile_runtime(uid)
+        remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+        await profile_abort(uid, state, remove_keyboard=remove_keyboard)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        return
     if current_state and current_state.startswith(ReceiptFSM.__name__):
         await remove_preview_message(state)
         await clear_edit_prompt(state)
@@ -10762,9 +11747,20 @@ async def adm_users(c: types.CallbackQuery):
     page = 1
     slice_, total = paginate(files, page)
     kb = InlineKeyboardMarkup()
-    for f in slice_:
-        prof = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
-        kb.add(InlineKeyboardButton(f"{prof.get('fullname','—')} ({prof.get('bsu','—')})", callback_data=f"adm_user_{prof['user_id']}"))
+    for filename in slice_:
+        try:
+            target_uid = int(os.path.splitext(filename)[0])
+        except ValueError:
+            continue
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(
+            InlineKeyboardButton(
+                f"{fullname} ({code})",
+                callback_data=f"adm_user_{target_uid}"
+            )
+        )
     if total > 1:
         kb.row(
             InlineKeyboardButton("⏮", callback_data=f"adm_users_page_1"),
@@ -10785,13 +11781,26 @@ async def adm_users_page(c: types.CallbackQuery):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
     files = sorted([f for f in os.listdir(USERS_PATH) if f.endswith(".json")])
-    try: page = int(c.data.split("_")[-1])
-    except: page = 1
+    try:
+        page = int(c.data.split("_")[-1])
+    except Exception:
+        page = 1
     slice_, total = paginate(files, page)
     kb = InlineKeyboardMarkup()
-    for f in slice_:
-        prof = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
-        kb.add(InlineKeyboardButton(f"{prof.get('fullname','—')} ({prof.get('bsu','—')})", callback_data=f"adm_user_{prof['user_id']}"))
+    for filename in slice_:
+        try:
+            target_uid = int(os.path.splitext(filename)[0])
+        except ValueError:
+            continue
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(
+            InlineKeyboardButton(
+                f"{fullname} ({code})",
+                callback_data=f"adm_user_{target_uid}"
+            )
+        )
     if total > 1:
         prev_page = max(1, page-1); next_page = min(total, page+1)
         kb.row(
@@ -10815,38 +11824,85 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
     target = int(c.data.split("adm_user_",1)[1])
-    await state.update_data(target_uid=target)
-    prof = load_user(target) or {"user_id": target}
-    projects = sorted(list((prof.get("receipts") or {}).keys()))
-    cnt_all = sum(len(prof.get("receipts", {}).get(p, [])) for p in projects)
-    sum_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, [])) for p in projects)
-    unpaid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is False) for p in projects)
-    paid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is True) for p in projects)
+    await state.update_data(target_uid=target, admin_user_show_photo=False)
+    await admin_show_user(uid, target, state, show_photo=False)
+    await c.answer()
 
-    fullname_disp = h(prof.get('fullname', '—'))
-    bsu_disp = h(prof.get('bsu', '—'))
-    username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_disp = h(f"@{username_raw}" if username_raw else "—")
-    phone_disp = h(prof.get('phone', '—'))
-    text = (
-        f"👤 <b>{fullname_disp}</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 UserID: <code>{target}</code>\n"
-        f"🧾 BSU: <b>{bsu_disp}</b>\n"
-        f"🆘 Telegram: {username_disp}\n"
-        f"📱 Телефон: {phone_disp}\n"
-        f"🗂 Проектов: <b>{len(projects)}</b>\n"
-        f"🧾 Чеков всего: <b>{cnt_all}</b>\n"
-        f"💰 Сумма чеков: <b>{fmt_money(sum_all)} грн</b>\n"
-        f"✅ Оплачено: <b>{fmt_money(paid_all)} грн</b>\n"
-        f"❌ К выплате: <b>{fmt_money(unpaid_all)} грн</b>"
-    )
+
+async def admin_show_user(uid: int, target_uid: int, state: FSMContext, show_photo: Optional[bool] = None):
+    if show_photo is None:
+        data = await state.get_data()
+        show_photo = bool(data.get("admin_user_show_photo"))
+    await state.update_data(admin_user_show_photo=show_photo)
+    profile = load_user(target_uid) or {"user_id": target_uid}
+    text = admin_user_card_text(uid, profile)
+    kb = kb_admin_user(profile, show_photo=show_photo)
+    if show_photo and profile_has_photo(profile):
+        await anchor_replace_with_photo(uid, user_profile_photo_path(target_uid), text, kb)
+    else:
+        chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+        if chat:
+            await anchor_upsert(uid, chat, text, kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_photo_toggle")
+async def adm_user_photo_toggle(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    current = bool(data.get("admin_user_show_photo"))
+    await admin_show_user(uid, target, state, show_photo=not current)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance")
+async def adm_user_finance_view(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    stats = admin_collect_user_stats(profile)
+    pending = stats["pending_payouts"]
+    closed = stats["confirmed_payouts"]
+    fullname = h(profile.get("fullname", "—"))
+    bsu = h(profile.get("bsu", "—"))
+    lines = [
+        "💵 <b>Фінансовий огляд користувача</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"👤 {fullname} (BSU {bsu})",
+        f"📂 Активних проєктів з чеками: <b>{len(stats['projects'])}</b>",
+        f"🧾 Чеків у системі: <b>{stats['total_count']}</b>",
+        f"💰 Загальна сума: <b>{fmt_money(stats['total_sum'])} грн</b>",
+        f"✅ Оплачено: <b>{fmt_money(stats['paid_sum'])} грн</b>",
+        f"⏳ Очікує: <b>{fmt_money(stats['unpaid_sum'])} грн</b>",
+        "",
+        f"📬 Запитів у роботі: <b>{len(pending)}</b>",
+    ]
+    if pending:
+        for req in pending[:10]:
+            code = req.get("code") or req.get("id")
+            amount = fmt_money(float(req.get("sum") or 0.0))
+            status = req.get("status", "—")
+            lines.append(f"• {h(code)} — {amount} грн — {h(status)}")
+    if closed:
+        lines.append("")
+        lines.append(f"📗 Підтверджено/закрито: <b>{len(closed)}</b>")
+        for req in closed[-5:]:
+            code = req.get("code") or req.get("id")
+            amount = fmt_money(float(req.get("sum") or 0.0))
+            status = req.get("status", "—")
+            lines.append(f"• {h(code)} — {amount} грн — {h(status)}")
     kb = InlineKeyboardMarkup()
-    if projects:
-        kb.add(InlineKeyboardButton("📊 Статистика по проекту", callback_data="adm_stat_choose"))
-        kb.add(InlineKeyboardButton("📁 Чеки по проекту", callback_data="adm_recs_choose"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
-    await clear_then_anchor(uid, text, kb)
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
 
 
