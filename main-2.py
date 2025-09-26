@@ -6215,8 +6215,12 @@ def alerts_display_width(text: str) -> int:
 
 def alerts_regions_overview_text(uid: int) -> str:
     lang = resolve_lang(uid)
-    status_labels = ALERTS_OVERVIEW_STATUS_TEXT.get(lang) or ALERTS_OVERVIEW_STATUS_TEXT[DEFAULT_LANG]
-    fallback_status = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    status_labels = ALERTS_OVERVIEW_STATUS_TEXT.get(lang) or {}
+    default_status_labels = ALERTS_OVERVIEW_STATUS_TEXT.get(DEFAULT_LANG) or {}
+
+    def get_status_label(key: str) -> str:
+        return status_labels.get(key) or default_status_labels.get(key) or ""
+
     header = tr(uid, "ALERTS_OVERVIEW_HEADER")
     entries: List[Dict[str, Any]] = []
     max_name_width = 0
@@ -6226,22 +6230,12 @@ def alerts_regions_overview_text(uid: int) -> str:
         name_width = alerts_display_width(display_name)
         max_name_width = max(max_name_width, name_width)
         if active_event:
-            status_text = (
-                status_labels.get("alert")
-                or fallback_status.get("alert")
-                or ""
-            )
+            status_text = get_status_label("alert")
             time_text = alerts_format_clock(active_event.get("started_at")) or "--:--"
             icon = "🔴"
         else:
             icon = "🟢"
-            status_text = (
-                status_labels.get("standdown")
-                or status_labels.get("calm")
-                or fallback_status.get("standdown")
-                or fallback_status.get("calm")
-                or ""
-            )
+            status_text = get_status_label("standdown") or get_status_label("calm")
             end_clock = ""
             if last_event and last_event.get("ended_at"):
                 end_clock = alerts_format_clock(last_event.get("ended_at"))
