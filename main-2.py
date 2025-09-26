@@ -99,6 +99,7 @@ ALERTS_HISTORY_DIRNAME = "history"
 ALERTS_LEGACY_HISTORY_FILENAME = "history.json"
 ALERTS_USERS_FILENAME = "subscriptions.json"
 ALERTS_TIMELINE_KEY = "timeline"
+ALERTS_LIST_PAGE_SIZE = 6
 
 UKRAINE_REGIONS = [
     "Винницкая область",
@@ -356,6 +357,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "📜 <b>Historia alarmów</b> ({count})",
         "ru": "📜 <b>История тревог</b> ({count})",
     },
+    "ALERTS_HISTORY_DESCRIPTION": {
+        "uk": "ℹ️ Записи зберігаються протягом поточної доби та оновлюються кожні 5 секунд.",
+        "en": "ℹ️ Entries cover the current day and refresh every 5 seconds.",
+        "de": "ℹ️ Einträge umfassen den aktuellen Tag und werden alle 5 Sekunden aktualisiert.",
+        "pl": "ℹ️ Wpisy obejmują bieżący dzień i odświeżają się co 5 sekund.",
+        "ru": "ℹ️ Записи сохраняются за текущий день и обновляются каждые 5 секунд.",
+    },
     "ALERTS_OVERVIEW_HEADER": {
         "uk": "🗺️ Статус областей України\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
         "en": "🗺️ Status of Ukraine's oblasts\n━━━━━━━━━━━━━━━━━━\nSee where alerts are sounding right now.",
@@ -504,11 +512,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📄 Страница {current}/{total}",
     },
     "ALERTS_BACK_TO_MENU": {
-        "uk": "⬅️ Меню тривог",
-        "en": "⬅️ Alerts menu",
-        "de": "⬅️ Alarm-Menü",
-        "pl": "⬅️ Menu alarmów",
-        "ru": "⬅️ Меню тревог",
+        "uk": "⬅️ На головне меню",
+        "en": "⬅️ Main menu",
+        "de": "⬅️ Hauptmenü",
+        "pl": "⬅️ Menu główne",
+        "ru": "⬅️ На главное меню",
+    },
+    "ALERTS_RETURN_TO_ALERTS": {
+        "uk": "↩️ Повернутися до тривог",
+        "en": "↩️ Back to alerts",
+        "de": "↩️ Zurück zu den Alarmen",
+        "pl": "↩️ Wróć do alarmów",
+        "ru": "↩️ Вернуться к тревогам",
     },
     "ALERTS_CLOSE_CARD": {
         "uk": "✖️ Закрити",
@@ -4205,38 +4220,10 @@ async def alerts_active_view(c: types.CallbackQuery):
         await alerts_clear_cards(uid)
         await c.answer()
         return
-    lang = resolve_lang(uid)
-    labels = alerts_field_labels(lang)
-    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
-    divider = tr(uid, "ALERTS_ACTIVE_DIVIDER")
-    lines = [
-        tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events)),
-        divider,
-    ]
-    for event in events[:10]:
-        region_display = alerts_display_region_name(
-            event.get("region") or event.get("region_display") or "",
-            lang,
-            short=True,
-        )
-        type_text = alerts_type_label(event, lang)
-        severity_text = alerts_severity_label(event, lang)
-        summary_text = type_text or status_labels.get("alert", "")
-        if severity_text:
-            summary_text = f"{summary_text} • {severity_text}" if summary_text else severity_text
-        lines.append(f"🔴 {h(region_display)} — {h(summary_text)}")
-        started_display = alerts_format_datetime_display(event.get("started_at"))
-        if not started_display:
-            started_display = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
-        lines.append(f"⏱ {h(started_display)}")
-    lines.append(divider)
-    lines.append("")
-    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_TOTAL", count=len(events)))
-    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_USER"))
-    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_PROJECT"))
-    await alerts_panel_show(uid, "\n".join(lines), kb_alerts(uid), chat_id=c.message.chat.id)
+    text, page, total_pages = alerts_active_panel_text(uid, events, page=0)
+    kb = alerts_active_keyboard(uid, page, total_pages)
+    await alerts_panel_show(uid, text, kb, chat_id=c.message.chat.id)
     await alerts_clear_cards(uid)
-    await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
     await c.answer()
 
 
@@ -4265,9 +4252,48 @@ async def alerts_history_view(c: types.CallbackQuery):
         await alerts_clear_cards(uid)
         await c.answer()
         return
-    await alerts_panel_show(uid, tr(uid, "ALERTS_HISTORY_HEADER", count=len(events)), kb_alerts(uid), chat_id=chat_id)
+    text, page, total_pages = alerts_history_panel_text(uid, events, page=0)
+    kb = alerts_history_keyboard(uid, page, total_pages)
+    await alerts_panel_show(uid, text, kb, chat_id=chat_id)
     await alerts_clear_cards(uid)
-    await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_active_page:"))
+async def alerts_active_page_nav(c: types.CallbackQuery):
+    uid = c.from_user.id
+    try:
+        page = int(c.data.split(":", 1)[1])
+    except Exception:
+        await c.answer()
+        return
+    events = alerts_collect_active_for_user(uid)
+    if not events:
+        await alerts_panel_show(uid, tr(uid, "ALERTS_NO_ACTIVE"), kb_alerts(uid), chat_id=c.message.chat.id)
+        await c.answer()
+        return
+    text, page_idx, total_pages = alerts_active_panel_text(uid, events, page=page)
+    kb = alerts_active_keyboard(uid, page_idx, total_pages)
+    await alerts_panel_show(uid, text, kb, chat_id=c.message.chat.id)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_history_page:"))
+async def alerts_history_page_nav(c: types.CallbackQuery):
+    uid = c.from_user.id
+    try:
+        page = int(c.data.split(":", 1)[1])
+    except Exception:
+        await c.answer()
+        return
+    events = alerts_collect_history_for_user(uid)
+    if not events:
+        await alerts_panel_show(uid, tr(uid, "ALERTS_NO_HISTORY"), kb_alerts(uid), chat_id=c.message.chat.id)
+        await c.answer()
+        return
+    text, page_idx, total_pages = alerts_history_panel_text(uid, events, page=page)
+    kb = alerts_history_keyboard(uid, page_idx, total_pages)
+    await alerts_panel_show(uid, text, kb, chat_id=c.message.chat.id)
     await c.answer()
 
 
@@ -4317,71 +4343,6 @@ async def alerts_toggle_subscription(c: types.CallbackQuery):
 async def alerts_locked_info(c: types.CallbackQuery):
     uid = c.from_user.id
     await c.answer(tr(uid, "ALERTS_SUBS_LOCKED"), show_alert=True)
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("alerts_index:"))
-async def alerts_card_index_stub(c: types.CallbackQuery):
-    await c.answer()
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("alerts_nav:"))
-async def alerts_card_nav(c: types.CallbackQuery):
-    uid = c.from_user.id
-    parts = c.data.split(":", 2)
-    if len(parts) != 3:
-        await c.answer()
-        return
-    context = parts[1]
-    try:
-        target_index = int(parts[2])
-    except ValueError:
-        await c.answer()
-        return
-    runtime = users_runtime.setdefault(uid, {})
-    cards = runtime.get("alerts_cards", {})
-    card = cards.get(context)
-    if not card:
-        await c.answer()
-        return
-    event_ids: List[str] = card.get("events", [])
-    events: List[Dict[str, Any]] = []
-    for event_id in event_ids:
-        event = _alerts_get_event(event_id)
-        if event:
-            events.append(event)
-    if not events:
-        await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
-        return
-    target_index = max(0, min(target_index, len(events) - 1))
-    current_index = max(0, min(int(card.get("index", 0)), len(events) - 1))
-    if target_index == current_index:
-        await c.answer()
-        return
-    card["index"] = target_index
-    lang = resolve_lang(uid)
-    text = alerts_format_card(events[target_index], lang, index=target_index, total=len(events))
-    kb = alerts_card_keyboard(uid, context, len(events), target_index)
-    try:
-        await bot.edit_message_text(text, c.message.chat.id, c.message.message_id, reply_markup=kb, disable_web_page_preview=True)
-    except MessageNotModified:
-        pass
-    await c.answer()
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("alerts_close:"))
-async def alerts_close_card(c: types.CallbackQuery):
-    uid = c.from_user.id
-    context = c.data.split(":", 1)[1]
-    runtime = users_runtime.setdefault(uid, {})
-    cards = runtime.setdefault("alerts_cards", {})
-    cards.pop(context, None)
-    flow_msgs = runtime.get("flow_msgs", [])
-    runtime["flow_msgs"] = [item for item in flow_msgs if item != (c.message.chat.id, c.message.message_id)]
-    try:
-        await bot.delete_message(c.message.chat.id, c.message.message_id)
-    except Exception:
-        pass
-    await c.answer()
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("alerts_push:"))
@@ -6550,6 +6511,153 @@ def alerts_collect_history_for_user(uid: int, limit: int = 40) -> List[Dict[str,
     return collected[:limit]
 
 
+def alerts_paginate(events: List[Dict[str, Any]], page: int, per_page: int = ALERTS_LIST_PAGE_SIZE) -> Tuple[List[Dict[str, Any]], int, int, int]:
+    total = len(events)
+    if total <= 0:
+        return [], 0, 0, 0
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(0, min(page, total_pages - 1))
+    start = page * per_page
+    end = start + per_page
+    return events[start:end], page, total_pages, total
+
+
+def alerts_active_panel_text(uid: int, events: List[Dict[str, Any]], page: int = 0) -> Tuple[str, int, int]:
+    lang = resolve_lang(uid)
+    labels = alerts_field_labels(lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    divider = tr(uid, "ALERTS_ACTIVE_DIVIDER")
+    page_events, page, total_pages, total = alerts_paginate(events, page)
+    lines: List[str] = [
+        tr(uid, "ALERTS_ACTIVE_HEADER", count=total),
+        divider,
+    ]
+    for event in page_events:
+        region_display = alerts_display_region_name(
+            event.get("region") or event.get("region_display") or "",
+            lang,
+            short=True,
+        )
+        type_text = alerts_type_label(event, lang)
+        type_icon = alerts_type_icon(event)
+        severity_text = alerts_severity_label(event, lang)
+        summary_parts: List[str] = []
+        if type_text:
+            summary_parts.append(f"{type_icon} {type_text}".strip())
+        if severity_text:
+            summary_parts.append(severity_text)
+        summary_text = " • ".join(part for part in summary_parts if part) or status_labels.get("alert", "")
+        lines.append(f"🔴 {h(region_display)} — {h(summary_text)}")
+        info_parts: List[str] = []
+        cause = (event.get("extra") or {}).get("cause")
+        if cause:
+            info_parts.append(h(str(cause)))
+        details = (event.get("extra") or {}).get("details")
+        if details:
+            info_parts.append(h(str(details)))
+        if info_parts:
+            lines.append("🔎 " + " • ".join(info_parts))
+        started_display = alerts_format_datetime_display(event.get("started_at"))
+        if not started_display:
+            started_display = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+        lines.append(f"🕒 {h(started_display)}")
+        duration_text = alerts_duration_phrase(event.get("started_at"), None, lang, ongoing=True)
+        if duration_text:
+            lines.append(f"⏱ {h(duration_text)}")
+        lines.append("")
+    while len(lines) > 2 and lines[-1] == "":
+        lines.pop()
+    lines.append(divider)
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_TOTAL", count=total))
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_USER"))
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_PROJECT"))
+    if total_pages > 1:
+        lines.append(tr(uid, "ALERTS_SUBS_PAGE", current=page + 1, total=total_pages))
+    text = "\n".join(line for line in lines if line is not None)
+    return text, page, total_pages
+
+
+def alerts_history_panel_text(uid: int, events: List[Dict[str, Any]], page: int = 0) -> Tuple[str, int, int]:
+    lang = resolve_lang(uid)
+    labels = alerts_field_labels(lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    divider = tr(uid, "ALERTS_ACTIVE_DIVIDER")
+    page_events, page, total_pages, total = alerts_paginate(events, page)
+    lines: List[str] = [
+        tr(uid, "ALERTS_HISTORY_HEADER", count=total),
+        tr(uid, "ALERTS_HISTORY_DESCRIPTION"),
+        divider,
+    ]
+    for event in page_events:
+        ended = bool(event.get("ended_at"))
+        status_key = "standdown" if ended else "alert"
+        status_icon = "🟢" if ended else "🔴"
+        region_display = alerts_display_region_name(
+            event.get("region") or event.get("region_display") or "",
+            lang,
+            short=True,
+        )
+        lines.append(f"{status_icon} {h(region_display)} — {h(status_labels.get(status_key, ''))}")
+        summary_parts: List[str] = []
+        type_label = alerts_type_label(event, lang)
+        if type_label:
+            summary_parts.append(f"{alerts_type_icon(event)} {h(type_label)}")
+        severity_text = alerts_severity_label(event, lang)
+        if severity_text:
+            summary_parts.append(h(severity_text))
+        cause = (event.get("extra") or {}).get("cause")
+        if cause:
+            summary_parts.append(h(str(cause)))
+        if summary_parts:
+            lines.append(" • ".join(summary_parts))
+        started_display = alerts_format_datetime_display(event.get("started_at")) or labels["status_unknown"]
+        if ended:
+            ended_display = alerts_format_datetime_display(event.get("ended_at")) or labels["status_unknown"]
+            lines.append(f"🕒 {h(started_display)} → ✅ {h(ended_display)}")
+            duration_text = alerts_duration_phrase(event.get("started_at"), event.get("ended_at"), lang, ongoing=False)
+        else:
+            lines.append(f"🕒 {h(started_display)}")
+            duration_text = alerts_duration_phrase(event.get("started_at"), None, lang, ongoing=True)
+        if duration_text:
+            lines.append(f"⏱ {h(duration_text)}")
+        lines.append("")
+    while len(lines) > 3 and lines[-1] == "":
+        lines.pop()
+    lines.append(divider)
+    if total_pages > 1:
+        lines.append(tr(uid, "ALERTS_SUBS_PAGE", current=page + 1, total=total_pages))
+    text = "\n".join(line for line in lines if line is not None)
+    return text, page, total_pages
+
+
+def alerts_active_keyboard(uid: int, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    return alerts_list_keyboard(uid, "alerts_active_page", page, total_pages)
+
+
+def alerts_history_keyboard(uid: int, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    return alerts_list_keyboard(uid, "alerts_history_page", page, total_pages)
+
+
+def alerts_list_keyboard(uid: int, base: str, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=3)
+    if total_pages > 1:
+        row: List[InlineKeyboardButton] = []
+        if page > 0:
+            row.append(InlineKeyboardButton(tr(uid, "ALERTS_NAV_PREV"), callback_data=f"{base}:{page - 1}"))
+        row.append(
+            InlineKeyboardButton(
+                tr(uid, "ALERTS_CARD_INDEX", index=page + 1, total=total_pages),
+                callback_data=f"{base}:{page}",
+            )
+        )
+        if page < total_pages - 1:
+            row.append(InlineKeyboardButton(tr(uid, "ALERTS_NAV_NEXT"), callback_data=f"{base}:{page + 1}"))
+        kb.row(*row)
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_RETURN_TO_ALERTS"), callback_data="menu_alerts"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="back_root"))
+    return kb
+
+
 def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboardMarkup]:
     alerts_entry = _alerts_ensure_user_migrated(uid)
     project_region = alerts_project_region()
@@ -6611,8 +6719,8 @@ def alerts_build_subscription_keyboard(uid: int, page: int, project_region: Opti
         if page < total_pages - 1:
             nav.append(InlineKeyboardButton("▶️", callback_data=f"alerts_sub_page:{page + 1}"))
         kb.row(*nav)
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
-    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_RETURN_TO_ALERTS"), callback_data="menu_alerts"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="back_root"))
     return kb
 
 
@@ -6634,26 +6742,6 @@ def alerts_update_subscription(uid: int, region_index: int, add: bool) -> bool:
     if changed:
         alerts_personal_regions(uid, persist=True)
     return changed
-
-
-def alerts_card_keyboard(uid: int, context: str, total: int, index: int) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    if total > 1:
-        row: List[InlineKeyboardButton] = []
-        if index > 0:
-            row.append(InlineKeyboardButton("◀️", callback_data=f"alerts_nav:{context}:{index - 1}"))
-        row.append(
-            InlineKeyboardButton(
-                tr(uid, "ALERTS_CARD_INDEX", index=index + 1, total=total),
-                callback_data=f"alerts_index:{context}:{index}",
-            )
-        )
-        if index < total - 1:
-            row.append(InlineKeyboardButton("▶️", callback_data=f"alerts_nav:{context}:{index + 1}"))
-        kb.row(*row)
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data=f"alerts_close:{context}"))
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BACK_TO_MENU"), callback_data="menu_alerts"))
-    return kb
 
 
 async def alerts_clear_cards(uid: int, context: Optional[str] = None):
@@ -6689,28 +6777,6 @@ def alerts_push_keyboard(uid: int, token: str, expanded: bool) -> InlineKeyboard
         kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_OPEN"), callback_data=f"alerts_push:expand:{token}"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_DELETE"), callback_data=f"alerts_push:delete:{token}"))
     return kb
-
-
-async def alerts_send_card(uid: int, chat_id: int, events: List[Dict[str, Any]], context: str, index: int = 0) -> Optional[types.Message]:
-    if not events:
-        return None
-    runtime = users_runtime.setdefault(uid, {})
-    cards = runtime.setdefault("alerts_cards", {})
-    previous = cards.get(context, {}).get("message")
-    if isinstance(previous, (list, tuple)) and len(previous) == 2:
-        await _delete_message_safe(previous[0], previous[1])
-    index = max(0, min(index, len(events) - 1))
-    lang = resolve_lang(uid)
-    text = alerts_format_card(events[index], lang, index=index, total=len(events))
-    kb = alerts_card_keyboard(uid, context, len(events), index)
-    msg = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
-    flow_track(uid, msg)
-    cards[context] = {
-        "events": [event["id"] for event in events],
-        "index": index,
-        "message": (msg.chat.id, msg.message_id),
-    }
-    return msg
 
 
 def alerts_active_oblast_count() -> int:
