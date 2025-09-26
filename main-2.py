@@ -332,7 +332,7 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "en": "ℹ️ Guide:\n🟢 Time marks when the alert ended.\n🔴 Time marks when the alert began.",
         "de": "ℹ️ Hinweis:\n🟢 Die Uhrzeit zeigt das Ende des Alarms.\n🔴 Die Uhrzeit zeigt den Beginn des Alarms.",
         "pl": "ℹ️ Instrukcja:\n🟢 Czas oznacza odwołanie alarmu.\n🔴 Czas oznacza początek alarmu.",
-        "ru": "ℹ️ Инструкция:  \n🟢 Время = отбой тревоги  \n🔴 Время = начало тревоги",
+        "ru": "ℹ️ Инструкция:\n🟢 Время = отбой тревоги\n🔴 Время = начало тревоги",
     },
     "ALERTS_OVERVIEW_ACTIVE": {
         "uk": "🔴 {region} — тривога з {start}",
@@ -5786,18 +5786,22 @@ def alerts_regions_overview_text(uid: int) -> str:
             }
         )
 
-    lines: List[str] = [header, ""]
+    pre_lines: List[str] = [""]
     for entry in entries:
         name_padding = max_name_len - len(entry["name"])
         padded_name = f"{h(entry['name'])}{' ' * max(name_padding, 0)}"
         number = f"{entry['index']:2d}"
         status_text = h(entry["status"])
         time_text = h(entry["time"])
-        lines.append(f"{number}. {entry['icon']} {padded_name} — {status_text} • {time_text}")
-        lines.append("")
+        pre_lines.append(f"{number}. {entry['icon']} {padded_name} — {status_text} • {time_text}")
+        pre_lines.append("")
 
-    while lines and lines[-1] == "":
-        lines.pop()
+    while pre_lines and pre_lines[-1] == "":
+        pre_lines.pop()
+
+    lines: List[str] = [header, "<pre>"]
+    lines.extend(pre_lines)
+    lines.append("</pre>")
 
     updated_clock = alerts_now().strftime("%H:%M")
     lines.append("")
