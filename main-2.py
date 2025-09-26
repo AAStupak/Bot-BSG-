@@ -454,6 +454,160 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "✖️ Zamknąć",
         "ru": "✖️ Закрыть",
     },
+    "ALERTS_PUSH_OPEN": {
+        "uk": "🔎 Відкрити детально",
+        "en": "🔎 Open details",
+        "de": "🔎 Details anzeigen",
+        "pl": "🔎 Otwórz szczegóły",
+        "ru": "🔎 Открыть детально",
+    },
+    "ALERTS_PUSH_COLLAPSE": {
+        "uk": "⬆️ Згорнути",
+        "en": "⬆️ Collapse",
+        "de": "⬆️ Einklappen",
+        "pl": "⬆️ Zwiń",
+        "ru": "⬆️ Свернуть",
+    },
+    "ALERTS_PUSH_DELETE": {
+        "uk": "🗑 Видалити повідомлення",
+        "en": "🗑 Delete message",
+        "de": "🗑 Nachricht löschen",
+        "pl": "🗑 Usuń wiadomość",
+        "ru": "🗑 Удалить сообщение",
+    },
+    "ALERTS_PUSH_HEADER_ALERT": {
+        "uk": "🚨 ТРИВОГА | {region}",
+        "en": "🚨 ALERT | {region}",
+        "de": "🚨 ALARM | {region}",
+        "pl": "🚨 ALARM | {region}",
+        "ru": "🚨 ТРЕВОГА | {region}",
+    },
+    "ALERTS_PUSH_HEADER_STANDDOWN": {
+        "uk": "✅ ВІДБІЙ | {region}",
+        "en": "✅ CLEAR | {region}",
+        "de": "✅ ENTWARNUNG | {region}",
+        "pl": "✅ ODWOŁANIE | {region}",
+        "ru": "✅ ОТБОЙ | {region}",
+    },
+    "ALERTS_PUSH_SUMMARY_RUNNING": {
+        "uk": "{icon} {type} • 🕒 {start} → {progress}",
+        "en": "{icon} {type} • 🕒 {start} → {progress}",
+        "de": "{icon} {type} • 🕒 {start} → {progress}",
+        "pl": "{icon} {type} • 🕒 {start} → {progress}",
+        "ru": "{icon} {type} • 🕒 {start} → {progress}",
+    },
+    "ALERTS_PUSH_SUMMARY_ENDED": {
+        "uk": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
+        "en": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
+        "de": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
+        "pl": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
+        "ru": "{icon} {type} • 🕒 {start} → {ended} • {duration}",
+    },
+    "ALERTS_DURATION_RUNNING": {
+        "uk": "триває {duration}",
+        "en": "ongoing for {duration}",
+        "de": "läuft seit {duration}",
+        "pl": "trwa {duration}",
+        "ru": "идёт {duration}",
+    },
+    "ALERTS_DURATION_COMPLETED": {
+        "uk": "тривала {duration}",
+        "en": "lasted {duration}",
+        "de": "dauerte {duration}",
+        "pl": "trwała {duration}",
+        "ru": "длилась {duration}",
+    },
+    "ALERTS_DURATION_LESS_MINUTE": {
+        "uk": "менше хвилини",
+        "en": "less than a minute",
+        "de": "unter einer Minute",
+        "pl": "mniej niż minutę",
+        "ru": "менее минуты",
+    },
+    "ALERTS_PUSH_DETAIL_TITLE_ALERT": {
+        "uk": "🚨 ТРИВОГА — {region}",
+        "en": "🚨 ALERT — {region}",
+        "de": "🚨 ALARM — {region}",
+        "pl": "🚨 ALARM — {region}",
+        "ru": "🚨 ТРЕВОГА — {region}",
+    },
+    "ALERTS_PUSH_DETAIL_TITLE_STANDDOWN": {
+        "uk": "✅ ВІДБІЙ — {region}",
+        "en": "✅ CLEAR — {region}",
+        "de": "✅ ENTWARNUNG — {region}",
+        "pl": "✅ ODWOŁANIE — {region}",
+        "ru": "✅ ОТБОЙ — {region}",
+    },
+    "ALERTS_PUSH_DETAIL_TYPE": {
+        "uk": "{icon} Тип загрози: {value}",
+        "en": "{icon} Threat type: {value}",
+        "de": "{icon} Bedrohungsart: {value}",
+        "pl": "{icon} Rodzaj zagrożenia: {value}",
+        "ru": "{icon} Тип угрозы: {value}",
+    },
+    "ALERTS_PUSH_DETAIL_START": {
+        "uk": "🕒 Початок: {date} • {time}",
+        "en": "🕒 Start: {date} • {time}",
+        "de": "🕒 Beginn: {date} • {time}",
+        "pl": "🕒 Początek: {date} • {time}",
+        "ru": "🕒 Начало: {date} • {time}",
+    },
+    "ALERTS_PUSH_DETAIL_END": {
+        "uk": "🛑 Завершення: {date} • {time}",
+        "en": "🛑 End: {date} • {time}",
+        "de": "🛑 Ende: {date} • {time}",
+        "pl": "🛑 Zakończenie: {date} • {time}",
+        "ru": "🛑 Завершение: {date} • {time}",
+    },
+    "ALERTS_PUSH_DETAIL_DURATION": {
+        "uk": "⏱ Тривалість: {duration}",
+        "en": "⏱ Duration: {duration}",
+        "de": "⏱ Dauer: {duration}",
+        "pl": "⏱ Czas trwania: {duration}",
+        "ru": "⏱ Длительность: {duration}",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_HEADER": {
+        "uk": "📊 Статистика на зараз",
+        "en": "📊 Current statistics",
+        "de": "📊 Aktuelle Statistik",
+        "pl": "📊 Aktualne statystyki",
+        "ru": "📊 Статистика на сейчас",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_COUNTRY": {
+        "uk": "• 🇺🇦 По Україні: {value}",
+        "en": "• 🇺🇦 Across Ukraine: {value}",
+        "de": "• 🇺🇦 In der Ukraine: {value}",
+        "pl": "• 🇺🇦 W Ukrainie: {value}",
+        "ru": "• 🇺🇦 По Украине: {value}",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_REGION_ACTIVE": {
+        "uk": "• 🏙 В області: {value}",
+        "en": "• 🏙 In the oblast: {value}",
+        "de": "• 🏙 In der Oblast: {value}",
+        "pl": "• 🏙 W obwodzie: {value}",
+        "ru": "• 🏙 В области: {value}",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_REGION_CLEAR": {
+        "uk": "• 🏙 В області: активних немає",
+        "en": "• 🏙 In the oblast: no active alerts",
+        "de": "• 🏙 In der Oblast: keine aktiven Alarme",
+        "pl": "• 🏙 W obwodzie: brak aktywnych alarmów",
+        "ru": "• 🏙 В области: активных нет",
+    },
+    "ALERTS_PUSH_DETAIL_RECOMMENDATIONS_HEADER": {
+        "uk": "⚠️ Рекомендації",
+        "en": "⚠️ Recommendations",
+        "de": "⚠️ Empfehlungen",
+        "pl": "⚠️ Zalecenia",
+        "ru": "⚠️ Рекомендации",
+    },
+    "ALERTS_PUSH_DETAIL_FOOTER": {
+        "uk": "✅ Бережіть себе!",
+        "en": "✅ Stay safe!",
+        "de": "✅ Bleiben Sie sicher!",
+        "pl": "✅ Dbajcie o siebie!",
+        "ru": "✅ Берегите себя!",
+    },
     "ALERTS_NAV_PREV": {
         "uk": "◀️ Попередня",
         "en": "◀️ Previous",
@@ -4115,12 +4269,53 @@ async def alerts_close_card(c: types.CallbackQuery):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data == "alerts_close_push")
-async def alerts_close_push(c: types.CallbackQuery):
-    try:
-        await bot.delete_message(c.message.chat.id, c.message.message_id)
-    except Exception:
-        pass
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_push:"))
+async def alerts_push_actions(c: types.CallbackQuery):
+    uid = c.from_user.id
+    parts = c.data.split(":", 2)
+    if len(parts) != 3:
+        await c.answer()
+        return
+    action, token = parts[1], parts[2]
+    entry = alerts_push_get(uid, token)
+    if not entry:
+        await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
+        return
+    event_id = entry.get("event_id")
+    event = _alerts_get_event(event_id) if event_id else None
+    if action in {"expand", "collapse"}:
+        if not event:
+            await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
+            return
+        expanded = action == "expand"
+        kind = entry.get("kind") or ("end" if event.get("ended_at") else "start")
+        entry["kind"] = kind
+        entry["expanded"] = expanded
+        text = alerts_push_render(uid, event, kind, expanded=expanded)
+        kb = alerts_push_keyboard(uid, token, expanded)
+        try:
+            await bot.edit_message_text(
+                text,
+                c.message.chat.id,
+                c.message.message_id,
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+        except MessageNotModified:
+            pass
+        except MessageCantBeEdited:
+            pass
+        alerts_push_store(uid, token, entry)
+        await c.answer()
+        return
+    if action == "delete":
+        alerts_push_remove(uid, token)
+        try:
+            await bot.delete_message(c.message.chat.id, c.message.message_id)
+        except Exception:
+            pass
+        await c.answer()
+        return
     await c.answer()
 
 
@@ -4489,18 +4684,19 @@ ALERTS_TYPE_ALIASES: Dict[str, str] = {
     "airalert": "air_raid",
     "air alert": "air_raid",
     "air_raid_alert": "air_raid",
-    "artillery": "artillery",
-    "artillery_shelling": "artillery",
-    "shelling": "artillery",
-    "missile": "missile",
-    "missile_attack": "missile",
-    "rocket": "missile",
-    "rocket_attack": "missile",
-    "ballistic": "missile",
-    "ballistic_missile": "missile",
-    "drone": "drone",
-    "drone_attack": "drone",
-    "uav": "drone",
+    "artillery": "artillery_shelling",
+    "artillery_shelling": "artillery_shelling",
+    "shelling": "artillery_shelling",
+    "missile": "missile_strike",
+    "missile_attack": "missile_strike",
+    "missile_strike": "missile_strike",
+    "rocket": "missile_strike",
+    "rocket_attack": "missile_strike",
+    "ballistic": "missile_strike",
+    "ballistic_missile": "missile_strike",
+    "drone": "drone_attack",
+    "drone_attack": "drone_attack",
+    "uav": "drone_attack",
     "nuclear": "nuclear",
     "nuclear_threat": "nuclear",
     "chemical": "chemical",
@@ -4513,9 +4709,9 @@ ALERTS_TYPE_ALIASES: Dict[str, str] = {
 
 ALERTS_DEFAULT_SEVERITY: Dict[str, str] = {
     "air_raid": "high",
-    "artillery": "high",
-    "missile": "critical",
-    "drone": "medium",
+    "artillery_shelling": "high",
+    "missile_strike": "critical",
+    "drone_attack": "medium",
     "nuclear": "critical",
     "chemical": "critical",
     "urban_fights": "high",
@@ -4562,47 +4758,47 @@ ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
         "pl": "Alarm lotniczy",
         "ru": "Воздушная тревога",
     },
-    "artillery": {
-        "uk": "Артобстріл",
+    "artillery_shelling": {
+        "uk": "Артилерійський обстріл",
         "en": "Artillery shelling",
         "de": "Artilleriebeschuss",
         "pl": "Ostrzał artyleryjski",
-        "ru": "Артобстрел",
+        "ru": "Артиллерийский обстрел",
     },
-    "missile": {
-        "uk": "Ракетна небезпека",
+    "missile_strike": {
+        "uk": "Ракетна загроза",
         "en": "Missile threat",
         "de": "Raketenbedrohung",
         "pl": "Zagrożenie rakietowe",
-        "ru": "Ракетная опасность",
+        "ru": "Ракетная угроза",
     },
-    "drone": {
-        "uk": "Небезпека БпЛА",
-        "en": "UAV threat",
-        "de": "Drohnengefahr",
-        "pl": "Zagrożenie dronami",
-        "ru": "Опасность БПЛА",
+    "drone_attack": {
+        "uk": "Атака дронів",
+        "en": "Drone attack",
+        "de": "Drohnenangriff",
+        "pl": "Atak dronów",
+        "ru": "Атака дронов",
     },
     "nuclear": {
-        "uk": "Ядерна небезпека",
+        "uk": "Ядерна загроза",
         "en": "Nuclear threat",
         "de": "Atomare Gefahr",
         "pl": "Zagrożenie nuklearne",
-        "ru": "Ядерная опасность",
+        "ru": "Ядерная угроза",
     },
     "chemical": {
-        "uk": "Хімічна небезпека",
+        "uk": "Хімічна загроза",
         "en": "Chemical threat",
         "de": "Chemische Gefahr",
         "pl": "Zagrożenie chemiczne",
-        "ru": "Химическая опасность",
+        "ru": "Химическая угроза",
     },
     "urban_fights": {
-        "uk": "Вуличні бої",
+        "uk": "Бої в місті",
         "en": "Urban fights",
         "de": "Straßenkämpfe",
-        "pl": "Walki uliczne",
-        "ru": "Уличные бои",
+        "pl": "Walki w mieście",
+        "ru": "Бои в городе",
     },
     "unknown": {
         "uk": "Тривога",
@@ -4611,6 +4807,17 @@ ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
         "pl": "Alarm",
         "ru": "Тревога",
     },
+}
+
+ALERTS_TYPE_ICONS: Dict[str, str] = {
+    "air_raid": "📡",
+    "missile_strike": "🚀",
+    "drone_attack": "🛩",
+    "artillery_shelling": "💥",
+    "urban_fights": "⚔️",
+    "nuclear": "☢",
+    "chemical": "☣",
+    "unknown": "🚨",
 }
 
 ALERTS_SEVERITY_LABELS: Dict[str, Dict[str, str]] = {
@@ -4674,6 +4881,64 @@ ALERTS_STATUS_TEXT: Dict[str, Dict[str, str]] = {
         "standdown": "Отбой тревоги",
         "calm": "Отбой тревоги",
     },
+}
+
+ALERTS_DURATION_FORMS: Dict[str, Dict[str, Tuple[str, ...]]] = {
+    "uk": {
+        "hour": ("год", "год", "год"),
+        "minute": ("хв", "хв", "хв"),
+        "alarm": ("тривога", "тривоги", "тривог"),
+    },
+    "ru": {
+        "hour": ("ч", "ч", "ч"),
+        "minute": ("мин", "мин", "мин"),
+        "alarm": ("тревога", "тревоги", "тревог"),
+    },
+    "pl": {
+        "hour": ("godz", "godz", "godz"),
+        "minute": ("min", "min", "min"),
+        "alarm": ("alarm", "alarmy", "alarmów"),
+    },
+    "de": {
+        "hour": ("Std", "Std"),
+        "minute": ("Min", "Min"),
+        "alarm": ("Alarm", "Alarme"),
+    },
+    "en": {
+        "hour": ("hr", "hrs"),
+        "minute": ("min", "min"),
+        "alarm": ("alert", "alerts"),
+    },
+}
+
+ALERTS_RECOMMENDATIONS: Dict[str, Dict[str, List[str]]] = {
+    "default": {
+        "uk": [
+            "— Прямуйте в укриття",
+            "— Зачиніть двері та вікна",
+            "— Тримайтеся подалі від вікон і вітрин",
+        ],
+        "en": [
+            "— Move to shelter",
+            "— Close doors and windows",
+            "— Stay away from windows and glass",
+        ],
+        "de": [
+            "— Begeben Sie sich in einen Schutzraum",
+            "— Schließen Sie Türen und Fenster",
+            "— Halten Sie Abstand von Fenstern und Glasflächen",
+        ],
+        "pl": [
+            "— Udać się do schronu",
+            "— Zamknij drzwi i okna",
+            "— Trzymaj się z dala od okien i witryn",
+        ],
+        "ru": [
+            "— Следуйте в укрытие",
+            "— Закройте двери и окна",
+            "— Избегайте окон и витрин",
+        ],
+    }
 }
 
 ALERTS_OVERVIEW_STATUS_TEXT: Dict[str, Dict[str, str]] = {
@@ -5554,6 +5819,112 @@ def alerts_format_clock(value: Optional[str]) -> str:
     return dt.strftime("%H:%M")
 
 
+def alerts_type_icon(event: Dict[str, Any]) -> str:
+    type_code = event.get("type") or ""
+    return ALERTS_TYPE_ICONS.get(type_code, ALERTS_TYPE_ICONS["unknown"])
+
+
+def alerts_select_form(value: int, forms: Tuple[str, ...]) -> str:
+    if len(forms) == 2:
+        return forms[0] if abs(value) == 1 else forms[1]
+    n = abs(value) % 100
+    if 11 <= n <= 14:
+        return forms[2]
+    n = abs(value) % 10
+    if n == 1:
+        return forms[0]
+    if 2 <= n <= 4:
+        return forms[1]
+    return forms[2]
+
+
+def alerts_unit_form(lang: str, unit: str, value: int) -> str:
+    forms_map = ALERTS_DURATION_FORMS.get(lang) or ALERTS_DURATION_FORMS.get(DEFAULT_LANG) or {}
+    forms = forms_map.get(unit)
+    if not forms:
+        # fallback to english plural rules
+        forms = (unit, f"{unit}s")
+    return alerts_select_form(value, forms)
+
+
+def alerts_format_duration_value(seconds: int, lang: str) -> str:
+    if seconds <= 0:
+        return tr(lang, "ALERTS_DURATION_LESS_MINUTE")
+    total_minutes = max(1, seconds // 60)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    parts: List[str] = []
+    if hours:
+        unit = alerts_unit_form(lang, "hour", hours)
+        parts.append(f"{hours} {unit}")
+    if minutes:
+        unit = alerts_unit_form(lang, "minute", minutes)
+        parts.append(f"{minutes} {unit}")
+    if not parts:
+        unit = alerts_unit_form(lang, "minute", 1)
+        parts.append(f"1 {unit}")
+    return " ".join(parts)
+
+
+def alerts_duration_seconds(start: Optional[str], end: Optional[str] = None) -> int:
+    start_dt = alerts_parse_datetime(start)
+    if not start_dt:
+        return 0
+    end_dt = alerts_parse_datetime(end) if end else alerts_now()
+    if not end_dt:
+        end_dt = alerts_now()
+    delta = end_dt - start_dt
+    return max(0, int(delta.total_seconds()))
+
+
+def alerts_duration_phrase(start: Optional[str], end: Optional[str], lang: str, ongoing: bool) -> str:
+    seconds = alerts_duration_seconds(start, end)
+    value = alerts_format_duration_value(seconds, lang)
+    key = "ALERTS_DURATION_RUNNING" if ongoing else "ALERTS_DURATION_COMPLETED"
+    return tr(lang, key, duration=value)
+
+
+def alerts_format_push_timestamp(value: Optional[str]) -> str:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return ""
+    return dt.strftime("%d.%m.%Y %H:%M")
+
+
+def alerts_format_push_date_pair(value: Optional[str]) -> Tuple[str, str]:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return "", ""
+    return dt.strftime("%d.%m.%Y"), dt.strftime("%H:%M")
+
+
+def alerts_country_count_label(count: int, lang: str) -> str:
+    unit = alerts_unit_form(lang, "alarm", count)
+    return f"{count} {unit}"
+
+
+def alerts_region_active_value(count: int, lang: str) -> str:
+    if count <= 0:
+        return ""
+    if lang == "uk":
+        return f"активна {count}" if count == 1 else f"активні {count}"
+    if lang == "ru":
+        return f"активна {count}" if count == 1 else f"активны {count}"
+    if lang == "pl":
+        return f"aktywna {count}" if count == 1 else f"aktywne {count}"
+    if lang == "de":
+        return f"aktiv {count}"
+    return f"active {count}"
+
+
+def alerts_recommendation_block(event: Dict[str, Any], lang: str) -> str:
+    mapping = ALERTS_RECOMMENDATIONS.get(event.get("type"))
+    if not mapping:
+        mapping = ALERTS_RECOMMENDATIONS.get("default", {})
+    lines = mapping.get(lang) or mapping.get(DEFAULT_LANG) or []
+    return "\n".join(lines)
+
+
 def alerts_type_label(event: Dict[str, Any], lang: str) -> str:
     mapping = ALERTS_TYPE_LABELS.get(event.get("type")) or ALERTS_TYPE_LABELS.get("unknown")
     return mapping.get(lang) or mapping.get(DEFAULT_LANG) or event.get("type") or "Alert"
@@ -6003,6 +6374,16 @@ def alerts_card_keyboard(uid: int, context: str, total: int, index: int) -> Inli
     return kb
 
 
+def alerts_push_keyboard(uid: int, token: str, expanded: bool) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    if expanded:
+        kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_COLLAPSE"), callback_data=f"alerts_push:collapse:{token}"))
+    else:
+        kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_OPEN"), callback_data=f"alerts_push:expand:{token}"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_DELETE"), callback_data=f"alerts_push:delete:{token}"))
+    return kb
+
+
 async def alerts_send_card(uid: int, chat_id: int, events: List[Dict[str, Any]], context: str, index: int = 0) -> Optional[types.Message]:
     if not events:
         return None
@@ -6091,6 +6472,20 @@ def alerts_region_snapshot(region_key: str) -> Tuple[str, Optional[Dict[str, Any
                 last_event = payload
                 break
     return canonical, active_event, last_event
+
+
+def alerts_region_active_total(region_key: str) -> int:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    regions_map = state.get("regions", {})
+    canonical = alerts_canonical_region(region_key) or region_key
+    bucket = regions_map.get(canonical) or {}
+    count = 0
+    for event_id in bucket.get("active", []):
+        payload = events_map.get(event_id)
+        if payload and not payload.get("ended_at"):
+            count += 1
+    return count
 
 
 def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
@@ -6186,9 +6581,128 @@ def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[s
     return recipients
 
 
-def alerts_notification_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
     lang = resolve_lang(uid)
-    return alerts_format_card(event, lang)
+    ended = kind == "end" or bool(event.get("ended_at"))
+    region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
+    header_key = "ALERTS_PUSH_HEADER_STANDDOWN" if ended else "ALERTS_PUSH_HEADER_ALERT"
+    header = tr(uid, header_key, region=region_display)
+    type_label = alerts_type_label(event, lang)
+    type_icon = alerts_type_icon(event)
+    start_display = alerts_format_push_timestamp(event.get("started_at")) or "--:--"
+    if ended:
+        end_source = event.get("ended_at") or event.get("updated_at")
+        end_display = alerts_format_push_timestamp(end_source) or "—"
+        duration_phrase = alerts_duration_phrase(event.get("started_at"), end_source, lang, False)
+        body = tr(
+            uid,
+            "ALERTS_PUSH_SUMMARY_ENDED",
+            icon=type_icon,
+            type=type_label,
+            start=start_display,
+            ended=end_display,
+            duration=duration_phrase,
+        )
+    else:
+        progress = alerts_duration_phrase(event.get("started_at"), None, lang, True)
+        body = tr(
+            uid,
+            "ALERTS_PUSH_SUMMARY_RUNNING",
+            icon=type_icon,
+            type=type_label,
+            start=start_display,
+            progress=progress,
+        )
+    return f"{header}\n{body}".strip()
+
+
+def alerts_push_detail_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+    lang = resolve_lang(uid)
+    ended = kind == "end" or bool(event.get("ended_at"))
+    region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
+    title_key = "ALERTS_PUSH_DETAIL_TITLE_STANDDOWN" if ended else "ALERTS_PUSH_DETAIL_TITLE_ALERT"
+    title = tr(uid, title_key, region=region_display)
+    type_label = alerts_type_label(event, lang)
+    type_icon = alerts_type_icon(event)
+    start_date, start_time = alerts_format_push_date_pair(event.get("started_at"))
+    end_source = event.get("ended_at") or event.get("updated_at")
+    end_date, end_time = alerts_format_push_date_pair(end_source) if ended else ("", "")
+    duration_seconds = alerts_duration_seconds(event.get("started_at"), end_source if ended else None)
+    duration_value = alerts_format_duration_value(duration_seconds, lang)
+    stats_country = alerts_country_count_label(alerts_active_oblast_count(), lang)
+    region_key = alerts_canonical_region(event.get("region") or event.get("region_display") or "") or event.get("region") or ""
+    region_active = alerts_region_active_total(region_key) if region_key else 0
+    if region_active:
+        value = alerts_region_active_value(region_active, lang)
+        stats_region = tr(uid, "ALERTS_PUSH_DETAIL_STATS_REGION_ACTIVE", value=value)
+    else:
+        stats_region = tr(uid, "ALERTS_PUSH_DETAIL_STATS_REGION_CLEAR")
+    recommendations = alerts_recommendation_block(event, lang)
+
+    lines: List[str] = [
+        title,
+        "━━━━━━━━━━━━━━━━━━",
+        "",
+        tr(uid, "ALERTS_PUSH_DETAIL_TYPE", icon=type_icon, value=type_label),
+        "",
+        tr(uid, "ALERTS_PUSH_DETAIL_START", date=start_date or "—", time=start_time or "--:--"),
+        tr(uid, "ALERTS_PUSH_DETAIL_DURATION", duration=duration_value),
+    ]
+    if ended:
+        lines.append(tr(uid, "ALERTS_PUSH_DETAIL_END", date=end_date or "—", time=end_time or "--:--"))
+    lines.extend(
+        [
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            tr(uid, "ALERTS_PUSH_DETAIL_STATS_HEADER"),
+            tr(uid, "ALERTS_PUSH_DETAIL_STATS_COUNTRY", value=stats_country),
+            stats_region,
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            tr(uid, "ALERTS_PUSH_DETAIL_RECOMMENDATIONS_HEADER"),
+        ]
+    )
+    if recommendations:
+        lines.append(recommendations)
+    lines.extend([
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        tr(uid, "ALERTS_PUSH_DETAIL_FOOTER"),
+    ])
+    return "\n".join(lines)
+
+
+def alerts_push_render(uid: int, event: Dict[str, Any], kind: str, expanded: bool = False) -> str:
+    if expanded:
+        return alerts_push_detail_text(uid, event, kind)
+    return alerts_push_summary_text(uid, event, kind)
+
+
+def alerts_push_store(uid: int, token: str, payload: Dict[str, Any]) -> None:
+    runtime = users_runtime.setdefault(uid, {})
+    registry = runtime.setdefault("alerts_pushes", {})
+    registry[token] = payload
+
+
+def alerts_push_get(uid: int, token: str) -> Optional[Dict[str, Any]]:
+    runtime = users_runtime.get(uid, {})
+    registry = runtime.get("alerts_pushes", {})
+    entry = registry.get(token)
+    if not isinstance(entry, dict):
+        return None
+    return entry
+
+
+def alerts_push_remove(uid: int, token: str) -> Optional[Dict[str, Any]]:
+    runtime = users_runtime.get(uid, {})
+    registry = runtime.get("alerts_pushes")
+    if isinstance(registry, dict):
+        return registry.pop(token, None)
+    return None
+
+
+def alerts_notification_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+    return alerts_push_summary_text(uid, event, kind)
 
 
 async def alerts_broadcast(event_id: str, kind: str) -> None:
@@ -6210,11 +6724,23 @@ async def alerts_broadcast(event_id: str, kind: str) -> None:
         if not chat_id:
             continue
         try:
-            text = alerts_notification_text(uid, event, kind)
-            kb = InlineKeyboardMarkup().add(
-                InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data="alerts_close_push")
+            text = alerts_push_summary_text(uid, event, kind)
+            token = secrets.token_hex(4)
+            while alerts_push_get(uid, token):
+                token = secrets.token_hex(4)
+            kb = alerts_push_keyboard(uid, token, expanded=False)
+            message = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+            alerts_push_store(
+                uid,
+                token,
+                {
+                    "event_id": event_id,
+                    "kind": kind,
+                    "message_id": message.message_id,
+                    "chat_id": message.chat.id,
+                    "expanded": False,
+                },
             )
-            await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
         except Exception:
             continue
     _alerts_mark_notified(event_id, kind)
