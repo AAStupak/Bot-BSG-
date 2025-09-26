@@ -6779,33 +6779,20 @@ def alerts_anchor_region_block(uid: int, region_key: str, include_standdown: boo
 def alerts_anchor_section(uid: int) -> str:
     lines: List[str] = []
 
+    summary_line = alerts_active_summary_line(uid)
+    if summary_line:
+        lines.append(summary_line)
+
     project_region = alerts_project_region()
     if project_region:
+        if lines:
+            lines.append("")
         project_header = tr(uid, "ANCHOR_ALERT_PROJECT_HEADER")
         project_block = alerts_anchor_region_block(uid, project_region, include_standdown=True)
         if project_header:
             lines.append(project_header)
         if project_block:
             lines.append(project_block)
-
-    active_events = alerts_collect_active_for_user(uid)
-    active_lines: List[str] = []
-    seen: Set[str] = set()
-    for event in active_events:
-        region_value = alerts_canonical_region(event.get("region") or event.get("region_display")) or event.get("region") or ""
-        if not region_value:
-            continue
-        if region_value in seen:
-            continue
-        seen.add(region_value)
-        block = alerts_anchor_region_block(uid, region_value, include_standdown=False)
-        if block:
-            active_lines.append(block)
-    if active_events:
-        if lines:
-            lines.append("")
-        lines.append(tr(uid, "ANCHOR_ALERT_ACTIVE_HEADER", count=len(active_events)))
-        lines.extend(active_lines)
 
     filtered = [line for line in lines if line]
     return "\n".join(filtered)
