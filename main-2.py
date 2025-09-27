@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
+BSG › botSYSTEM — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Версия 18.0.0 | Ревизия sr-bot-2025-10-05-finance2
 ч
 Зависимости:
@@ -72,7 +72,8 @@ except Exception:
 TOKEN = "7005343266:AAG0bnY-wTc3kScKiIskSd0fO6MstesSbCk"
 ADMIN_CODE = "3004"
 
-BOT_NAME = "Bot.BSG"
+BOT_NAME = "BSG › botSYSTEM"
+WORKSPACE_BRAND = "BSG › SYSTEM"
 BOT_VERSION = "18.0.0"
 BOT_REVISION = "sr-bot-2025-10-05-finance2"
 
@@ -81,20 +82,119 @@ USERS_PATH = "data/users"
 BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
 
-_required_chat_raw = (os.getenv("BSG_REQUIRED_CHAT") or "-4979028084").strip()
-if _required_chat_raw:
-    if _required_chat_raw.lstrip("-").isdigit():
-        try:
-            REQUIRED_COMMUNITY_CHAT: Optional[Union[int, str]] = int(_required_chat_raw)
-        except Exception:
-            REQUIRED_COMMUNITY_CHAT = _required_chat_raw
-    else:
-        REQUIRED_COMMUNITY_CHAT = _required_chat_raw
-else:
-    REQUIRED_COMMUNITY_CHAT = None
+def _normalize_chat_identifier(raw: Any) -> Optional[Union[int, str]]:
+    if raw is None:
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        candidate = raw.strip()
+        if not candidate:
+            return None
+        if candidate.lstrip("-").isdigit():
+            try:
+                return int(candidate)
+            except Exception:
+                return candidate
+        return candidate
+    return None
 
-REQUIRED_COMMUNITY_TITLE = os.getenv("BSG_REQUIRED_TITLE", "Test BSG")
-REQUIRED_COMMUNITY_INVITE = os.getenv("BSG_REQUIRED_INVITE", "").strip()
+
+DEFAULT_REQUIRED_COMMUNITY_CHAT = _normalize_chat_identifier(os.getenv("BSG_REQUIRED_CHAT", "-4979028084"))
+DEFAULT_REQUIRED_COMMUNITY_TITLE = os.getenv("BSG_REQUIRED_TITLE", "Test BSG")
+DEFAULT_REQUIRED_COMMUNITY_INVITE = (os.getenv("BSG_REQUIRED_INVITE") or "").strip()
+COMMUNITY_GATE_CONFIG_FILE = os.path.join("data", "community_gate.json")
+REQUIRED_COMMUNITY_CHAT: Optional[Union[int, str]] = DEFAULT_REQUIRED_COMMUNITY_CHAT
+REQUIRED_COMMUNITY_TITLE = DEFAULT_REQUIRED_COMMUNITY_TITLE
+REQUIRED_COMMUNITY_INVITE = DEFAULT_REQUIRED_COMMUNITY_INVITE
+COMMUNITY_GATE_CACHE: Optional[Tuple[Optional[Union[int, str]], str, str]] = None
+COMMUNITY_GATE_CACHE_MTIME: Optional[float] = None
+
+
+def atomic_write_json(path: str, payload: Any) -> None:
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp_path = f"{path}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+def required_community_settings(force_reload: bool = False) -> Tuple[Optional[Union[int, str]], str, str]:
+    global REQUIRED_COMMUNITY_CHAT, REQUIRED_COMMUNITY_TITLE, REQUIRED_COMMUNITY_INVITE
+    global COMMUNITY_GATE_CACHE, COMMUNITY_GATE_CACHE_MTIME
+
+    directory = os.path.dirname(COMMUNITY_GATE_CONFIG_FILE)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    file_exists = os.path.exists(COMMUNITY_GATE_CONFIG_FILE)
+    current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE) if file_exists else None
+    if (
+        COMMUNITY_GATE_CACHE is not None
+        and not force_reload
+        and ((current_mtime is None and COMMUNITY_GATE_CACHE_MTIME is None) or current_mtime == COMMUNITY_GATE_CACHE_MTIME)
+    ):
+        return COMMUNITY_GATE_CACHE
+
+    default_payload = {
+        "chat_id": str(DEFAULT_REQUIRED_COMMUNITY_CHAT) if DEFAULT_REQUIRED_COMMUNITY_CHAT is not None else "",
+        "title": DEFAULT_REQUIRED_COMMUNITY_TITLE,
+        "invite": DEFAULT_REQUIRED_COMMUNITY_INVITE,
+        "_note": "Edit chat_id/title/invite to match the required community before sharing the bot.",
+    }
+
+    data: Dict[str, Any]
+    if not file_exists:
+        atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, default_payload)
+        data = default_payload
+        current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+    else:
+        try:
+            with open(COMMUNITY_GATE_CONFIG_FILE, "r", encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            if not isinstance(loaded, dict):
+                raise ValueError("invalid gate config")
+            data = loaded
+        except Exception:
+            data = default_payload
+            atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, data)
+            current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+
+    missing = False
+    for key in ("chat_id", "title", "invite"):
+        if key not in data:
+            data[key] = default_payload.get(key, "")
+            missing = True
+    if missing:
+        atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, data)
+        current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+
+    raw_chat = data.get("chat_id")
+    chat_id = _normalize_chat_identifier(str(raw_chat).strip() if raw_chat is not None else None)
+    title = str(data.get("title") or DEFAULT_REQUIRED_COMMUNITY_TITLE)
+    invite = str(data.get("invite") or "").strip()
+
+    REQUIRED_COMMUNITY_CHAT = chat_id
+    REQUIRED_COMMUNITY_TITLE = title
+    REQUIRED_COMMUNITY_INVITE = invite
+    COMMUNITY_GATE_CACHE = (chat_id, title, invite)
+    COMMUNITY_GATE_CACHE_MTIME = current_mtime
+    return COMMUNITY_GATE_CACHE
+
+
+# Ensure the community gate file exists at startup and cache the defaults.
+required_community_settings()
 REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
 REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
 REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Панченко Алексей")
@@ -982,6 +1082,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "👋 Miło Cię znów widzieć, {name}!",
         "ru": "👋 Рад снова видеть, {name}!",
     },
+    "START_GROUP_REDIRECT": {
+        "uk": "👋 Привіт, {name}!\nЦей бот працює у приватних повідомленнях. Щоб продовжити, відкрийте <b>{workspace}</b> у особистому чаті за посиланням нижче.",
+        "en": "👋 Hi, {name}!\nThis bot works in private messages. Open <b>{workspace}</b> in a direct chat via the link below to keep going.",
+        "de": "👋 Hallo, {name}!\nDieser Bot funktioniert in privaten Nachrichten. Öffnen Sie <b>{workspace}</b> im Direktchat über den Link unten, um fortzufahren.",
+        "pl": "👋 Cześć, {name}!\nTen bot działa w prywatnych wiadomościach. Otwórz <b>{workspace}</b> w czacie prywatnym, korzystając z linku poniżej, aby kontynuować.",
+        "ru": "👋 Привет, {name}!\nЭтот бот работает в личных сообщениях. Чтобы продолжить, откройте <b>{workspace}</b> в приватном чате по ссылке ниже.",
+    },
+    "START_GROUP_OPEN_BOT": {
+        "uk": "🔐 Відкрити бота",
+        "en": "🔐 Open the bot",
+        "de": "🔐 Bot öffnen",
+        "pl": "🔐 Otwórz bota",
+        "ru": "🔐 Открыть бота",
+    },
     "START_PROMPT_FULLNAME": {
         "uk": "👤 Введіть прізвище та ім'я (наприклад, Іваненко Іван).",
         "en": "👤 Please enter your full name (for example, Smith John).",
@@ -1032,11 +1146,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "⏳ Проверяем участие в группе <b>{community}</b>…",
     },
     "REGISTER_GATE_ALLOWED": {
-        "uk": "✅ Доступ підтверджено! Ви вже в групі <b>{community}</b>. Натисніть «Далі», щоб продовжити реєстрацію.",
-        "en": "✅ Access confirmed! You are a member of <b>{community}</b>. Tap “Next” to continue registration.",
-        "de": "✅ Zugriff bestätigt! Sie sind Mitglied der Gruppe <b>{community}</b>. Tippen Sie auf „Weiter“, um mit der Registrierung fortzufahren.",
-        "pl": "✅ Dostęp potwierdzony! Należysz do grupy <b>{community}</b>. Kliknij „Dalej”, aby kontynuować rejestrację.",
-        "ru": "✅ Доступ подтверждён! Вы состоите в группе <b>{community}</b>. Нажмите «Дальше», чтобы продолжить регистрацию.",
+        "uk": "✅ ДОСТУП ПІДТВЕРДЖЕНО\n━━━━━━━━━━━━━━━━━━\nВи є учасником групи <b>{community}</b>, що підключена до робочого простору <b>{workspace}</b>.\n\n📎 Підключення успішне — система вас розпізнала.\n\nНатисніть <b>«{next_plain}»</b>, щоб завершити реєстрацію та активувати доступ.\n━━━━━━━━━━━━━━━━━━\n{workspace} — усе в одному місці. Жодних зайвих пошуків.",
+        "en": "✅ ACCESS CONFIRMED\n━━━━━━━━━━━━━━━━━━\nYou are a member of <b>{community}</b>, which is linked to the <b>{workspace}</b> workspace.\n\n📎 Connection successful — the system has recognized you.\n\nTap <b>“{next_plain}”</b> to complete registration and activate your access.\n━━━━━━━━━━━━━━━━━━\n{workspace} keeps everything in one place. No extra searching needed.",
+        "de": "✅ ZUGANG BESTÄTIGT\n━━━━━━━━━━━━━━━━━━\nSie gehören zur Gruppe <b>{community}</b>, die mit dem Arbeitsbereich <b>{workspace}</b> verbunden ist.\n\n📎 Verbindung erfolgreich – das System hat Sie erkannt.\n\nTippen Sie auf <b>„{next_plain}“</b>, um die Registrierung abzuschließen und den Zugang zu aktivieren.\n━━━━━━━━━━━━━━━━━━\n{workspace} bündelt alles an einem Ort. Keine unnötige Suche mehr.",
+        "pl": "✅ DOSTĘP POTWIERDZONY\n━━━━━━━━━━━━━━━━━━\nNależysz do grupy <b>{community}</b> połączonej z przestrzenią roboczą <b>{workspace}</b>.\n\n📎 Połączenie udane — system Cię rozpoznał.\n\nKliknij <b>„{next_plain}”</b>, aby zakończyć rejestrację i aktywować dostęp.\n━━━━━━━━━━━━━━━━━━\n{workspace} trzyma wszystko w jednym miejscu. Koniec z niepotrzebnym szukaniem.",
+        "ru": "✅ ДОСТУП ПОДТВЕРЖДЁН\n━━━━━━━━━━━━━━━━━━\nВы состоите в группе <b>{community}</b>, подключённой к рабочему пространству <b>{workspace}</b>.\n\n📎 Подключение успешно — система вас распознала.\n\nНажмите <b>«{next_plain}»</b>, чтобы завершить регистрацию и активировать доступ.\n━━━━━━━━━━━━━━━━━━\n{workspace} — всё в одном месте. Никаких лишних поисков.",
     },
     "REGISTER_GATE_DENIED": {
         "uk": "🚫 Реєстрація поки недоступна, {name}.\n\nВи ще не приєдналися до групи <b>{community}</b>. Напишіть, будь ласка, <b>{contact_name}</b> ({contact_role}), щоб вас додали. Після підтвердження натисніть «Продовжити», щоб перевірити ще раз, або «Закрити», щоб прибрати повідомлення.",
@@ -1637,11 +1751,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "⏭ Пропустить",
     },
     "INTRO_GREETING_NEW": {
-        "uk": "👋 <b>Вітаю, колего!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі Bot.BSG. Тут зберігаємо чеки, оформлюємо виплати та тримаємо документи проєкту під рукою.\n\nНатисніть «ДАЛІ», щоб продовжити.",
-        "en": "👋 <b>Hello, teammate!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the Bot.BSG workspace. Here we store receipts, track payouts, and keep project documents handy.\n\nPress “NEXT” to continue.",
-        "de": "👋 <b>Hallo, Kollegin oder Kollege!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Bot.BSG-Arbeitsbereich. Hier speichern wir Belege, verwalten Auszahlungen und behalten Projektdokumente griffbereit.\n\nDrücken Sie „WEITER“, um fortzufahren.",
-        "pl": "👋 <b>Witaj, współpracowniku!</b>\n━━━━━━━━━━━━━━━━━━\nTo przestrzeń robocza Bot.BSG. Przechowujemy tu paragony, obsługujemy wypłaty i mamy dokumenty projektu pod ręką.\n\nKliknij „DALEJ”, aby kontynuować.",
-        "ru": "👋 <b>Привет, коллега!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве Bot.BSG. Здесь мы храним чеки, оформляем выплаты и держим документы проекта под рукой.\n\nНажмите «ДАЛЕЕ», чтобы продолжить.",
+        "uk": "👋 <b>Вітаю, колего!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі BSG › botSYSTEM. Тут зберігаємо чеки, оформлюємо виплати та тримаємо документи проєкту під рукою.\n\nНатисніть «ДАЛІ», щоб продовжити.",
+        "en": "👋 <b>Hello, teammate!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the BSG › botSYSTEM workspace. Here we store receipts, track payouts, and keep project documents handy.\n\nPress “NEXT” to continue.",
+        "de": "👋 <b>Hallo, Kollegin oder Kollege!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Arbeitsbereich BSG › botSYSTEM. Hier speichern wir Belege, verwalten Auszahlungen und behalten Projektdokumente griffbereit.\n\nDrücken Sie „WEITER“, um fortzufahren.",
+        "pl": "👋 <b>Witaj, współpracowniku!</b>\n━━━━━━━━━━━━━━━━━━\nTo przestrzeń robocza BSG › botSYSTEM. Przechowujemy tu paragony, obsługujemy wypłaty i mamy dokumenty projektu pod ręką.\n\nKliknij „DALEJ”, aby kontynuować.",
+        "ru": "👋 <b>Привет, коллега!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве BSG › botSYSTEM. Здесь мы храним чеки, оформляем выплаты и держим документы проекта под рукой.\n\nНажмите «ДАЛЕЕ», чтобы продолжить.",
     },
     "INTRO_GREETING_REGISTERED": {
         "uk": "👋 <b>Радий вітати знову!</b>\n━━━━━━━━━━━━━━━━━━\nВи можете одразу перейти до головного меню, щоб працювати з розділами бота.\n\nНатисніть «ДАЛІ», аби перейти до основних дій.",
@@ -2042,6 +2156,7 @@ admins: set = set()
 active_project = {"name": None}
 alerts_poll_task: Optional[asyncio.Task] = None
 alerts_history_cache: Dict[str, Dict[str, Any]] = {}
+BOT_USERNAME_CACHE: Optional[str] = None
 
 
 # ========================== FSM ==========================
@@ -2887,9 +3002,9 @@ def registration_sync_runtime(uid: int, profile: Optional[dict]) -> bool:
 
 
 def registration_gate_render_community() -> str:
-    raw_title = REQUIRED_COMMUNITY_TITLE or REQUIRED_COMMUNITY_CHAT or "BSG workspace"
+    chat_id, title_value, invite = required_community_settings()
+    raw_title = title_value or chat_id or "BSG workspace"
     title = str(raw_title)
-    invite = REQUIRED_COMMUNITY_INVITE
     safe_title = html_escape(title)
     if invite:
         safe_invite = html_escape(invite, quote=True)
@@ -2949,12 +3064,12 @@ async def registration_notify_new_user(uid: int, profile: dict, runtime: dict) -
     bsu_code = profile.get("bsu") or "—"
     timestamp = alerts_now().strftime("%d.%m.%Y %H:%M")
     text = (
-        "Нова реєстрація в BSG › SYSTEM\n"
+        f"Нова реєстрація в {h(WORKSPACE_BRAND)}\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"Користувач {h(full_name)} успішно зареєструвався у боті BSG › SYSTEM.\n\n"
+        f"Користувач {h(full_name)} успішно зареєструвався у боті {h(WORKSPACE_BRAND)}.\n\n"
         "Тепер мій доступ — активовано\n"
         f"BSGID: {h(bsu_code)}\n\n"
-        "Вітаю в робочому просторі BSG › SYSTEM — усе в одному місці, без зайвих пошуків.\n"
+        f"Вітаю в робочому просторі {h(WORKSPACE_BRAND)} — усе в одному місці, без зайвих пошуків.\n"
         "Це економить твій час і залишає більше простору для інших справ.\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"Telegram ID: {uid}\n"
@@ -2967,7 +3082,7 @@ async def registration_notify_new_user(uid: int, profile: dict, runtime: dict) -
 
 
 async def registration_check_membership(uid: int) -> Tuple[bool, str]:
-    chat = REQUIRED_COMMUNITY_CHAT
+    chat, _, _ = required_community_settings()
     if not chat:
         return True, "disabled"
     try:
@@ -5812,6 +5927,14 @@ def registration_button_label(target: Any) -> str:
     return labels.get(lang, labels.get(DEFAULT_LANG, "▶️ Next"))
 
 
+def registration_button_plain_label(target: Any) -> str:
+    label = registration_button_label(target)
+    cleaned = label.strip()
+    if cleaned.startswith("🤖"):
+        cleaned = cleaned[1:].strip()
+    return cleaned or label.strip()
+
+
 def kb_registration_next(target: Any, callback_data: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(registration_button_label(target), callback_data=callback_data))
@@ -5895,14 +6018,44 @@ def kb_admin_edit_next(uid: int, callback_data: str) -> InlineKeyboardMarkup:
 
 
 @dp.message_handler(commands=["start"], state="*")
+
+
 async def start_cmd(m: types.Message, state: FSMContext):
+    global BOT_USERNAME_CACHE
+
     ensure_dirs()
     sync_state()
+    required_community_settings(force_reload=True)
     uid = m.from_user.id
     runtime = users_runtime.setdefault(uid, {})
 
     await state.finish()
     await flow_clear(uid)
+
+    chat_type = getattr(m.chat, "type", "private")
+    if chat_type in {"group", "supergroup"}:
+        display_name = m.from_user.first_name or m.from_user.username or f"ID {uid}"
+        text = tr(uid, "START_GROUP_REDIRECT", name=h(display_name), workspace=h(WORKSPACE_BRAND))
+        link: Optional[str] = None
+        try:
+            if BOT_USERNAME_CACHE is None:
+                me = await bot.get_me()
+                BOT_USERNAME_CACHE = me.username or ""
+            if BOT_USERNAME_CACHE:
+                link = f"https://t.me/{BOT_USERNAME_CACHE}?start=workspace"
+        except Exception:
+            BOT_USERNAME_CACHE = BOT_USERNAME_CACHE or ""
+        markup = None
+        if link:
+            markup = InlineKeyboardMarkup().add(
+                InlineKeyboardButton(tr(uid, "START_GROUP_OPEN_BOT"), url=link)
+            )
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await bot.send_message(m.chat.id, text, reply_markup=markup)
+        return
 
     runtime["tg"] = {
         "user_id": uid,
@@ -6017,7 +6170,13 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
         registration_gate_log_attempt(uid, runtime, allowed, status, lang=resolve_lang(uid))
         runtime["membership_allowed"] = allowed
         if allowed:
-            text = tr(uid, "REGISTER_GATE_ALLOWED", community=community)
+            text = tr(
+                uid,
+                "REGISTER_GATE_ALLOWED",
+                community=community,
+                workspace=h(WORKSPACE_BRAND),
+                next_plain=h(registration_button_plain_label(uid)),
+            )
             markup = kb_registration_next(uid, "onboard_stage:welcome")
         else:
             text = tr(
@@ -8393,7 +8552,7 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _alerts_user_agent() -> str:
-    base = "Bot.BSG-alerts/1.0 (+https://alerts.in.ua)"
+    base = "BSG-botSYSTEM-alerts/1.0 (+https://alerts.in.ua)"
     token = ALERTS_API_TOKEN or ""
     if len(token) >= 5:
         return f"{base} token:{token[:5]}"
