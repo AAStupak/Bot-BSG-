@@ -13462,7 +13462,18 @@ async def finance_request_payout(c: types.CallbackQuery):
             "count": entry["count"],
         })
     if not options:
-        await clear_then_anchor(uid, "Усі доступні чеки вже оброблені.", finance_root_keyboard(uid))
+        await clear_then_anchor(
+            uid,
+            "\n".join(
+                [
+                    "ℹ️ <b>Запити недоступні</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Усі доступні чеки вже у роботі або відсутні.",
+                    "Поверніться пізніше чи оберіть інший об'єкт.",
+                ]
+            ),
+            finance_root_keyboard(uid),
+        )
         return await c.answer()
     if len(options) > 1:
         combined_receipts: List[dict] = []
@@ -13785,7 +13796,14 @@ async def fin_history(c: types.CallbackQuery):
     if not requests:
         await clear_then_anchor(
             uid,
-            "📚 История выплат пока пуста.\nОтправьте запрос на выплату, и здесь появятся все подтверждённые операции.",
+            "\n".join(
+                [
+                    "📚 <b>Історія виплат порожня</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Ще не було підтверджених виплат.",
+                    "Надішліть запит, щоб бачити тут усі завершені операції.",
+                ]
+            ),
             finance_root_keyboard(uid),
         )
         return await c.answer()
@@ -13893,7 +13911,7 @@ async def fin_hist_view(c: types.CallbackQuery):
     if not grouped_files and obj.get("files"):
         grouped_files.setdefault(obj.get("project"), list(obj.get("files", [])))
     lines = [
-        f"🧾 <b>Чеки выплаты {h(code)}</b>",
+        f"🧾 <b>Чеки виплати {h(code)}</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"Об'єктів у виплаті: <b>{len(grouped_files) or len(scope) or 0}</b>",
         ""
@@ -14049,11 +14067,15 @@ async def user_confirm_payout(c: types.CallbackQuery):
     else:
         await anchor_show_text(
             uid,
-            (
-                "✅ <b>Выплата подтверждена</b>\n"
-                f"Код: <b>{code_disp}</b>\n"
-                f"Сумма: <b>{fmt_money(amount)} грн</b>\n\n"
-                "Спасибо! Статистика обновлена, и запрос перенесён в историю выплат."
+            "\n".join(
+                [
+                    "✅ <b>Выплата подтверждена</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"Код: <b>{code_disp}</b>",
+                    f"Сума: <b>{fmt_money(amount)} грн</b>",
+                    "",
+                    "Статистика оновлена, запит переміщено до історії виплат.",
+                ]
             ),
             finance_root_keyboard(uid),
         )
@@ -14071,7 +14093,13 @@ async def adm_finance(c: types.CallbackQuery):
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
     await clear_then_anchor(
         uid,
-        "💵 <b>Финансовый модуль администратора</b>\nВыберите раздел для просмотра запросов или истории выплат.",
+        "\n".join(
+            [
+                "💵 <b>Фінансовий модуль адміністратора</b>",
+                "━━━━━━━━━━━━━━━━━━",
+                "Оберіть розділ, щоб опрацювати запити чи переглянути історію виплат.",
+            ]
+        ),
         kb
     )
     await c.answer()
@@ -14085,7 +14113,13 @@ async def adm_requests(c: types.CallbackQuery):
     if not lst:
         await clear_then_anchor(
             uid,
-            "💵 <b>Запросов на выплату нет</b>\nВсе обращения сотрудников обработаны.",
+            "\n".join(
+                [
+                    "💵 <b>Запитів на виплату немає</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Усі звернення співробітників уже опрацьовані.",
+                ]
+            ),
             kb_admin_root()
         ); return await c.answer()
     kb = InlineKeyboardMarkup()
@@ -14111,7 +14145,14 @@ async def adm_history(c: types.CallbackQuery):
     if not lst:
         await clear_then_anchor(
             uid,
-            "📚 История выплат пуста.\nЗдесь появятся все одобренные и закрытые обращения.",
+            "\n".join(
+                [
+                    "📚 <b>Історія виплат порожня</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Ще немає підтверджених чи закритих запитів.",
+                    "Після обробки звернень записи з'являться у цьому розділі.",
+                ]
+            ),
             kb_admin_root()
         ); return await c.answer()
     kb = InlineKeyboardMarkup()
@@ -14160,28 +14201,27 @@ async def adm_hist_open(c: types.CallbackQuery):
     username_raw = (prof.get('tg', {}) or {}).get('username')
     username_display = format_username_link(username_raw)
     project_block: List[str] = []
-    if len(scope_lines) == 1:
-        project_block.append(scope_lines[0])
-    elif scope_lines:
-        project_block.append("Об'єкти:")
+    if scope_lines:
+        project_block.append("📂 Об'єкти у виплаті:")
         project_block.extend(scope_lines)
     else:
-        project_block.append("Проект: —")
+        project_block.append("📂 Об'єкти у виплаті: —")
     text_lines = [
-        f"💵 <b>Выплата {code_disp}</b>",
+        f"💵 <b>Виплата {code_disp}</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Статус: <b>{h(status_disp)}</b>",
+        f"Сума: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>",
         "",
-        f"Статус: {h(status_disp)}",
-        f"Сумма: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>",
         *project_block,
-        f"Чеков: {len(obj.get('files', []))}",
+        f"Чеків у запиті: {len(obj.get('files', []))}",
         "",
         f"👤 {fullname} (ID {obj.get('user_id')}, {bsu_code})",
         f"📱 {phone}",
         f"🆔 {username_display}",
         "",
-        f"Создано: {fmt_ts(obj.get('created_at'))}",
-        f"Одобрено: {fmt_ts(obj.get('approved_at'))}",
-        f"Подтверждено: {fmt_ts(obj.get('confirmed_at'))}"
+        f"Створено: {fmt_ts(obj.get('created_at'))}",
+        f"Схвалено: {fmt_ts(obj.get('approved_at'))}",
+        f"Підтверджено: {fmt_ts(obj.get('confirmed_at'))}"
     ]
     text = "\n".join(text_lines)
     kb = InlineKeyboardMarkup()
@@ -14202,7 +14242,12 @@ async def adm_hist_view_checks(c: types.CallbackQuery):
         return await c.answer("Запрос не найден", show_alert=True)
     files = obj.get("files", [])
     code = obj.get("code", req_id)
-    lines = [f"🧾 Чеки выплаты <b>{h(code)}</b> ({len(files)})", ""]
+    lines = [
+        f"🧾 <b>Чеки виплати {h(code)}</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"У запиті файлів: <b>{len(files)}</b>",
+        "",
+    ]
     grouped_files: Dict[str, List[str]] = {}
     for item in obj.get("items", []):
         if not isinstance(item, dict):
@@ -14324,7 +14369,7 @@ async def adm_req_view_checks(c: types.CallbackQuery):
     if not grouped_files and obj.get("files"):
         grouped_files.setdefault(obj.get("project"), list(obj.get("files", [])))
     lines = [
-        f"🧾 <b>Чеки выплаты {h(code)}</b>",
+        f"🧾 <b>Чеки виплати {h(code)}</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"У запиті файлів: <b>{len(obj.get('files', []))}</b>",
         ""
@@ -14430,12 +14475,18 @@ async def adm_req_reject_reason(m: types.Message, state: FSMContext):
     code = obj.get('code', req_id)
     user_profile = load_user(obj.get('user_id')) or {}
     chat_id = registration_chat_id(obj.get('user_id'), user_profile)
-    note = ("⚠️ <b>Запит на виплату відхилено</b>\n\n"
-            f"Код: <b>{h(code)}</b>\n"
-            f"Об'єкти: {scope_text}\n"
-            f"Сума: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>\n"
-            f"Причина: {h(reason)}\n\n"
-            "Зв'яжіться з адміністратором для уточнення.")
+    note = "\n".join(
+        [
+            "⚠️ <b>Запит на виплату відхилено</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            f"Код: <b>{h(code)}</b>",
+            f"Об'єкти: {scope_text}",
+            f"Сума: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>",
+            f"Причина: {h(reason)}",
+            "",
+            "Зв'яжіться з адміністратором для уточнення.",
+        ]
+    )
     kb_user = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
     if chat_id:
         try:
@@ -14453,7 +14504,18 @@ async def adm_req_reject_reason(m: types.Message, state: FSMContext):
     except Exception:
         pass
     await state.finish()
-    await clear_then_anchor(uid, f"❌ Запит {h(code)} відхилено.", kb_admin_root())
+    await clear_then_anchor(
+        uid,
+        "\n".join(
+            [
+                "❌ <b>Запит відхилено</b>",
+                "━━━━━━━━━━━━━━━━━━",
+                f"Код: <b>{h(code)}</b>",
+                "Користувач отримав повідомлення з причиною відмови.",
+            ]
+        ),
+        kb_admin_root(),
+    )
 
 
 
