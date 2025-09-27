@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
+BSG › botSYSTEM — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Версия 18.0.0 | Ревизия sr-bot-2025-10-05-finance2
 ч
 Зависимости:
@@ -48,10 +48,10 @@ from typing import Dict, Optional, List, Tuple, Any, Set, Union
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageOps
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
-from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited
+from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited, BadRequest
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     InputFile, ContentType, ReplyKeyboardRemove,
@@ -72,7 +72,8 @@ except Exception:
 TOKEN = "7005343266:AAG0bnY-wTc3kScKiIskSd0fO6MstesSbCk"
 ADMIN_CODE = "3004"
 
-BOT_NAME = "Bot.BSG"
+BOT_NAME = "BSG › botSYSTEM"
+WORKSPACE_BRAND = "BSG › SYSTEM"
 BOT_VERSION = "18.0.0"
 BOT_REVISION = "sr-bot-2025-10-05-finance2"
 
@@ -80,6 +81,155 @@ BASE_PATH = "data/projects"
 USERS_PATH = "data/users"
 BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
+
+def _normalize_chat_identifier(raw: Any) -> Optional[Union[int, str]]:
+    if raw is None:
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        candidate = raw.strip()
+        if not candidate:
+            return None
+        if candidate.lstrip("-").isdigit():
+            try:
+                return int(candidate)
+            except Exception:
+                return candidate
+        return candidate
+    return None
+
+
+DEFAULT_REQUIRED_COMMUNITY_CHAT = _normalize_chat_identifier(os.getenv("BSG_REQUIRED_CHAT", "-4979028084"))
+DEFAULT_REQUIRED_COMMUNITY_TITLE = os.getenv("BSG_REQUIRED_TITLE", "Test BSG")
+DEFAULT_REQUIRED_COMMUNITY_INVITE = (os.getenv("BSG_REQUIRED_INVITE") or "").strip()
+COMMUNITY_GATE_CONFIG_FILE = os.path.join("data", "community_gate.json")
+REQUIRED_COMMUNITY_CHAT: Optional[Union[int, str]] = DEFAULT_REQUIRED_COMMUNITY_CHAT
+REQUIRED_COMMUNITY_TITLE = DEFAULT_REQUIRED_COMMUNITY_TITLE
+REQUIRED_COMMUNITY_INVITE = DEFAULT_REQUIRED_COMMUNITY_INVITE
+COMMUNITY_GATE_CACHE: Optional[Tuple[Optional[Union[int, str]], str, str]] = None
+COMMUNITY_GATE_CACHE_MTIME: Optional[float] = None
+
+
+def atomic_write_json(path: str, payload: Any) -> None:
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp_path = f"{path}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+def required_community_settings(force_reload: bool = False) -> Tuple[Optional[Union[int, str]], str, str]:
+    global REQUIRED_COMMUNITY_CHAT, REQUIRED_COMMUNITY_TITLE, REQUIRED_COMMUNITY_INVITE
+    global COMMUNITY_GATE_CACHE, COMMUNITY_GATE_CACHE_MTIME
+
+    directory = os.path.dirname(COMMUNITY_GATE_CONFIG_FILE)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    file_exists = os.path.exists(COMMUNITY_GATE_CONFIG_FILE)
+    current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE) if file_exists else None
+    if (
+        COMMUNITY_GATE_CACHE is not None
+        and not force_reload
+        and ((current_mtime is None and COMMUNITY_GATE_CACHE_MTIME is None) or current_mtime == COMMUNITY_GATE_CACHE_MTIME)
+    ):
+        return COMMUNITY_GATE_CACHE
+
+    default_payload = {
+        "chat_id": str(DEFAULT_REQUIRED_COMMUNITY_CHAT) if DEFAULT_REQUIRED_COMMUNITY_CHAT is not None else "",
+        "title": DEFAULT_REQUIRED_COMMUNITY_TITLE,
+        "invite": DEFAULT_REQUIRED_COMMUNITY_INVITE,
+        "_note": "Edit chat_id/title/invite to match the required community before sharing the bot.",
+    }
+
+    data: Dict[str, Any]
+    if not file_exists:
+        atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, default_payload)
+        data = default_payload
+        current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+    else:
+        try:
+            with open(COMMUNITY_GATE_CONFIG_FILE, "r", encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            if not isinstance(loaded, dict):
+                raise ValueError("invalid gate config")
+            data = loaded
+        except Exception:
+            data = default_payload
+            atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, data)
+            current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+
+    missing = False
+    for key in ("chat_id", "title", "invite"):
+        if key not in data:
+            data[key] = default_payload.get(key, "")
+            missing = True
+    if missing:
+        atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, data)
+        current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+
+    raw_chat = data.get("chat_id")
+    chat_id = _normalize_chat_identifier(str(raw_chat).strip() if raw_chat is not None else None)
+    title = str(data.get("title") or DEFAULT_REQUIRED_COMMUNITY_TITLE)
+    invite = str(data.get("invite") or "").strip()
+
+    REQUIRED_COMMUNITY_CHAT = chat_id
+    REQUIRED_COMMUNITY_TITLE = title
+    REQUIRED_COMMUNITY_INVITE = invite
+    COMMUNITY_GATE_CACHE = (chat_id, title, invite)
+    COMMUNITY_GATE_CACHE_MTIME = current_mtime
+    return COMMUNITY_GATE_CACHE
+
+
+def registration_gate_contact_display_name() -> str:
+    if REGISTRATION_GATE_CONTACT_DISPLAY:
+        return REGISTRATION_GATE_CONTACT_DISPLAY
+    raw = REGISTRATION_GATE_CONTACT_NAME.strip()
+    if not raw:
+        return "Алексей"
+    parts = [segment for segment in raw.replace("\u00a0", " ").split(" ") if segment]
+    if not parts:
+        return "Алексей"
+    if len(parts) == 1:
+        return parts[0]
+    return parts[-1]
+
+
+# Ensure the community gate file exists at startup and cache the defaults.
+required_community_settings()
+REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
+REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
+REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Алексей").strip() or "Алексей"
+REGISTRATION_GATE_CONTACT_ROLE = os.getenv("BSG_REQUIRED_CONTACT_ROLE", "директор компании BSG")
+REGISTRATION_GATE_CONTACT_DISPLAY = (os.getenv("BSG_REQUIRED_CONTACT_DISPLAY") or "").strip()
+_registration_notify_raw = (os.getenv("BSG_REG_NOTIFY_CHAT") or "").strip()
+if _registration_notify_raw:
+    if _registration_notify_raw.lstrip("-").isdigit():
+        try:
+            REGISTRATION_NOTIFY_CHAT: Optional[Union[int, str]] = int(_registration_notify_raw)
+        except Exception:
+            REGISTRATION_NOTIFY_CHAT = _registration_notify_raw
+    else:
+        REGISTRATION_NOTIFY_CHAT = _registration_notify_raw
+else:
+    REGISTRATION_NOTIFY_CHAT = None
+
+if REGISTRATION_NOTIFY_CHAT is None:
+    fallback_chat, _, _ = required_community_settings()
+    if fallback_chat:
+        REGISTRATION_NOTIFY_CHAT = fallback_chat
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
 
@@ -135,6 +285,7 @@ LANG_ORDER = [
     ("pl", "🇵🇱 Polski"),
     ("ru", "🇷🇺 Русский"),
 ]
+LANG_LABELS = {code: label for code, label in LANG_ORDER}
 
 DEFAULT_LANG = "uk"
 
@@ -769,6 +920,104 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "📬 Przypisz TTN użytkownikowi",
         "ru": "📬 Закрепить ТТН за пользователем",
     },
+    "BTN_PROFILE": {
+        "uk": "👤 Мій профіль",
+        "en": "👤 My profile",
+        "de": "👤 Mein Profil",
+        "pl": "👤 Mój profil",
+        "ru": "👤 Мой профиль",
+    },
+    "BTN_PROFILE_EDIT": {
+        "uk": "✏️ Редагувати профіль",
+        "en": "✏️ Edit profile",
+        "de": "✏️ Profil bearbeiten",
+        "pl": "✏️ Edytuj profil",
+        "ru": "✏️ Редактировать профиль",
+    },
+    "BTN_PROFILE_VIEW_PHOTO": {
+        "uk": "👁 Переглянути фото",
+        "en": "👁 View photo",
+        "de": "👁 Foto anzeigen",
+        "pl": "👁 Zobacz zdjęcie",
+        "ru": "👁 Просмотреть фото",
+    },
+    "BTN_PROFILE_HIDE_PHOTO": {
+        "uk": "📝 Повернутись до тексту",
+        "en": "📝 Back to summary",
+        "de": "📝 Zurück zur Übersicht",
+        "pl": "📝 Wróć do podsumowania",
+        "ru": "📝 Вернуться к тексту",
+    },
+    "BTN_PROFILE_DONE": {
+        "uk": "✅ Готово",
+        "en": "✅ Done",
+        "de": "✅ Fertig",
+        "pl": "✅ Gotowe",
+        "ru": "✅ Готово",
+    },
+    "BTN_PROFILE_UPDATE_PHOTO": {
+        "uk": "🖼 Оновити фото",
+        "en": "🖼 Update photo",
+        "de": "🖼 Foto aktualisieren",
+        "pl": "🖼 Zaktualizuj zdjęcie",
+        "ru": "🖼 Обновить фото",
+    },
+    "BTN_PROFILE_REMOVE_PHOTO": {
+        "uk": "🗑 Видалити фото",
+        "en": "🗑 Remove photo",
+        "de": "🗑 Foto löschen",
+        "pl": "🗑 Usuń zdjęcie",
+        "ru": "🗑 Удалить фото",
+    },
+    "BTN_PROFILE_FIELD_LAST": {
+        "uk": "1. Прізвище",
+        "en": "1. Last name",
+        "de": "1. Nachname",
+        "pl": "1. Nazwisko",
+        "ru": "1. Фамилия",
+    },
+    "BTN_PROFILE_FIELD_FIRST": {
+        "uk": "2. Ім'я",
+        "en": "2. First name",
+        "de": "2. Vorname",
+        "pl": "2. Imię",
+        "ru": "2. Имя",
+    },
+    "BTN_PROFILE_FIELD_MIDDLE": {
+        "uk": "3. По батькові",
+        "en": "3. Patronymic",
+        "de": "3. Vatersname",
+        "pl": "3. Drugie imię",
+        "ru": "3. Отчество",
+    },
+    "BTN_PROFILE_FIELD_BIRTHDATE": {
+        "uk": "4. Дата народження",
+        "en": "4. Birth date",
+        "de": "4. Geburtsdatum",
+        "pl": "4. Data urodzenia",
+        "ru": "4. Дата рождения",
+    },
+    "BTN_PROFILE_FIELD_REGION": {
+        "uk": "5. Область",
+        "en": "5. Region",
+        "de": "5. Region",
+        "pl": "5. Obwód",
+        "ru": "5. Область",
+    },
+    "BTN_PROFILE_FIELD_PHONE": {
+        "uk": "6. Телефон",
+        "en": "6. Phone",
+        "de": "6. Telefon",
+        "pl": "6. Telefon",
+        "ru": "6. Телефон",
+    },
+    "BTN_PROFILE_CANCEL": {
+        "uk": "⬅️ Скасувати",
+        "en": "⬅️ Cancel",
+        "de": "⬅️ Abbrechen",
+        "pl": "⬅️ Anuluj",
+        "ru": "⬅️ Отменить",
+    },
     "BTN_BACK_ROOT": {
         "uk": "⬅️ На головну",
         "en": "⬅️ Main menu",
@@ -853,6 +1102,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "👋 Miło Cię znów widzieć, {name}!",
         "ru": "👋 Рад снова видеть, {name}!",
     },
+    "START_GROUP_REDIRECT": {
+        "uk": "👋 Привіт, {name}!\nЦей бот працює у приватних повідомленнях. Щоб продовжити, відкрийте <b>{workspace}</b> у особистому чаті за посиланням нижче.",
+        "en": "👋 Hi, {name}!\nThis bot works in private messages. Open <b>{workspace}</b> in a direct chat via the link below to keep going.",
+        "de": "👋 Hallo, {name}!\nDieser Bot funktioniert in privaten Nachrichten. Öffnen Sie <b>{workspace}</b> im Direktchat über den Link unten, um fortzufahren.",
+        "pl": "👋 Cześć, {name}!\nTen bot działa w prywatnych wiadomościach. Otwórz <b>{workspace}</b> w czacie prywatnym, korzystając z linku poniżej, aby kontynuować.",
+        "ru": "👋 Привет, {name}!\nЭтот бот работает в личных сообщениях. Чтобы продолжить, откройте <b>{workspace}</b> в приватном чате по ссылке ниже.",
+    },
+    "START_GROUP_OPEN_BOT": {
+        "uk": "🔐 Відкрити бота",
+        "en": "🔐 Open the bot",
+        "de": "🔐 Bot öffnen",
+        "pl": "🔐 Otwórz bota",
+        "ru": "🔐 Открыть бота",
+    },
     "START_PROMPT_FULLNAME": {
         "uk": "👤 Введіть прізвище та ім'я (наприклад, Іваненко Іван).",
         "en": "👤 Please enter your full name (for example, Smith John).",
@@ -887,6 +1150,576 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "✅ Profil gespeichert. Ihr Code: <b>{code}</b>\nWillkommen an Bord!",
         "pl": "✅ Profil zapisany. Twój kod: <b>{code}</b>\nWitamy na pokładzie!",
         "ru": "✅ Профиль сохранён. Ваш код: <b>{code}</b>\nДобро пожаловать!",
+    },
+    "ONBOARD_LANGUAGE_CONFIRMED": {
+        "uk": "Мову переключено на {language}.",
+        "en": "Language switched to {language}.",
+        "de": "Sprache auf {language} umgestellt.",
+        "pl": "Język zmieniono na {language}.",
+        "ru": "Язык переключен на {language}.",
+    },
+    "REGISTER_GATE_CHECKING": {
+        "uk": "⏳ Перевіряємо участь у спільноті <b>{community}</b>…",
+        "en": "⏳ Checking your membership in <b>{community}</b>…",
+        "de": "⏳ Prüfen der Mitgliedschaft in <b>{community}</b> …",
+        "pl": "⏳ Sprawdzamy Twoje uczestnictwo w <b>{community}</b>…",
+        "ru": "⏳ Проверяем участие в группе <b>{community}</b>…",
+    },
+    "REGISTER_GATE_ALLOWED": {
+        "uk": "✅ ДОСТУП ПІДТВЕРДЖЕНО\n━━━━━━━━━━━━━━━━━━\nВи є учасником групи <b>{community}</b>, що підключена до робочого простору <b>{workspace}</b>.\n\n📎 Підключення успішне — система вас розпізнала.\n\nНатисніть <b>«{next_plain}»</b>, щоб завершити реєстрацію та активувати доступ.\n━━━━━━━━━━━━━━━━━━\n{workspace} — усе в одному місці. Жодних зайвих пошуків.",
+        "en": "✅ ACCESS CONFIRMED\n━━━━━━━━━━━━━━━━━━\nYou are a member of <b>{community}</b>, which is linked to the <b>{workspace}</b> workspace.\n\n📎 Connection successful — the system has recognized you.\n\nTap <b>“{next_plain}”</b> to complete registration and activate your access.\n━━━━━━━━━━━━━━━━━━\n{workspace} keeps everything in one place. No extra searching needed.",
+        "de": "✅ ZUGANG BESTÄTIGT\n━━━━━━━━━━━━━━━━━━\nSie gehören zur Gruppe <b>{community}</b>, die mit dem Arbeitsbereich <b>{workspace}</b> verbunden ist.\n\n📎 Verbindung erfolgreich – das System hat Sie erkannt.\n\nTippen Sie auf <b>„{next_plain}“</b>, um die Registrierung abzuschließen und den Zugang zu aktivieren.\n━━━━━━━━━━━━━━━━━━\n{workspace} bündelt alles an einem Ort. Keine unnötige Suche mehr.",
+        "pl": "✅ DOSTĘP POTWIERDZONY\n━━━━━━━━━━━━━━━━━━\nNależysz do grupy <b>{community}</b> połączonej z przestrzenią roboczą <b>{workspace}</b>.\n\n📎 Połączenie udane — system Cię rozpoznał.\n\nKliknij <b>„{next_plain}”</b>, aby zakończyć rejestrację i aktywować dostęp.\n━━━━━━━━━━━━━━━━━━\n{workspace} trzyma wszystko w jednym miejscu. Koniec z niepotrzebnym szukaniem.",
+        "ru": "✅ ДОСТУП ПОДТВЕРЖДЁН\n━━━━━━━━━━━━━━━━━━\nВы состоите в группе <b>{community}</b>, подключённой к рабочему пространству <b>{workspace}</b>.\n\n📎 Подключение успешно — система вас распознала.\n\nНажмите <b>«{next_plain}»</b>, чтобы завершить регистрацию и активировать доступ.\n━━━━━━━━━━━━━━━━━━\n{workspace} — всё в одном месте. Никаких лишних поисков.",
+    },
+    "REGISTER_GATE_DENIED": {
+        "uk": "🚫 Реєстрація поки недоступна, {name}.\n\nВи ще не приєдналися до групи <b>{community}</b>. Напишіть, будь ласка, <b>{contact_name}</b> ({contact_role}), щоб вас додали. Після підтвердження натисніть «Продовжити», щоб перевірити ще раз, або «Закрити», щоб прибрати повідомлення.",
+        "en": "🚫 Registration is currently unavailable, {name}.\n\nYou are not a member of <b>{community}</b> yet. Please message <b>{contact_name}</b> ({contact_role}) so they can add you. After joining, press “Continue” to check again or “Close” to hide this message.",
+        "de": "🚫 Registrierung momentan nicht möglich, {name}.\n\nSie sind noch kein Mitglied von <b>{community}</b>. Bitte kontaktieren Sie <b>{contact_name}</b> ({contact_role}), damit Sie hinzugefügt werden. Nachdem Sie beigetreten sind, tippen Sie auf „Fortfahren“, um erneut zu prüfen, oder auf „Schließen“, um diese Nachricht auszublenden.",
+        "pl": "🚫 Rejestracja jest chwilowo zablokowana, {name}.\n\nNie należysz jeszcze do grupy <b>{community}</b>. Skontaktuj się z <b>{contact_name}</b> ({contact_role}), aby dodał Cię do społeczności. Po dołączeniu kliknij „Kontynuować”, aby sprawdzić ponownie, albo „Zamknąć”, aby ukryć tę wiadomość.",
+        "ru": "🚫 Регистрация пока недоступна, {name}.\n\nВы ещё не вступили в группу <b>{community}</b>. Напишите, пожалуйста, <b>{contact_name}</b> ({contact_role}), чтобы он добавил вас. После вступления нажмите «Продолжить», чтобы проверить снова, или «Закрыть», чтобы скрыть сообщение.",
+    },
+    "REGISTER_GATE_RETRY": {
+        "uk": "🔄 Продовжити",
+        "en": "🔄 Continue",
+        "de": "🔄 Fortfahren",
+        "pl": "🔄 Kontynuować",
+        "ru": "🔄 Продолжить",
+    },
+    "REGISTER_GATE_CLOSE": {
+        "uk": "✖️ Закрити",
+        "en": "✖️ Close",
+        "de": "✖️ Schließen",
+        "pl": "✖️ Zamknąć",
+        "ru": "✖️ Закрыть",
+    },
+    "ONBOARD_WELCOME": {
+        "uk": "👋 Привіт, {name}!\nЛаскаво просимо до робочого простору <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nТут зібрано все, що допомагає працювати швидко та тримати під контролем важливі справи.\n\n> <b>{bot}</b> — ваш особистий інструмент порядку, швидкості та впевненості в роботі.\n\nℹ️ Хочете приєднатися й дізнатися, як пройти реєстрацію?\nПросто натисніть <b>«Далі»</b> і отримайте покрокову інструкцію (підпис автоматично локалізовано).",
+        "en": "👋 Hello, {name}!\nWelcome to the <b>{bot}</b> workspace\n━━━━━━━━━━━━━━━━━━\nEverything you need to work fast and stay in control of critical tasks lives here.\n\n> <b>{bot}</b> is your personal toolkit for order, speed, and confidence at work.\n\nℹ️ Ready to join and learn how to complete registration?\nJust tap <b>“Next”</b> to receive the step-by-step guide (the button label is localized automatically).",
+        "de": "👋 Hallo, {name}!\nWillkommen im Arbeitsbereich <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nHier finden Sie alles, was schnelles Arbeiten und die Kontrolle über wichtige Aufgaben erleichtert.\n\n> <b>{bot}</b> ist Ihr persönliches Werkzeug für Ordnung, Tempo und Sicherheit im Arbeitsalltag.\n\nℹ️ Möchten Sie beitreten und erfahren, wie die Registrierung funktioniert?\nTippen Sie einfach auf <b>„Weiter“</b>, um die Schritt-für-Schritt-Anleitung zu erhalten (die Beschriftung wird automatisch lokalisiert).",
+        "pl": "👋 Cześć, {name}!\nWitamy w przestrzeni roboczej <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nTutaj znajdziesz wszystko, co pomaga pracować szybko i mieć kontrolę nad ważnymi zadaniami.\n\n> <b>{bot}</b> to Twoje osobiste narzędzie porządku, szybkości i pewności w pracy.\n\nℹ️ Chcesz dołączyć i zobaczyć, jak przejść rejestrację?\nPo prostu kliknij <b>„Dalej”</b>, aby otrzymać instrukcję krok po kroku (podpis przycisku dostosowuje się automatycznie).",
+        "ru": "👋 Привет, {name}!\nДобро пожаловать в рабочее пространство <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nЗдесь собрано всё, что помогает работать быстро и не терять контроль над важными делами.\n\n> <b>{bot}</b> — ваш личный инструмент для порядка, скорости и уверенности в работе.\n\nℹ️ Хотите присоединиться и узнать, как пройти регистрацию?\nПросто нажмите <b>«Дальше»</b> и получите пошаговую инструкцию (подпись автоматически локализуется).",
+    },
+    "ONBOARD_BRIEFING": {
+        "uk": "📝 <b>Як пройти реєстрацію</b>\n━━━━━━━━━━━━━━━━━━\n1. Вкажіть своє ім'я без скорочень.\n\n2. Запишіть прізвище точно так, як у документах.\n\n3. Додайте по батькові або напишіть, що його немає.\n\n4. Введіть дату народження у форматі ДД.ММ.РРРР.\n\n5. Оберіть область кнопкою «📍 Вибрати область».\n\n6. Поділіться телефоном через кнопку «📱 Надіслати номер».\n\n7. Завантажте фото у паспортному стилі або додайте його пізніше.\n\nГотові? Натисніть <b>«Далі»</b>, щоб почати.",
+        "en": "📝 <b>How to complete registration</b>\n━━━━━━━━━━━━━━━━━━\n1. Enter your first name without abbreviations.\n\n2. Write your last name exactly as it appears in your documents.\n\n3. Add a patronymic/middle name or tell us you don't have one.\n\n4. Provide your birth date in DD.MM.YYYY format.\n\n5. Choose your oblast using the “📍 Choose region” button.\n\n6. Share your phone number with the “📱 Share phone number” button.\n\n7. Upload a passport-style photo or add it later.\n\nReady? Press <b>“Next”</b> to begin.",
+        "de": "📝 <b>So läuft die Registrierung</b>\n━━━━━━━━━━━━━━━━━━\n1. Geben Sie Ihren Vornamen ohne Abkürzungen ein.\n\n2. Schreiben Sie den Nachnamen genau wie im Ausweis.\n\n3. Ergänzen Sie den Vatersnamen/Zweitnamen oder teilen Sie mit, dass er nicht vorhanden ist.\n\n4. Tragen Sie das Geburtsdatum im Format TT.MM.JJJJ ein.\n\n5. Wählen Sie Ihre Oblast über die Schaltfläche „📍 Region wählen“.\n\n6. Senden Sie Ihre Telefonnummer mit „📱 Nummer senden“.\n\n7. Laden Sie ein Passfoto hoch oder fügen Sie es später hinzu.\n\nBereit? Tippen Sie auf <b>„Weiter“</b>, um zu starten.",
+        "pl": "📝 <b>Jak przejść rejestrację</b>\n━━━━━━━━━━━━━━━━━━\n1. Wpisz swoje imię bez skrótów.\n\n2. Zapisz nazwisko dokładnie jak w dokumentach.\n\n3. Dodaj drugie imię/imię ojca lub napisz, że go nie ma.\n\n4. Podaj datę urodzenia w formacie DD.MM.RRRR.\n\n5. Wybierz obwód przyciskiem „📍 Wybierz region”.\n\n6. Udostępnij telefon przyciskiem „📱 Wyślij numer”.\n\n7. Prześlij zdjęcie paszportowe albo dodaj je później.\n\nGotowi? Kliknij <b>„Dalej”</b>, aby rozpocząć.",
+        "ru": "📝 <b>Как пройти регистрацию</b>\n━━━━━━━━━━━━━━━━━━\n1. Укажите своё имя без сокращений.\n\n2. Запишите фамилию точно как в паспорте.\n\n3. Добавьте отчество или сообщите, что его нет.\n\n4. Введите дату рождения в формате ДД.ММ.ГГГГ.\n\n5. Выберите область кнопкой «📍 Выбрать область».\n\n6. Поделитесь телефоном кнопкой «📱 Отправить номер».\n\n7. Загрузите фото в паспортном стиле или добавьте его позже.\n\nГотовы? Нажмите <b>«Дальше»</b>, чтобы начать.",
+    },
+
+
+    "ONBOARD_RETURNING_SHORTCUT": {
+        "uk": "Виглядає, що ви вже проходили реєстрацію. Натисніть кнопку, щоб перейти до головного меню або продовжити оновлення даних.",
+        "en": "It seems you have already completed registration. Use the button to open the main menu or continue updating your data.",
+        "de": "Sie scheinen bereits registriert zu sein. Nutzen Sie die Schaltfläche, um zum Hauptmenü zu wechseln oder Ihre Daten zu aktualisieren.",
+        "pl": "Wygląda na to, że rejestracja została już zakończona. Użyj przycisku, aby przejść do menu głównego lub zaktualizować dane.",
+        "ru": "Похоже, вы уже проходили регистрацию. Нажмите кнопку, чтобы открыть главное меню или продолжить обновление данных.",
+    },
+    "ONBOARD_ALREADY_COMPLETED": {
+        "uk": "✅ Реєстрацію вже завершено. Повертаю вас до головного меню.",
+        "en": "✅ Registration is already complete. Returning you to the main menu.",
+        "de": "✅ Die Registrierung ist bereits abgeschlossen. Ich bringe Sie zurück zum Hauptmenü.",
+        "pl": "✅ Rejestracja została już ukończona. Wracam do głównego menu.",
+        "ru": "✅ Регистрация уже завершена. Возвращаю в главное меню.",
+    },
+    "REGISTER_INTRO_PROMPT": {
+        "uk": "Починаємо! Відповідайте на запитання нижче. Всі допоміжні повідомлення будуть прибрані автоматично.",
+        "en": "Let's get started! Answer the questions below — helper messages will be cleaned up automatically.",
+        "de": "Los geht's! Beantworten Sie die folgenden Fragen – Hilfsnachrichten werden automatisch entfernt.",
+        "pl": "Zaczynamy! Odpowiedz na poniższe pytania – pomocnicze wiadomości zostaną usunięte automatycznie.",
+        "ru": "Начинаем! Отвечайте на вопросы ниже — служебные сообщения будут удалены автоматически.",
+    },
+    "REGISTER_RESUME_PROGRESS": {
+        "uk": "🔄 Продовжуємо. Залишилось заповнити: {fields}.",
+        "en": "🔄 Resuming. Fields left to fill: {fields}.",
+        "de": "🔄 Weiter geht's. Es fehlt noch: {fields}.",
+        "pl": "🔄 Kontynuujemy. Do uzupełnienia pozostało: {fields}.",
+        "ru": "🔄 Продолжаем. Осталось заполнить: {fields}.",
+    },
+    "REGISTER_RESUME_READY": {
+        "uk": "🔄 Дані вже заповнені — завершуємо перевірку.",
+        "en": "🔄 All details are already filled — wrapping up the check.",
+        "de": "🔄 Alle Angaben bereits vorhanden – Abschluss läuft.",
+        "pl": "🔄 Wszystkie dane są już uzupełnione — kończymy sprawdzanie.",
+        "ru": "🔄 Все данные уже заполнены — завершаем проверку.",
+    },
+    "REGISTER_BLOCKED_NOTICE": {
+        "uk": "❗ Завершіть реєстрацію, щоб відкрити меню. Натисніть «Далі» та виконайте всі кроки анкети.",
+        "en": "❗ Finish registration to access the menu. Tap “Next” and complete the remaining steps.",
+        "de": "❗ Schließen Sie die Registrierung ab, um das Menü zu öffnen. Tippen Sie auf „Weiter“ und vervollständigen Sie die fehlenden Angaben.",
+        "pl": "❗ Aby uzyskać dostęp do menu, dokończ rejestrację. Kliknij „Dalej” i wypełnij pozostałe kroki.",
+        "ru": "❗ Завершите регистрацию, чтобы открыть меню. Нажмите «Дальше» и выполните оставшиеся шаги.",
+    },
+    "REGISTER_LIST_AND": {
+        "uk": " і ",
+        "en": " and ",
+        "de": " und ",
+        "pl": " i ",
+        "ru": " и ",
+    },
+    "REGISTER_FIELD_LABEL_LAST_NAME": {
+        "uk": "прізвище",
+        "en": "last name",
+        "de": "Nachname",
+        "pl": "nazwisko",
+        "ru": "фамилия",
+    },
+    "REGISTER_FIELD_LABEL_FIRST_NAME": {
+        "uk": "ім'я",
+        "en": "first name",
+        "de": "Vorname",
+        "pl": "imię",
+        "ru": "имя",
+    },
+    "REGISTER_FIELD_LABEL_MIDDLE_NAME": {
+        "uk": "по батькові",
+        "en": "middle name",
+        "de": "Zweitname",
+        "pl": "drugie imię",
+        "ru": "отчество",
+    },
+    "REGISTER_FIELD_LABEL_BIRTHDATE": {
+        "uk": "дату народження",
+        "en": "birth date",
+        "de": "Geburtsdatum",
+        "pl": "datę urodzenia",
+        "ru": "дату рождения",
+    },
+    "REGISTER_FIELD_LABEL_REGION": {
+        "uk": "область",
+        "en": "region",
+        "de": "Region",
+        "pl": "region",
+        "ru": "область",
+    },
+    "REGISTER_FIELD_LABEL_PHONE": {
+        "uk": "номер телефону",
+        "en": "phone number",
+        "de": "Telefonnummer",
+        "pl": "numer telefonu",
+        "ru": "номер телефона",
+    },
+    "REGISTER_FIELD_LABEL_PHOTO": {
+        "uk": "фото",
+        "en": "photo",
+        "de": "Foto",
+        "pl": "zdjęcie",
+        "ru": "фото",
+    },
+    "REGISTER_LAST_NAME_PROMPT": {
+        "uk": "2. ✍️ <b>Вкажіть своє прізвище.</b>\nНапишіть повністю, як у паспорті.",
+        "en": "2. ✍️ <b>Enter your last name.</b>\nWrite it exactly as it appears in your ID.",
+        "de": "2. ✍️ <b>Geben Sie Ihren Nachnamen an.</b>\nSchreiben Sie ihn vollständig wie im Ausweis.",
+        "pl": "2. ✍️ <b>Podaj swoje nazwisko.</b>\nZapisz je dokładnie tak, jak w dokumentach.",
+        "ru": "2. ✍️ <b>Укажите свою фамилию.</b>\nНапишите полностью, как в паспорте."
+    },
+    "REGISTER_LAST_NAME_WARN": {
+        "uk": "❗ Перевірте прізвище: допускаються лише літери, апостроф та дефіс.",
+        "en": "❗ Please check your last name: only letters, apostrophes, and dashes are allowed.",
+        "de": "❗ Prüfen Sie den Nachnamen: Es sind nur Buchstaben, Apostroph und Bindestrich erlaubt.",
+        "pl": "❗ Sprawdź nazwisko: dozwolone są tylko litery, apostrof i myślnik.",
+        "ru": "❗ Проверьте фамилию: допустимы только буквы, апостроф и дефис.",
+    },
+    "REGISTER_LAST_NAME_OK": {
+        "uk": "Прізвище збережено: <b>{value}</b> ✅",
+        "en": "Last name saved: <b>{value}</b> ✅",
+        "de": "Nachname gespeichert: <b>{value}</b> ✅",
+        "pl": "Nazwisko zapisane: <b>{value}</b> ✅",
+        "ru": "Фамилия сохранена: <b>{value}</b> ✅",
+    },
+    "REGISTER_FIRST_NAME_PROMPT": {
+        "uk": "1. ✍️ <b>Вкажіть своє ім'я.</b>\nПишіть повністю, без скорочень, як у документах.",
+        "en": "1. ✍️ <b>Enter your first name.</b>\nWrite it fully, without abbreviations, exactly as in your documents.",
+        "de": "1. ✍️ <b>Geben Sie Ihren Vornamen ein.</b>\nSchreiben Sie ihn vollständig und ohne Abkürzungen wie in den Dokumenten.",
+        "pl": "1. ✍️ <b>Podaj swoje imię.</b>\nPisz pełnym imieniem, bez skrótów, tak jak w dokumentach.",
+        "ru": "1. ✍️ <b>Укажите своё имя.</b>\nПишите полностью, без сокращений, как в документах."
+    },
+    "REGISTER_FIRST_NAME_WARN": {
+        "uk": "❗ Перевірте ім'я: допускаються лише літери.",
+        "en": "❗ Please check your first name: only letters are allowed.",
+        "de": "❗ Prüfen Sie den Vornamen: Es sind nur Buchstaben erlaubt.",
+        "pl": "❗ Sprawdź imię: dozwolone są tylko litery.",
+        "ru": "❗ Проверьте имя: допускаются только буквы."
+    },
+    "REGISTER_FIRST_NAME_OK": {
+        "uk": "Ім'я збережено: <b>{value}</b> ✅",
+        "en": "First name saved: <b>{value}</b> ✅",
+        "de": "Vorname gespeichert: <b>{value}</b> ✅",
+        "pl": "Imię zapisane: <b>{value}</b> ✅",
+        "ru": "Имя сохранено: <b>{value}</b> ✅",
+    },
+    "REGISTER_MIDDLE_NAME_PROMPT": {
+        "uk": "3. ✍️ <b>По батькові.</b>\nЯкщо немає — напишіть «немає».",
+        "en": "3. ✍️ <b>Patronymic or middle name.</b>\nIf you don't have one, write “no”.",
+        "de": "3. ✍️ <b>Zweitname/Vatersname.</b>\nWenn keiner vorhanden ist, schreiben Sie „kein“.",
+        "pl": "3. ✍️ <b>Drugie imię / imię ojca.</b>\nJeśli go nie ma, wpisz „brak”.",
+        "ru": "3. ✍️ <b>Отчество.</b>\nЕсли его нет — напишите «Нет»."
+    },
+    "REGISTER_MIDDLE_NAME_WARN": {
+        "uk": "❗ Перевірте по батькові: використовуйте літери або напишіть «немає».",
+        "en": "❗ Check the patronymic: use letters or type “no”.",
+        "de": "❗ Prüfen Sie den Zweitnamen: Verwenden Sie Buchstaben oder schreiben Sie „kein“.",
+        "pl": "❗ Sprawdź drugie imię: użyj liter lub wpisz „brak”.",
+        "ru": "❗ Проверьте отчество: используйте буквы или напишите «Нет»."
+    },
+    "REGISTER_MIDDLE_NAME_OK": {
+        "uk": "По батькові збережено: <b>{value}</b> ✅",
+        "en": "Middle name saved: <b>{value}</b> ✅",
+        "de": "Zweitname gespeichert: <b>{value}</b> ✅",
+        "pl": "Drugie imię zapisane: <b>{value}</b> ✅",
+        "ru": "Отчество сохранено: <b>{value}</b> ✅",
+    },
+    "REGISTER_MIDDLE_NAME_SKIPPED": {
+        "uk": "По батькові пропущено. Його можна додати з профілю пізніше.",
+        "en": "Middle name skipped. You can add it later from your profile.",
+        "de": "Zweitname übersprungen. Sie können ihn später im Profil hinzufügen.",
+        "pl": "Drugie imię pominięto. Możesz dodać je później w profilu.",
+        "ru": "Отчество пропущено. Его можно добавить позже в профиле.",
+    },
+    "REGISTER_BIRTHDATE_PROMPT": {
+        "uk": "4. 📆 <b>Дата народження.</b>\nФормат: ДД.ММ.РРРР (наприклад, 25.07.1995).",
+        "en": "4. 📆 <b>Birth date.</b>\nFormat: DD.MM.YYYY (e.g., 25.07.1995).",
+        "de": "4. 📆 <b>Geburtsdatum.</b>\nFormat: TT.MM.JJJJ (z. B. 25.07.1995).",
+        "pl": "4. 📆 <b>Data urodzenia.</b>\nFormat: DD.MM.RRRR (np. 25.07.1995).",
+        "ru": "4. 📆 <b>Дата рождения.</b>\nФормат: ДД.ММ.ГГГГ (например, 25.07.1995)."
+    },
+    "REGISTER_BIRTHDATE_WARN": {
+        "uk": "❗ Не вдалося розпізнати дату. Використовуйте формат ДД.ММ.РРРР.",
+        "en": "❗ Could not parse the date. Please use DD.MM.YYYY format.",
+        "de": "❗ Datum konnte nicht erkannt werden. Bitte verwenden Sie das Format TT.MM.JJJJ.",
+        "pl": "❗ Nie udało się rozpoznać daty. Użyj formatu DD.MM.RRRR.",
+        "ru": "❗ Не удалось распознать дату. Используйте формат ДД.ММ.ГГГГ.",
+    },
+    "REGISTER_BIRTHDATE_OK": {
+        "uk": "Дату народження збережено: <b>{value}</b> ✅",
+        "en": "Birth date saved: <b>{value}</b> ✅",
+        "de": "Geburtsdatum gespeichert: <b>{value}</b> ✅",
+        "pl": "Data urodzenia zapisana: <b>{value}</b> ✅",
+        "ru": "Дата рождения сохранена: <b>{value}</b> ✅",
+    },
+    "REGISTER_REGION_PROMPT": {
+        "uk": "5. 📍 <b>Виберіть область.</b>\nНатисніть «📍 Вибрати область» і підтвердьте вибір.",
+        "en": "5. 📍 <b>Select your oblast.</b>\nTap “📍 Choose region” and confirm your choice.",
+        "de": "5. 📍 <b>Wählen Sie Ihre Oblast.</b>\nTippen Sie auf „📍 Region wählen“ und bestätigen Sie Ihre Auswahl.",
+        "pl": "5. 📍 <b>Wybierz obwód.</b>\nKliknij „📍 Wybierz region” i zatwierdź wybór.",
+        "ru": "5. 📍 <b>Выберите область.</b>\nНажмите «📍 Выбрать область» и подтвердите выбор."
+    },
+    "REGISTER_REGION_BUTTON": {
+        "uk": "📍 Вибрати область",
+        "en": "📍 Choose region",
+        "de": "📍 Region wählen",
+        "pl": "📍 Wybierz region",
+        "ru": "📍 Выбрать область",
+    },
+    "REGISTER_REGION_BACK": {
+        "uk": "⬅️ Назад",
+        "en": "⬅️ Back",
+        "de": "⬅️ Zurück",
+        "pl": "⬅️ Wstecz",
+        "ru": "⬅️ Назад"
+    },
+
+    "REGISTER_REGION_PICK": {
+        "uk": "📍 Виберіть свою область зі списку нижче.",
+        "en": "📍 Pick your oblast from the list below.",
+        "de": "📍 Wählen Sie Ihre Oblast aus der Liste unten.",
+        "pl": "📍 Wybierz swój obwód z poniższej listy.",
+        "ru": "📍 Выберите свою область из списка ниже."
+    },
+    "REGISTER_REGION_REMIND": {
+        "uk": "❗ Скористайтеся кнопкою «📍 Вибрати область», щоб обрати зі списку.",
+        "en": "❗ Use the “📍 Choose region” button to select from the list.",
+        "de": "❗ Nutzen Sie die Schaltfläche „📍 Region wählen“, um aus der Liste zu wählen.",
+        "pl": "❗ Użyj przycisku „📍 Wybierz region”, aby wybrać z listy.",
+        "ru": "❗ Используйте кнопку «📍 Выбрать область», чтобы выбрать из списка."
+    },
+    "REGISTER_REGION_SELECTED": {
+        "uk": "✅ Область збережено: <b>{region}</b>. Натисніть <b>«Далі»</b>, щоб перейти до телефону, або «⬅️ Назад», щоб змінити.",
+        "en": "✅ Region saved: <b>{region}</b>. Press <b>“Next”</b> to continue to the phone step or “⬅️ Back” to change it.",
+        "de": "✅ Region gespeichert: <b>{region}</b>. Tippen Sie auf <b>„Weiter“</b>, um mit der Telefonnummer fortzufahren, oder auf „⬅️ Zurück“, um sie zu ändern.",
+        "pl": "✅ Obwód zapisany: <b>{region}</b>. Kliknij <b>„Dalej”</b>, aby przejść do telefonu, lub „⬅️ Wstecz”, aby zmienić.",
+        "ru": "✅ Область сохранена: <b>{region}</b>. Нажмите <b>«Дальше»</b>, чтобы перейти к телефону, или «⬅️ Назад», чтобы изменить."
+    },
+    "REGISTER_REGION_OK": {
+        "uk": "Область підтверджено: <b>{value}</b> ✅",
+        "en": "Region confirmed: <b>{value}</b> ✅",
+        "de": "Region bestätigt: <b>{value}</b> ✅",
+        "pl": "Region potwierdzony: <b>{value}</b> ✅",
+        "ru": "Область подтверждена: <b>{value}</b> ✅",
+    },
+    "REGISTER_PHONE_PROMPT_NEW": {
+        "uk": "6. 📞 <b>Номер телефону для реєстрації.</b>\nНатисніть «📱 Надіслати номер», щоб поділитися контактом.",
+        "en": "6. 📞 <b>Phone number for registration.</b>\nTap “📱 Share phone number” to send your contact.",
+        "de": "6. 📞 <b>Telefonnummer für die Registrierung.</b>\nTippen Sie auf „📱 Nummer senden“, um Ihren Kontakt zu teilen.",
+        "pl": "6. 📞 <b>Numer telefonu do rejestracji.</b>\nKliknij „📱 Wyślij numer”, aby udostępnić kontakt.",
+        "ru": "6. 📞 <b>Номер телефона для регистрации.</b>\nНажмите «📱 Отправить номер», чтобы поделиться контактом."
+    },
+    "REGISTER_PHONE_WARN": {
+        "uk": "📞 Скористайтеся кнопкою «📱 Надіслати номер», щоб ми отримали правильний контакт.",
+        "en": "📞 Please tap “📱 Share phone number” so we receive the correct contact.",
+        "de": "📞 Tippen Sie auf „📱 Nummer senden“, damit wir die richtige Nummer erhalten.",
+        "pl": "📞 Kliknij „📱 Wyślij numer”, aby przesłać poprawny kontakt.",
+        "ru": "📞 Пожалуйста, нажмите «📱 Отправить номер», чтобы мы сохранили верный контакт."
+    },
+    "REGISTER_PHONE_TEXT_WARN": {
+        "uk": "📞 Надішліть коректний номер або натисніть «📱 Надіслати номер».",
+        "en": "📞 Send a valid phone number or tap “📱 Share phone number”.",
+        "de": "📞 Senden Sie eine gültige Nummer oder tippen Sie auf „📱 Nummer senden“.",
+        "pl": "📞 Wyślij poprawny numer lub kliknij „📱 Wyślij numer”.",
+        "ru": "📞 Отправьте корректный номер или нажмите «📱 Отправить номер»."
+    },
+    "REGISTER_PHONE_OK": {
+        "uk": "Номер збережено: <b>{value}</b> ✅",
+        "en": "Phone number saved: <b>{value}</b> ✅",
+        "de": "Telefonnummer gespeichert: <b>{value}</b> ✅",
+        "pl": "Numer telefonu zapisany: <b>{value}</b> ✅",
+        "ru": "Номер телефона сохранён: <b>{value}</b> ✅",
+    },
+    "REGISTER_PHOTO_PROMPT": {
+        "uk": "7. 📸 <b>Фото профілю.</b>\nПаспортний формат: чітке обличчя та нейтральний фон. Можна додати пізніше кнопкою «Пропустити».",
+        "en": "7. 📸 <b>Profile photo.</b>\nPassport style: clear face and neutral background. You can add it later with “Skip”.",
+        "de": "7. 📸 <b>Profilfoto.</b>\nPassfoto-Format: klares Gesicht und neutraler Hintergrund. Sie können es später über „Überspringen“ hinzufügen.",
+        "pl": "7. 📸 <b>Zdjęcie profilowe.</b>\nFormat paszportowy: wyraźna twarz i neutralne tło. Możesz dodać je później przyciskiem „Pomiń”.",
+        "ru": "7. 📸 <b>Фото профиля.</b>\nПаспортный формат: чёткое лицо и нейтральный фон. Можно добавить позже кнопкой «Пропустить»."
+    },
+    "REGISTER_PHOTO_WARN": {
+        "uk": "❗ Не вдалося обробити фото. Надішліть його знову у форматі JPG або PNG.",
+        "en": "❗ Could not process the photo. Please send it again in JPG or PNG format.",
+        "de": "❗ Foto konnte nicht verarbeitet werden. Bitte senden Sie es erneut als JPG oder PNG.",
+        "pl": "❗ Nie udało się przetworzyć zdjęcia. Wyślij je ponownie w formacie JPG lub PNG.",
+        "ru": "❗ Не удалось обработать фото. Пожалуйста, отправьте его снова в формате JPG или PNG."
+    },
+    "REGISTER_PHOTO_RECEIVED": {
+        "uk": "Фото отримано ✅",
+        "en": "Photo received ✅",
+        "de": "Foto erhalten ✅",
+        "pl": "Zdjęcie otrzymane ✅",
+        "ru": "Фото получено ✅",
+    },
+    "REGISTER_PHOTO_SKIP_CONFIRM": {
+        "uk": "Фото можна завантажити пізніше у розділі профілю.",
+        "en": "You can upload a photo later from your profile section.",
+        "de": "Sie können das Foto später im Profilbereich hochladen.",
+        "pl": "Zdjęcie możesz dodać później w swoim profilu.",
+        "ru": "Фото можно загрузить позже в разделе профиля.",
+    },
+    "REGISTER_PHOTO_KEEP_CONFIRM": {
+        "uk": "Поточне фото залишилося без змін ✅",
+        "en": "Current photo kept without changes ✅",
+        "de": "Aktuelles Foto bleibt unverändert ✅",
+        "pl": "Aktualne zdjęcie pozostawiono bez zmian ✅",
+        "ru": "Текущее фото оставлено без изменений ✅",
+    },
+    "REGISTER_FINISH_CONFIRM": {
+        "uk": "Реєстрацію завершено. Ваш артикул BSG — <b>{code}</b>.",
+        "en": "Registration completed. Your BSG article is <b>{code}</b>.",
+        "de": "Registrierung abgeschlossen. Ihre BSG-Kennung lautet <b>{code}</b>.",
+        "pl": "Rejestracja zakończona. Twój kod BSG to <b>{code}</b>.",
+        "ru": "Регистрация завершена. Ваш артикул BSG — <b>{code}</b>.",
+    },
+    "PROFILE_HEADER": {
+        "uk": "👤 <b>Мій профіль</b>",
+        "en": "👤 <b>My profile</b>",
+        "de": "👤 <b>Mein Profil</b>",
+        "pl": "👤 <b>Mój profil</b>",
+        "ru": "👤 <b>Мой профиль</b>",
+    },
+    "PROFILE_EDIT_HINT": {
+        "uk": "✏️ Режим редагування активний. Оберіть поле нижче, щоб оновити дані.",
+        "en": "✏️ Edit mode is active. Pick a field below to update your data.",
+        "de": "✏️ Bearbeitungsmodus aktiv. Wählen Sie unten ein Feld, um die Daten zu aktualisieren.",
+        "pl": "✏️ Tryb edycji jest aktywny. Wybierz pole poniżej, aby zaktualizować dane.",
+        "ru": "✏️ Режим редактирования активен. Выберите поле ниже, чтобы обновить данные.",
+    },
+    "PROFILE_FIELD_LAST_NAME": {
+        "uk": "Прізвище",
+        "en": "Last name",
+        "de": "Nachname",
+        "pl": "Nazwisko",
+        "ru": "Фамилия",
+    },
+    "PROFILE_FIELD_FIRST_NAME": {
+        "uk": "Ім'я",
+        "en": "First name",
+        "de": "Vorname",
+        "pl": "Imię",
+        "ru": "Имя",
+    },
+    "PROFILE_FIELD_MIDDLE_NAME": {
+        "uk": "По батькові",
+        "en": "Patronymic",
+        "de": "Vatersname",
+        "pl": "Drugie imię",
+        "ru": "Отчество",
+    },
+    "PROFILE_FIELD_BIRTHDATE": {
+        "uk": "Дата народження",
+        "en": "Birth date",
+        "de": "Geburtsdatum",
+        "pl": "Data urodzenia",
+        "ru": "Дата рождения",
+    },
+    "PROFILE_FIELD_REGION": {
+        "uk": "Область",
+        "en": "Region",
+        "de": "Region",
+        "pl": "Obwód",
+        "ru": "Область",
+    },
+    "PROFILE_FIELD_PHONE": {
+        "uk": "Телефон",
+        "en": "Phone",
+        "de": "Telefon",
+        "pl": "Telefon",
+        "ru": "Телефон",
+    },
+    "PROFILE_FIELD_TG_ID": {
+        "uk": "Telegram ID",
+        "en": "Telegram ID",
+        "de": "Telegram-ID",
+        "pl": "ID Telegram",
+        "ru": "Telegram ID",
+    },
+    "PROFILE_FIELD_TG_USERNAME": {
+        "uk": "Telegram юзер",
+        "en": "Telegram username",
+        "de": "Telegram-Benutzername",
+        "pl": "Nazwa w Telegramie",
+        "ru": "Имя в Telegram",
+    },
+    "PROFILE_FIELD_BSU": {
+        "uk": "BSU код",
+        "en": "BSU code",
+        "de": "BSU-Code",
+        "pl": "Kod BSU",
+        "ru": "BSU код",
+    },
+    "PROFILE_FIELD_PHOTO": {
+        "uk": "Фото профілю",
+        "en": "Profile photo",
+        "de": "Profilfoto",
+        "pl": "Zdjęcie profilu",
+        "ru": "Фото профиля",
+    },
+    "PROFILE_VALUE_MISSING": {
+        "uk": "—",
+        "en": "—",
+        "de": "—",
+        "pl": "—",
+        "ru": "—",
+    },
+    "PROFILE_PHOTO_STATUS_OK": {
+        "uk": "завантажено",
+        "en": "uploaded",
+        "de": "hochgeladen",
+        "pl": "dodano",
+        "ru": "загружено",
+    },
+    "PROFILE_PHOTO_STATUS_MISSING": {
+        "uk": "відсутнє",
+        "en": "missing",
+        "de": "fehlt",
+        "pl": "brak",
+        "ru": "отсутствует",
+    },
+    "PROFILE_PHOTO_STATUS_SKIPPED": {
+        "uk": "поки пропущено",
+        "en": "skipped for now",
+        "de": "vorerst übersprungen",
+        "pl": "pominięto",
+        "ru": "пропущено пока",
+    },
+    "PROFILE_PROMPT_LAST_NAME": {
+        "uk": "1. Вкажіть нове прізвище (лише літери).",
+        "en": "1. Enter the new last name (letters only).",
+        "de": "1. Geben Sie den neuen Nachnamen ein (nur Buchstaben).",
+        "pl": "1. Podaj nowe nazwisko (tylko litery).",
+        "ru": "1. Укажите новую фамилию (только буквы).",
+    },
+    "PROFILE_PROMPT_FIRST_NAME": {
+        "uk": "2. Вкажіть нове ім'я (лише літери).",
+        "en": "2. Enter the new first name (letters only).",
+        "de": "2. Geben Sie den neuen Vornamen ein (nur Buchstaben).",
+        "pl": "2. Podaj nowe imię (tylko litery).",
+        "ru": "2. Укажите новое имя (только буквы).",
+    },
+    "PROFILE_PROMPT_MIDDLE_NAME": {
+        "uk": "3. Введіть по батькові або напишіть «немає», щоб очистити поле.",
+        "en": "3. Provide a patronymic or type “none” to clear the field.",
+        "de": "3. Geben Sie den Vatersnamen an oder schreiben Sie „kein“, um das Feld zu leeren.",
+        "pl": "3. Podaj drugie imię lub wpisz „brak”, aby wyczyścić pole.",
+        "ru": "3. Введите отчество или напишите «нет», чтобы очистить поле.",
+    },
+    "PROFILE_PROMPT_BIRTHDATE": {
+        "uk": "4. Вкажіть дату народження у форматі ДД.ММ.РРРР.",
+        "en": "4. Enter the birth date in DD.MM.YYYY format.",
+        "de": "4. Geben Sie das Geburtsdatum im Format TT.MM.JJJJ ein.",
+        "pl": "4. Podaj datę urodzenia w formacie DD.MM.RRRR.",
+        "ru": "4. Укажите дату рождения в формате ДД.ММ.ГГГГ.",
+    },
+    "PROFILE_PROMPT_REGION": {
+        "uk": "5. Оберіть область проживання кнопкою нижче.",
+        "en": "5. Choose your region using the button below.",
+        "de": "5. Wählen Sie Ihre Region über die Schaltfläche unten.",
+        "pl": "5. Wybierz swój obwód za pomocą przycisku poniżej.",
+        "ru": "5. Выберите область проживания кнопкой ниже.",
+    },
+    "PROFILE_PROMPT_PHONE": {
+        "uk": "6. Надішліть номер телефону через кнопку «📱 Надіслати номер».",
+        "en": "6. Send your phone number via the “📱 Share phone number” button.",
+        "de": "6. Senden Sie Ihre Telefonnummer über die Schaltfläche „📱 Nummer senden“.",
+        "pl": "6. Wyślij numer telefonu przyciskiem „📱 Wyślij numer”.",
+        "ru": "6. Отправьте номер телефона кнопкой «📱 Отправить номер».",
+    },
+    "PROFILE_PROMPT_PHOTO": {
+        "uk": "7. Завантажте оновлене паспортне фото.\n━━━━━━━━━━━━━━━━━━\n• фронтальний ракурс\n• нейтральний фон\n• рівне освітлення",
+        "en": "7. Upload an updated passport-style photo.\n━━━━━━━━━━━━━━━━━━\n• frontal view\n• neutral background\n• even lighting",
+        "de": "7. Laden Sie ein aktualisiertes Passfoto hoch.\n━━━━━━━━━━━━━━━━━━\n• frontale Ansicht\n• neutraler Hintergrund\n• gleichmäßige Beleuchtung",
+        "pl": "7. Dodaj zaktualizowane zdjęcie paszportowe.\n━━━━━━━━━━━━━━━━━━\n• ujęcie frontalne\n• neutralne tło\n• równomierne oświetlenie",
+        "ru": "7. Загрузите обновлённое фото формата «на документы».\n━━━━━━━━━━━━━━━━━━\n• фронтальный ракурс\n• нейтральный фон\n• ровное освещение",
+    },
+    "PROFILE_UPDATE_SUCCESS": {
+        "uk": "✅ Дані оновлено",
+        "en": "✅ Data updated",
+        "de": "✅ Daten aktualisiert",
+        "pl": "✅ Dane zaktualizowano",
+        "ru": "✅ Данные обновлены",
+    },
+    "PROFILE_PHOTO_UPDATED": {
+        "uk": "🖼 Фото профілю збережено",
+        "en": "🖼 Profile photo saved",
+        "de": "🖼 Profilfoto gespeichert",
+        "pl": "🖼 Zdjęcie profilu zapisane",
+        "ru": "🖼 Фото профиля сохранено",
+    },
+    "PROFILE_PHOTO_REMOVED": {
+        "uk": "🗑 Фото профілю видалено",
+        "en": "🗑 Profile photo removed",
+        "de": "🗑 Profilfoto gelöscht",
+        "pl": "🗑 Zdjęcie profilu usunięto",
+        "ru": "🗑 Фото профиля удалено",
+    },
+    "PROFILE_PHONE_SAVED": {
+        "uk": "📱 Телефон збережено",
+        "en": "📱 Phone saved",
+        "de": "📱 Telefon gespeichert",
+        "pl": "📱 Numer zapisano",
+        "ru": "📱 Телефон сохранён",
+    },
+    "PROFILE_CANCELLED": {
+        "uk": "❌ Редагування скасовано",
+        "en": "❌ Edit cancelled",
+        "de": "❌ Bearbeitung abgebrochen",
+        "pl": "❌ Edycję anulowano",
+        "ru": "❌ Редактирование отменено",
+    },
+    "PROFILE_NO_PHOTO": {
+        "uk": "📷 Фото профілю ще не завантажено.",
+        "en": "📷 A profile photo has not been uploaded yet.",
+        "de": "📷 Es wurde noch kein Profilfoto hochgeladen.",
+        "pl": "📷 Zdjęcie profilu nie zostało jeszcze dodane.",
+        "ru": "📷 Фото профиля ещё не загружено.",
     },
     "LANGUAGE_PROMPT": {
         "uk": "🌐 Оберіть мову спілкування з ботом:",
@@ -930,12 +1763,19 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "➡️ DALEJ",
         "ru": "➡️ ДАЛЕЕ",
     },
+    "BTN_SKIP": {
+        "uk": "⏭ Пропустити",
+        "en": "⏭ Skip",
+        "de": "⏭ Überspringen",
+        "pl": "⏭ Pomiń",
+        "ru": "⏭ Пропустить",
+    },
     "INTRO_GREETING_NEW": {
-        "uk": "👋 <b>Вітаю, колего!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі Bot.BSG. Тут зберігаємо чеки, оформлюємо виплати та тримаємо документи проєкту під рукою.\n\nНатисніть «ДАЛІ», щоб продовжити.",
-        "en": "👋 <b>Hello, teammate!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the Bot.BSG workspace. Here we store receipts, track payouts, and keep project documents handy.\n\nPress “NEXT” to continue.",
-        "de": "👋 <b>Hallo, Kollegin oder Kollege!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Bot.BSG-Arbeitsbereich. Hier speichern wir Belege, verwalten Auszahlungen und behalten Projektdokumente griffbereit.\n\nDrücken Sie „WEITER“, um fortzufahren.",
-        "pl": "👋 <b>Witaj, współpracowniku!</b>\n━━━━━━━━━━━━━━━━━━\nTo przestrzeń robocza Bot.BSG. Przechowujemy tu paragony, obsługujemy wypłaty i mamy dokumenty projektu pod ręką.\n\nKliknij „DALEJ”, aby kontynuować.",
-        "ru": "👋 <b>Привет, коллега!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве Bot.BSG. Здесь мы храним чеки, оформляем выплаты и держим документы проекта под рукой.\n\nНажмите «ДАЛЕЕ», чтобы продолжить.",
+        "uk": "👋 <b>Вітаю, колего!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі BSG › botSYSTEM. Тут зберігаємо чеки, оформлюємо виплати та тримаємо документи проєкту під рукою.\n\nНатисніть «ДАЛІ», щоб продовжити.",
+        "en": "👋 <b>Hello, teammate!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the BSG › botSYSTEM workspace. Here we store receipts, track payouts, and keep project documents handy.\n\nPress “NEXT” to continue.",
+        "de": "👋 <b>Hallo, Kollegin oder Kollege!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Arbeitsbereich BSG › botSYSTEM. Hier speichern wir Belege, verwalten Auszahlungen und behalten Projektdokumente griffbereit.\n\nDrücken Sie „WEITER“, um fortzufahren.",
+        "pl": "👋 <b>Witaj, współpracowniku!</b>\n━━━━━━━━━━━━━━━━━━\nTo przestrzeń robocza BSG › botSYSTEM. Przechowujemy tu paragony, obsługujemy wypłaty i mamy dokumenty projektu pod ręką.\n\nKliknij „DALEJ”, aby kontynuować.",
+        "ru": "👋 <b>Привет, коллега!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве BSG › botSYSTEM. Здесь мы храним чеки, оформляем выплаты и держим документы проекта под рукой.\n\nНажмите «ДАЛЕЕ», чтобы продолжить.",
     },
     "INTRO_GREETING_REGISTERED": {
         "uk": "👋 <b>Радий вітати знову!</b>\n━━━━━━━━━━━━━━━━━━\nВи можете одразу перейти до головного меню, щоб працювати з розділами бота.\n\nНатисніть «ДАЛІ», аби перейти до основних дій.",
@@ -1336,13 +2176,48 @@ admins: set = set()
 active_project = {"name": None}
 alerts_poll_task: Optional[asyncio.Task] = None
 alerts_history_cache: Dict[str, Dict[str, Any]] = {}
+BOT_USERNAME_CACHE: Optional[str] = None
 
 
 # ========================== FSM ==========================
 class OnboardFSM(StatesGroup):
     language = State()
-    fullname = State()
+    membership = State()
+    welcome = State()
+    briefing = State()
+    instructions = State()
+    await_next = State()
+    last_name = State()
+    first_name = State()
+    middle_name = State()
+    birthdate = State()
+    region = State()
+    region_confirm = State()
     phone = State()
+    photo = State()
+
+
+class ProfileEditFSM(StatesGroup):
+    waiting_last_name = State()
+    waiting_first_name = State()
+    waiting_middle_name = State()
+    waiting_birthdate = State()
+    waiting_region = State()
+    region_confirm = State()
+    waiting_phone = State()
+    waiting_photo = State()
+
+
+class AdminProfileEditFSM(StatesGroup):
+    waiting_last_name = State()
+    waiting_first_name = State()
+    waiting_middle_name = State()
+    waiting_birthdate = State()
+    waiting_region = State()
+    region_confirm = State()
+    waiting_phone = State()
+    waiting_photo = State()
+
 
 class ReceiptFSM(StatesGroup):
     waiting_photo = State()
@@ -1384,6 +2259,7 @@ def ensure_dirs():
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
     os.makedirs(ALERTS_STORAGE_BASE, exist_ok=True)
+    os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -1488,6 +2364,7 @@ def _fraction_to_float(value: Any) -> Optional[float]:
             return float(num) / float(denom) if denom else None
         except Exception:
             return None
+    return None
 
 
 def _convert_to_degrees(values: Any) -> Optional[float]:
@@ -1759,12 +2636,36 @@ def set_active_project(name: Optional[str]):
 
 # ========================== USERS PERSIST ==========================
 def load_user(uid: int) -> Optional[dict]:
-    p = user_file(uid)
-    if not os.path.exists(p): return None
-    return json.load(open(p, "r", encoding="utf-8"))
+    path = user_file(uid)
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
 
 def save_user(profile: dict):
-    json.dump(profile, open(user_file(profile["user_id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    ensure_dirs()
+    uid = profile.get("user_id")
+    completed = None
+    if uid is not None:
+        completed = registration_profile_completed(profile)
+        profile["profile_completed"] = completed
+    path = user_file(profile["user_id"])
+    tmp_path = f"{path}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(profile, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+    if uid is not None:
+        registration_sync_runtime(uid, profile)
 
 
 def load_all_users() -> List[dict]:
@@ -1874,6 +2775,666 @@ def normalize_profile_receipts(profile: dict) -> bool:
                     changed = True
     return changed
 
+
+NAME_ALLOWED_CHARS = "A-Za-zА-Яа-яЁёЇїІіЄєҐґʼ'’\-\s"
+NAME_VALID_RE = re.compile(rf"^[{NAME_ALLOWED_CHARS}]+$")
+SKIP_KEYWORDS = {"нет", "немає", "нема", "no", "skip", "none", "n/a", "-"}
+
+
+def normalize_person_name(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    text = str(value)
+    text = text.replace("`", "'").replace("’", "'").replace("ʼ", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def beautify_name(value: Optional[str]) -> str:
+    text = normalize_person_name(value)
+    if not text:
+        return ""
+
+    def _capitalize(fragment: str) -> str:
+        if not fragment:
+            return fragment
+        return fragment[0].upper() + fragment[1:].lower()
+
+    words: List[str] = []
+    for word in text.split(" "):
+        if not word:
+            continue
+        parts: List[str] = []
+        for sub in re.split(r"([-'])", word):
+            if sub in ("-", "'"):
+                parts.append(sub)
+            elif sub:
+                parts.append(_capitalize(sub))
+        words.append("".join(parts))
+    return " ".join(words)
+
+
+def validate_name(value: str) -> bool:
+    if not value:
+        return False
+    text = normalize_person_name(value)
+    if len(text) < 2:
+        return False
+    return bool(NAME_VALID_RE.match(text))
+
+
+def compose_fullname(last_name: str, first_name: str, middle_name: Optional[str]) -> str:
+    parts = [last_name, first_name]
+    if middle_name:
+        parts.append(middle_name)
+    return " ".join(part for part in parts if part)
+
+
+def sanitize_phone_input(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    raw = text.strip()
+    digits = re.sub(r"\D+", "", raw)
+    if not digits:
+        return None
+    if raw.startswith("+"):
+        normalized = "+" + digits
+    elif len(digits) == 10 and digits.startswith("0"):
+        normalized = "+38" + digits
+    elif len(digits) >= 11 and digits.startswith("380"):
+        normalized = "+" + digits
+    elif len(digits) >= 10:
+        normalized = "+" + digits
+    else:
+        return None
+    if len(re.sub(r"\D", "", normalized)) < 10:
+        return None
+    return normalized
+
+
+def registration_profile_completed(profile: dict) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    last_name = (profile.get("last_name") or "").strip()
+    first_name = (profile.get("first_name") or "").strip()
+    phone = (profile.get("phone") or "").strip()
+    region = (profile.get("region") or "").strip()
+    birthdate = (profile.get("birthdate") or "").strip()
+    if not (last_name and first_name and phone and region and birthdate):
+        return False
+    if not registration_middle_name_completed(profile):
+        return False
+    return True
+
+
+def registration_photo_completed(profile: dict) -> bool:
+    photo = profile.get("photo") or {}
+    if not isinstance(photo, dict):
+        return False
+    if photo.get("status") == "skipped":
+        return True
+    return bool(photo.get("file_id") or photo.get("file_unique_id") or photo)
+
+
+def registration_middle_name_completed(snapshot: dict) -> bool:
+    status = (snapshot.get("middle_name_status") or "")
+    if status in {"skipped", "provided"}:
+        return True
+    middle = snapshot.get("middle_name") or ""
+    if middle.strip():
+        return True
+    return False
+
+
+def registration_build_snapshot(profile: dict, state_data: Optional[dict] = None) -> dict:
+    snapshot = dict(profile)
+    if state_data:
+        for key in ("last_name", "first_name", "middle_name", "birthdate", "region", "phone"):
+            if key in state_data and state_data[key] is not None:
+                snapshot[key] = state_data[key]
+        if state_data.get("middle_name_status"):
+            snapshot["middle_name_status"] = state_data["middle_name_status"]
+        photo_meta = state_data.get("photo_meta_override")
+        if photo_meta:
+            snapshot["photo"] = photo_meta
+        if state_data.get("photo_skipped"):
+            snapshot["photo"] = {"status": "skipped"}
+    return snapshot
+
+
+REGISTRATION_FLOW_FIELDS: Tuple[str, ...] = (
+    "first_name",
+    "last_name",
+    "middle_name",
+    "birthdate",
+    "region",
+    "phone",
+    "photo",
+)
+
+
+def registration_field_completed(snapshot: dict, field: str) -> bool:
+    if field == "middle_name":
+        return registration_middle_name_completed(snapshot)
+    if field == "photo":
+        return registration_photo_completed(snapshot)
+    return bool(snapshot.get(field))
+
+
+def registration_missing_steps(profile: dict, state_data: Optional[dict] = None) -> List[str]:
+    snapshot = registration_build_snapshot(profile, state_data)
+    missing: List[str] = []
+    for field in REGISTRATION_FLOW_FIELDS:
+        if not registration_field_completed(snapshot, field):
+            missing.append(field)
+    return missing
+
+
+def registration_next_pending_field(
+    snapshot: dict,
+    current_field: Optional[str] = None,
+) -> Optional[str]:
+    order = list(REGISTRATION_FLOW_FIELDS)
+    start_index = 0
+    if current_field and current_field in order:
+        start_index = order.index(current_field) + 1
+    for field in order[start_index:]:
+        if not registration_field_completed(snapshot, field):
+            return field
+    for field in order[:start_index]:
+        if not registration_field_completed(snapshot, field):
+            return field
+    return None
+
+
+async def registration_clear_ack(uid: int):
+    runtime = users_runtime.setdefault(uid, {})
+    info = runtime.pop("registration_ack", None)
+    if not info:
+        return
+    chat_id = info.get("chat_id") if isinstance(info, dict) else None
+    message_id = info.get("message_id") if isinstance(info, dict) else None
+    await _delete_message_safe(chat_id, message_id)
+
+
+async def registration_send_ack(
+    uid: int,
+    chat_id: int,
+    state: FSMContext,
+    profile: dict,
+    current_field: str,
+    text: str,
+    *,
+    remove_reply_keyboard: bool = False,
+) -> str:
+    await registration_clear_ack(uid)
+    data = await state.get_data()
+    snapshot = registration_build_snapshot(profile, data)
+    next_field = registration_next_pending_field(snapshot, current_field)
+    callback_target = next_field or "final"
+    markup = kb_registration_next(uid, f"reg_next:{callback_target}")
+
+    if remove_reply_keyboard:
+        ack = await bot.send_message(chat_id, text, reply_markup=ReplyKeyboardRemove())
+        try:
+            await bot.edit_message_reply_markup(chat_id, ack.message_id, reply_markup=markup)
+        except Exception:
+            await _delete_message_safe(chat_id, ack.message_id)
+            ack = await bot.send_message(chat_id, text, reply_markup=markup)
+    else:
+        ack = await bot.send_message(chat_id, text, reply_markup=markup)
+
+    flow_track(uid, ack)
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["registration_ack"] = {
+        "chat_id": ack.chat.id,
+        "message_id": ack.message_id,
+        "field": current_field,
+        "next": callback_target,
+    }
+    await state.update_data(await_next=callback_target)
+    await state.set_state(OnboardFSM.await_next.state)
+    return callback_target
+
+
+def registration_format_field_list(target: Any, fields: List[str]) -> str:
+    if not fields:
+        return ""
+    labels = [tr(target, f"REGISTER_FIELD_LABEL_{field.upper()}") for field in fields]
+    if len(labels) == 1:
+        return labels[0]
+    return f"{', '.join(labels[:-1])}{tr(target, 'REGISTER_LIST_AND')}{labels[-1]}"
+
+
+def registration_sync_runtime(uid: int, profile: Optional[dict]) -> bool:
+    profile = profile or {}
+    completed = registration_profile_completed(profile)
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["onboard_registered"] = completed
+    if not completed and runtime.get("anchor"):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            loop.create_task(anchor_clear(uid))
+    return completed
+
+
+def registration_gate_render_community() -> str:
+    chat_id, title_value, invite = required_community_settings()
+    raw_title = title_value or chat_id or "BSG workspace"
+    title = str(raw_title)
+    safe_title = html_escape(title)
+    if invite:
+        safe_invite = html_escape(invite, quote=True)
+        return f"<a href=\"{safe_invite}\">{safe_title}</a>"
+    return safe_title
+
+
+def registration_gate_log_attempt(uid: int, runtime: dict, allowed: bool, status: str, *, lang: Optional[str] = None):
+    ensure_dirs()
+    os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
+    record = {
+        "user_id": uid,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "allowed": bool(allowed),
+        "status": status,
+        "lang": lang,
+        "username": runtime.get("tg", {}).get("username"),
+        "first_name": runtime.get("tg", {}).get("first_name"),
+        "last_name": runtime.get("tg", {}).get("last_name"),
+        "chat_id": runtime.get("tg", {}).get("chat_id"),
+    }
+    existing: List[dict] = []
+    if os.path.exists(REGISTRATION_GATE_FILE):
+        try:
+            with open(REGISTRATION_GATE_FILE, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+                if isinstance(data, list):
+                    existing = data
+        except Exception:
+            existing = []
+    existing.append(record)
+    tmp_path = f"{REGISTRATION_GATE_FILE}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(existing, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, REGISTRATION_GATE_FILE)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+async def registration_notify_new_user(uid: int, profile: dict, runtime: dict) -> None:
+    if not REGISTRATION_NOTIFY_CHAT:
+        return
+    full_name = profile.get("fullname") or compose_fullname(
+        profile.get("last_name", ""),
+        profile.get("first_name", ""),
+        profile.get("middle_name"),
+    )
+    if not full_name:
+        full_name = runtime.get("tg", {}).get("first_name") or runtime.get("tg", {}).get("username") or f"ID {uid}"
+    bsu_code = profile.get("bsu") or "—"
+    timestamp = alerts_now().strftime("%d.%m.%Y %H:%M")
+    text = (
+        f"<b>Нова реєстрація в {h(WORKSPACE_BRAND)}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"Користувач <b>{h(full_name)}</b> успішно зареєструвався у боті <b>{h(WORKSPACE_BRAND)}</b>.\n\n"
+        "<b>Тепер мій доступ — активовано</b>\n"
+        f"BSGID: <b>{h(bsu_code)}</b>\n\n"
+        f"Вітаю в робочому просторі <b>{h(WORKSPACE_BRAND)}</b> — усе в одному місці, без зайвих пошуків.\n"
+        "Це економить твій час і залишає більше простору для інших справ.\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"Telegram ID: {uid}\n"
+        f"Час: {timestamp}"
+    )
+    try:
+        await bot.send_message(
+            REGISTRATION_NOTIFY_CHAT,
+            text,
+            parse_mode=types.ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        pass
+
+
+async def registration_check_membership(uid: int) -> Tuple[bool, str]:
+    chat, _, _ = required_community_settings()
+    if not chat:
+        return True, "disabled"
+    try:
+        member = await bot.get_chat_member(chat, uid)
+    except BadRequest as exc:
+        detail = getattr(exc, "message", None) or getattr(exc, "text", None) or str(exc) or "bad_request"
+        return False, detail
+    except Exception as exc:
+        return False, exc.__class__.__name__
+
+    status = getattr(member, "status", None) or "unknown"
+    allowed_statuses = {"creator", "administrator", "member"}
+    allowed = False
+    if status in allowed_statuses:
+        allowed = True
+    elif status == "restricted":
+        allowed = bool(getattr(member, "is_member", False))
+    return allowed, status
+
+
+async def registration_guard(
+    uid: int,
+    *,
+    chat_id: Optional[int] = None,
+    state: Optional[FSMContext] = None,
+    remind: bool = True,
+) -> bool:
+    runtime = users_runtime.setdefault(uid, {})
+    profile = load_user(uid)
+    if not profile:
+        profile = ensure_user(uid, runtime.get("tg", {}))
+    registration_sync_runtime(uid, profile)
+    if registration_profile_completed(profile):
+        return True
+
+    chat_id = chat_id or runtime.get("tg", {}).get("chat_id")
+    if not chat_id:
+        return False
+
+    ctx = state or dp.current_state(chat=chat_id, user=uid)
+    current_state = await ctx.get_state() if ctx else None
+    if current_state and current_state.startswith(OnboardFSM.__name__):
+        return False
+
+    if ctx:
+        await ctx.finish()
+        ctx = dp.current_state(chat=chat_id, user=uid)
+
+    await flow_clear(uid)
+
+    if remind:
+        notice = await bot.send_message(chat_id, tr(uid, "REGISTER_BLOCKED_NOTICE"))
+        flow_track(uid, notice)
+
+    await registration_start_sequence(uid, chat_id, ctx)
+    return False
+
+
+def _resolve_private_chat_id(raw: Any) -> Optional[int]:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        chat_id = raw
+    elif isinstance(raw, str):
+        text = raw.strip()
+        if not text or not text.lstrip("-").isdigit():
+            return None
+        chat_id = int(text)
+    else:
+        return None
+    if chat_id <= 0:
+        return None
+    return chat_id
+
+
+def registration_chat_id(uid: int, profile: Optional[dict] = None) -> Optional[int]:
+    profile = profile or load_user(uid) or {}
+    if not registration_profile_completed(profile):
+        return None
+    runtime_chat = _resolve_private_chat_id(users_runtime.get(uid, {}).get("tg", {}).get("chat_id"))
+    if runtime_chat:
+        return runtime_chat
+    stored_chat = _resolve_private_chat_id((profile.get("tg") or {}).get("chat_id"))
+    if stored_chat:
+        return stored_chat
+    return None
+
+
+def registration_update(uid: int, **updates) -> dict:
+    runtime = users_runtime.setdefault(uid, {})
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    changed = False
+
+    if "middle_name" in updates and "middle_name_status" not in updates:
+        updates["middle_name_status"] = "provided" if updates["middle_name"] else "skipped"
+
+    for key, value in updates.items():
+        if key == "photo":
+            current = profile.get("photo")
+            if value is None and current:
+                profile["photo"] = {}
+                changed = True
+            elif value is not None and current != value:
+                profile["photo"] = value
+                changed = True
+            continue
+        if key == "middle_name_status":
+            if profile.get("middle_name_status") != value:
+                profile["middle_name_status"] = value
+                changed = True
+            continue
+        if value is None:
+            continue
+        if profile.get(key) != value:
+            profile[key] = value
+            changed = True
+
+    if any(field in updates for field in ("last_name", "first_name", "middle_name")):
+        fullname = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), profile.get("middle_name"))
+        if profile.get("fullname") != fullname:
+            profile["fullname"] = fullname
+            changed = True
+
+    if changed:
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    else:
+        registration_sync_runtime(uid, profile)
+    return profile
+
+
+async def registration_seed_state(state: FSMContext, profile: dict):
+    payload = {}
+    for field in ("last_name", "first_name", "birthdate", "region", "phone"):
+        value = profile.get(field)
+        if value:
+            payload[field] = value
+    if profile.get("middle_name_status"):
+        payload["middle_name_status"] = profile.get("middle_name_status")
+        payload["middle_name"] = profile.get("middle_name", "")
+    elif profile.get("middle_name"):
+        payload["middle_name"] = profile.get("middle_name")
+    if payload:
+        await state.update_data(**payload)
+
+
+async def registration_continue(
+    uid: int,
+    chat_id: int,
+    state: FSMContext,
+    profile: Optional[dict] = None,
+    reuse_message: Optional[Tuple[int, int]] = None,
+):
+    runtime = users_runtime.setdefault(uid, {})
+    profile = profile or ensure_user(uid, runtime.get("tg", {}))
+    data = await state.get_data()
+    snapshot = registration_build_snapshot(profile, data)
+
+    if not snapshot.get("first_name"):
+        await onboard_prompt_first_name(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("last_name"):
+        await onboard_prompt_last_name(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not registration_middle_name_completed(snapshot):
+        await onboard_prompt_middle_name(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("birthdate"):
+        await onboard_prompt_birthdate(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("region"):
+        await onboard_prompt_region(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("phone"):
+        await onboard_prompt_phone(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not registration_photo_completed(profile):
+        await onboard_prompt_photo(uid, chat_id, state, profile=profile, reuse=reuse_message)
+        return
+
+    await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=False)
+
+
+async def registration_start_sequence(uid: int, chat_id: int, state: FSMContext):
+    runtime = users_runtime.setdefault(uid, {})
+    await anchor_clear(uid)
+    await registration_clear_ack(uid)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await state.reset_data()
+    await registration_seed_state(state, profile)
+    data = await state.get_data()
+    missing = registration_missing_steps(profile, data)
+    if missing:
+        note = await bot.send_message(chat_id, tr(uid, "REGISTER_RESUME_PROGRESS", fields=registration_format_field_list(uid, missing)))
+    else:
+        note = await bot.send_message(chat_id, tr(uid, "REGISTER_RESUME_READY"))
+    flow_track(uid, note)
+    await registration_continue(uid, chat_id, state, profile=profile)
+
+
+def parse_birthdate_text(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    raw = re.sub(r"\s+", "", str(value))
+    if not raw:
+        return None
+    normalized = raw.replace("/", ".").replace("-", ".")
+    parts = normalized.split(".")
+    try:
+        if len(parts) == 3:
+            day, month, year = parts
+            if len(year) == 2:
+                year = "19" + year if int(year) >= 50 else "20" + year
+            dt = datetime(int(year), int(month), int(day))
+        else:
+            dt = datetime.strptime(raw, "%Y%m%d")
+    except Exception:
+        return None
+    if dt.year < 1900:
+        return None
+    if dt.date() > datetime.now().date():
+        return None
+    return dt
+
+
+def compute_age(birthdate: datetime) -> Optional[int]:
+    if not birthdate:
+        return None
+    today = datetime.now().date()
+    years = today.year - birthdate.year
+    if (today.month, today.day) < (birthdate.month, birthdate.day):
+        years -= 1
+    return max(years, 0)
+
+
+def format_birthdate_display(birthdate_iso: Optional[str], lang: Optional[str] = None) -> str:
+    if not birthdate_iso:
+        return "—"
+    try:
+        dt = datetime.strptime(birthdate_iso, "%Y-%m-%d")
+    except Exception:
+        return birthdate_iso
+    age = compute_age(dt)
+    formatted = dt.strftime("%d.%m.%Y")
+    if age is None:
+        return formatted
+    lang = normalize_lang(lang)
+    suffix_map = {
+        "uk": "років",
+        "en": "yo",
+        "de": "J.",
+        "pl": "lat",
+        "ru": "лет",
+    }
+    suffix = suffix_map.get(lang, "yo")
+    return f"{formatted} ({age} {suffix})"
+
+
+def ensure_user_dir(uid: int) -> str:
+    path = os.path.join(USERS_PATH, str(uid))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def user_profile_photo_path(uid: int) -> str:
+    return os.path.join(ensure_user_dir(uid), "profile.jpg")
+
+
+async def store_profile_photo(uid: int, photo: types.PhotoSize) -> Optional[dict]:
+    if not photo:
+        return None
+    ensure_user_dir(uid)
+    dest = user_profile_photo_path(uid)
+    tmp_path = f"{dest}.tmp"
+    try:
+        await photo.download(destination_file=tmp_path)
+        with Image.open(tmp_path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = img.convert("RGB")
+            img.thumbnail((1280, 1280))
+            width, height = img.size
+            exif = img.getexif() if hasattr(img, "getexif") else None
+            taken_iso = None
+            if exif:
+                for tag, value in exif.items():
+                    name = ExifTags.TAGS.get(tag, tag)
+                    if name in ("DateTimeOriginal", "DateTimeDigitized", "DateTime"):
+                        text = _decode_exif_text(value)
+                        if text:
+                            for fmt in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                                try:
+                                    taken_iso = datetime.strptime(text, fmt).isoformat()
+                                    break
+                                except Exception:
+                                    continue
+                            if taken_iso:
+                                break
+            img.save(tmp_path, format="JPEG", quality=90)
+        os.replace(tmp_path, dest)
+        meta = {
+            "file_id": photo.file_id,
+            "file_unique_id": photo.file_unique_id,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "width": width,
+            "height": height,
+        }
+        if taken_iso:
+            meta["taken_at"] = taken_iso
+        return meta
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        raise
+
+
+def remove_profile_photo(uid: int) -> None:
+    path = user_profile_photo_path(uid)
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
 def _safe_name(s: str) -> str:
     s = (s or "").strip()
     if not s: return "User"
@@ -1891,46 +3452,64 @@ def _sanitize_filename(name: str) -> str:
     base = re.sub(r"_+", "_", base).strip("_")
     return base or "file"
 
-def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str]=None, phone: Optional[str]=None,
-                lang: Optional[str]=None, lang_confirmed: Optional[bool]=None) -> dict:
+def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str] = None, phone: Optional[str] = None,
+                lang: Optional[str] = None, lang_confirmed: Optional[bool] = None) -> dict:
+    ensure_user_dir(uid)
     prof = load_user(uid)
+    now_iso = datetime.now(timezone.utc).isoformat()
     if not prof:
-        # генерируем BSU-код пользователя (четырёхзначный)
         bsu = f"BSU-{random.randint(1000, 9999)}"
         prof = {
             "user_id": uid,
+            "tg": dict(tg_payload),
+            "first_name": "",
+            "last_name": "",
+            "middle_name": "",
+            "middle_name_status": None,
             "fullname": fullname or tg_payload.get("first_name") or f"User{uid}",
             "phone": phone or "",
-            "tg": tg_payload,
-            "bsu": bsu,                 # УНИКАЛЬНЫЙ КОД ПОЛЬЗОВАТЕЛЯ
+            "region": "",
+            "birthdate": "",
+            "photo": {},
+            "bsu": bsu,
             "counters": {"receipt_seq": 0},
-            "receipts": {},             # {project: [ {date,time,sum,file,desc,paid,receipt_no} ]}
-            "payouts": [],              # ссылки на запросы выплат
+            "receipts": {},
+            "payouts": [],
             "lang": normalize_lang(lang) if lang else DEFAULT_LANG,
             "lang_confirmed": bool(lang),
+            "profile_completed": False,
+            "created_at": now_iso,
+            "updated_at": now_iso,
         }
     else:
         prof["tg"] = {**prof.get("tg", {}), **tg_payload}
-        if fullname: prof["fullname"] = fullname
-        if phone: prof["phone"] = phone
+        prof.setdefault("first_name", "")
+        prof.setdefault("last_name", "")
+        prof.setdefault("middle_name", "")
+        prof.setdefault("middle_name_status", "provided" if prof.get("middle_name") else None)
+        prof.setdefault("fullname", fullname or prof.get("fullname") or tg_payload.get("first_name") or f"User{uid}")
+        prof.setdefault("phone", "")
+        prof.setdefault("region", "")
+        prof.setdefault("birthdate", "")
+        prof.setdefault("photo", {})
+        prof.setdefault("counters", {"receipt_seq": 0})
+        prof.setdefault("receipts", {})
+        prof.setdefault("payouts", [])
+        prof.setdefault("lang", DEFAULT_LANG)
+        prof.setdefault("lang_confirmed", bool(prof.get("lang") in LANG_CODES))
+        prof.setdefault("profile_completed", False)
+        prof.setdefault("created_at", now_iso)
+        if fullname:
+            prof["fullname"] = fullname
+        if phone:
+            prof["phone"] = phone
         if lang is not None:
             prof["lang"] = normalize_lang(lang)
-        elif "lang" not in prof:
-            prof["lang"] = DEFAULT_LANG
         if lang_confirmed is not None:
             prof["lang_confirmed"] = bool(lang_confirmed)
-        elif "lang_confirmed" not in prof:
-            prof["lang_confirmed"] = bool(prof.get("lang") in LANG_CODES)
         if "bsu" not in prof:
             prof["bsu"] = f"BSU-{random.randint(1000, 9999)}"
-        if "counters" not in prof:
-            prof["counters"] = {"receipt_seq": 0}
-        if "payouts" not in prof:
-            prof["payouts"] = []
-        if "lang" not in prof:
-            prof["lang"] = DEFAULT_LANG
-        if "lang_confirmed" not in prof:
-            prof["lang_confirmed"] = bool(prof.get("lang") in LANG_CODES)
+        prof["updated_at"] = now_iso
     if normalize_profile_receipts(prof):
         pass
     save_user(prof)
@@ -3382,10 +4961,166 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(tr(uid, "BTN_NOVA_POSHTA"), callback_data="menu_np"),
     )
     kb.add(InlineKeyboardButton(tr(uid, "BTN_SETTINGS"), callback_data="menu_settings"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE"), callback_data="menu_profile"))
     if uid in admins:
         kb.add(InlineKeyboardButton(tr(uid, "BTN_ADMIN"), callback_data="menu_admin"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_ABOUT"), callback_data="menu_about"))
     return kb
+
+
+def kb_profile_cancel(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_admin_edit_cancel(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def profile_has_photo(profile: dict) -> bool:
+    photo = profile.get("photo") or {}
+    if not isinstance(photo, dict):
+        return False
+    path = user_profile_photo_path(profile.get("user_id")) if profile.get("user_id") else None
+    return bool(path and os.path.exists(path) and photo.get("status") != "skipped")
+
+
+def profile_photo_status_label(uid: int, profile: dict) -> str:
+    photo = profile.get("photo") or {}
+    if not photo:
+        return tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+    status = photo.get("status")
+    if status == "skipped":
+        return tr(uid, "PROFILE_PHOTO_STATUS_SKIPPED")
+    if profile_has_photo(profile):
+        return tr(uid, "PROFILE_PHOTO_STATUS_OK")
+    return tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+
+
+def profile_summary_text(uid: int, profile: dict, edit_mode: bool = False) -> str:
+    missing = tr(uid, "PROFILE_VALUE_MISSING")
+    last_name = h(profile.get("last_name") or missing)
+    first_name = h(profile.get("first_name") or missing)
+    middle_name = h(profile.get("middle_name") or missing)
+    birthdate = format_birthdate_display(profile.get("birthdate"), resolve_lang(uid))
+    region = h(profile.get("region") or missing)
+    phone = h(profile.get("phone") or missing)
+    tg = profile.get("tg") or {}
+    tg_id = str(profile.get("user_id", "—"))
+    tg_username = tg.get("username")
+    username_disp = h(f"@{tg_username}" if tg_username else missing)
+    bsu = h(profile.get("bsu") or missing)
+    photo_status = h(profile_photo_status_label(uid, profile))
+    lines = [
+        tr(uid, "PROFILE_HEADER"),
+        "━━━━━━━━━━━━━━━━━━",
+        f"{tr(uid, 'PROFILE_FIELD_LAST_NAME')}: <b>{last_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_FIRST_NAME')}: <b>{first_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_MIDDLE_NAME')}: <b>{middle_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_BIRTHDATE')}: <b>{h(birthdate)}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_REGION')}: <b>{region}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_PHONE')}: <b>{phone}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_BSU')}: <b>{bsu}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_TG_USERNAME')}: <b>{username_disp}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_TG_ID')}: <code>{tg_id}</code>",
+        f"{tr(uid, 'PROFILE_FIELD_PHOTO')}: <b>{photo_status}</b>",
+    ]
+    if edit_mode:
+        lines.append("")
+        lines.append(tr(uid, "PROFILE_EDIT_HINT"))
+    return "\n".join(lines)
+
+
+def kb_profile_menu(uid: int, profile: dict, edit_mode: bool = False, show_photo: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    has_photo = profile_has_photo(profile)
+    if edit_mode:
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_LAST"), callback_data="profile_edit_last"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_FIRST"), callback_data="profile_edit_first"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_MIDDLE"), callback_data="profile_edit_middle"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_BIRTHDATE"), callback_data="profile_edit_birthdate"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_REGION"), callback_data="profile_edit_region"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_PHONE"), callback_data="profile_edit_phone"),
+        )
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_UPDATE_PHOTO"), callback_data="profile_edit_photo"))
+        if has_photo:
+            kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_REMOVE_PHOTO"), callback_data="profile_remove_photo"))
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_DONE"), callback_data="profile_done"))
+    else:
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_EDIT"), callback_data="profile_edit"))
+        if has_photo:
+            if show_photo:
+                kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_HIDE_PHOTO"), callback_data="profile_hide_photo"))
+            else:
+                kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_VIEW_PHOTO"), callback_data="profile_view_photo"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def kb_profile_region_prompt(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_BUTTON"), callback_data="profile_region_open"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_region_picker(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"profile_region_pick:{idx}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_region_confirm(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(uid, "REGISTER_REGION_BACK"), callback_data="profile_region_back"),
+        InlineKeyboardButton(registration_button_label(uid), callback_data="profile_region_confirm"),
+    )
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_phone_keyboard(uid: int) -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+    kb.add(KeyboardButton(tr(uid, "BTN_PROFILE_CANCEL")))
+    return kb
+
+
+async def show_profile(uid: int, *, edit_mode: Optional[bool] = None, show_photo: Optional[bool] = None):
+    runtime = profile_runtime(uid)
+    if edit_mode is None or show_photo is None:
+        current_edit, current_photo = profile_get_flags(uid)
+        if edit_mode is None:
+            edit_mode = current_edit
+        if show_photo is None:
+            show_photo = current_photo
+    profile = load_user(uid) or ensure_user(uid, runtime.get("tg", {}))
+    profile.setdefault("user_id", uid)
+    has_photo = profile_has_photo(profile)
+    if show_photo and not has_photo:
+        await profile_send_notification(uid, tr(uid, "PROFILE_NO_PHOTO"))
+        show_photo = False
+    profile_set_flags(uid, edit_mode=edit_mode, show_photo=show_photo and has_photo)
+    caption = profile_summary_text(uid, profile, edit_mode=edit_mode)
+    kb = kb_profile_menu(uid, profile, edit_mode=edit_mode, show_photo=show_photo and has_photo)
+    if show_photo and has_photo:
+        await anchor_replace_with_photo(uid, user_profile_photo_path(uid), caption, kb)
+    else:
+        profile_set_flags(uid, show_photo=False)
+        chat = profile_chat_id(uid)
+        if chat:
+            await anchor_upsert(uid, chat, caption, kb)
 
 
 def kb_alerts(uid: int) -> InlineKeyboardMarkup:
@@ -3600,6 +5335,93 @@ def kb_admin_projects() -> InlineKeyboardMarkup:
     return kb
 
 
+def admin_collect_user_stats(profile: dict) -> dict:
+    receipts = profile.get("receipts") or {}
+    projects = sorted(receipts.keys()) if isinstance(receipts, dict) else []
+    total_count = 0
+    total_sum = 0.0
+    paid_sum = 0.0
+    unpaid_sum = 0.0
+    for recs in receipts.values():
+        if not isinstance(recs, list):
+            continue
+        for entry in recs:
+            try:
+                amount = float(entry.get("sum") or 0.0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            total_count += 1
+            total_sum += amount
+            if entry.get("paid") is True:
+                paid_sum += amount
+            elif entry.get("paid") is False:
+                unpaid_sum += amount
+    payouts = profile.get("payouts") or []
+    pending_payouts = [p for p in payouts if (p.get("status") not in {"confirmed", "closed"})]
+    confirmed_payouts = [p for p in payouts if p.get("status") in {"confirmed", "closed"}]
+    return {
+        "projects": projects,
+        "total_count": total_count,
+        "total_sum": total_sum,
+        "paid_sum": paid_sum,
+        "unpaid_sum": unpaid_sum,
+        "pending_payouts": pending_payouts,
+        "confirmed_payouts": confirmed_payouts,
+    }
+
+
+def admin_user_card_text(viewer_uid: int, profile: dict, *, edit_mode: bool = False) -> str:
+    stats = admin_collect_user_stats(profile)
+    base = profile_summary_text(viewer_uid, profile, edit_mode=False)
+    lines = [base, "", "💼 <b>Активність</b>"]
+    lines.append(f"📂 Проєктів: <b>{len(stats['projects'])}</b>")
+    lines.append(f"🧾 Чеків: <b>{stats['total_count']}</b>")
+    lines.append(f"💰 Сума чеків: <b>{fmt_money(stats['total_sum'])} грн</b>")
+    lines.append(f"✅ Оплачено: <b>{fmt_money(stats['paid_sum'])} грн</b>")
+    lines.append(f"⏳ Очікує виплат: <b>{fmt_money(stats['unpaid_sum'])} грн</b>")
+    lines.append("")
+    lines.append("💵 <b>Запити на виплати</b>")
+    lines.append(f"⌛ В роботі: <b>{len(stats['pending_payouts'])}</b>")
+    lines.append(f"📗 Завершено: <b>{len(stats['confirmed_payouts'])}</b>")
+    if edit_mode:
+        lines.append("")
+        lines.append(tr(viewer_uid, "PROFILE_EDIT_HINT"))
+    return "\n".join(lines)
+
+
+def kb_admin_user(viewer_uid: int, profile: dict, *, show_photo: bool = False, edit_mode: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if profile_has_photo(profile):
+        label = "📝 Повернути текст" if show_photo else "👁 Показати фото"
+        kb.add(InlineKeyboardButton(label, callback_data="adm_user_photo_toggle"))
+    if edit_mode:
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_LAST"), callback_data="adm_edit_last"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_FIRST"), callback_data="adm_edit_first"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_MIDDLE"), callback_data="adm_edit_middle"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_BIRTHDATE"), callback_data="adm_edit_birthdate"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_REGION"), callback_data="adm_edit_region"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_PHONE"), callback_data="adm_edit_phone"),
+        )
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_UPDATE_PHOTO"), callback_data="adm_edit_photo"))
+        if profile_has_photo(profile):
+            kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_REMOVE_PHOTO"), callback_data="adm_edit_remove_photo"))
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_DONE"), callback_data="adm_user_edit_done"))
+    else:
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_EDIT"), callback_data="adm_user_edit"))
+        kb.row(
+            InlineKeyboardButton("📊 Статистика", callback_data="adm_stat_choose"),
+            InlineKeyboardButton("🧾 Чеки", callback_data="adm_recs_choose"),
+        )
+        kb.add(InlineKeyboardButton("💵 Фінанси", callback_data="adm_user_finance"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
+    return kb
+
+
 def kb_region_select() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     for idx, region in enumerate(UKRAINE_REGIONS):
@@ -3700,6 +5522,17 @@ def inline_kb_signature(kb: Optional[InlineKeyboardMarkup]) -> Any:
 
 
 # ========================== ANCHOR ==========================
+async def anchor_clear(uid: int):
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id")
+    anchor_id = runtime.pop("anchor", None)
+    runtime.pop("last_anchor_text", None)
+    runtime.pop("last_anchor_kb", None)
+    runtime.pop("anchor_mode", None)
+    if anchor_id and chat_id:
+        await _delete_message_safe(chat_id, anchor_id)
+
+
 async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: Optional[InlineKeyboardMarkup] = None):
     if text is None: text = project_status_text(uid)
     if kb is None: kb = kb_root(uid)
@@ -3716,6 +5549,7 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
         try:
             await bot.edit_message_text(text, chat_id, anchor, reply_markup=kb)
             ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+            ur["anchor_mode"] = "text"
             return
         except MessageNotModified:
             return
@@ -3728,11 +5562,50 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     ur["anchor"] = msg.message_id
     ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+    ur["anchor_mode"] = "text"
 
 
 async def anchor_show_root(uid: int):
-    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-    if chat: await anchor_upsert(uid, chat, project_status_text(uid), kb_root(uid))
+    runtime = users_runtime.setdefault(uid, {})
+    profile = load_user(uid) or {}
+    if not registration_sync_runtime(uid, profile):
+        await anchor_clear(uid)
+        return
+    chat = runtime.get("tg", {}).get("chat_id")
+    if chat:
+        await anchor_upsert(uid, chat, project_status_text(uid), kb_root(uid))
+
+
+async def anchor_replace_with_photo(uid: int, photo_path: str, caption: str, kb: InlineKeyboardMarkup):
+    runtime = users_runtime.setdefault(uid, {})
+    chat = runtime.get("tg", {}).get("chat_id")
+    if not chat:
+        return
+    if not os.path.exists(photo_path):
+        await anchor_upsert(uid, chat, caption, kb)
+        return
+    anchor = runtime.get("anchor")
+    kb_sign = inline_kb_signature(kb)
+    media = types.InputMediaPhoto(InputFile(photo_path), caption=caption, parse_mode="HTML")
+    try:
+        if anchor:
+            await bot.edit_message_media(chat_id=chat, message_id=anchor, media=media, reply_markup=kb)
+        else:
+            msg = await bot.send_photo(chat, InputFile(photo_path), caption=caption, reply_markup=kb)
+            runtime["anchor"] = msg.message_id
+    except MessageNotModified:
+        pass
+    except Exception:
+        try:
+            if anchor:
+                await bot.delete_message(chat, anchor)
+        except Exception:
+            pass
+        msg = await bot.send_photo(chat, InputFile(photo_path), caption=caption, reply_markup=kb)
+        runtime["anchor"] = msg.message_id
+    runtime["last_anchor_text"] = caption
+    runtime["last_anchor_kb"] = kb_sign
+    runtime["anchor_mode"] = "photo"
 
 
 async def anchor_show_text(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -3745,26 +5618,199 @@ async def update_all_anchors():
         await anchor_show_root(uid)
 
 
+def profile_runtime(uid: int) -> dict:
+    return users_runtime.setdefault(uid, {})
+
+
+def profile_chat_id(uid: int) -> Optional[int]:
+    return profile_runtime(uid).get("tg", {}).get("chat_id")
+
+
+async def profile_clear_prompt(uid: int):
+    runtime = profile_runtime(uid)
+    prompt = runtime.pop("profile_prompt", None)
+    if isinstance(prompt, (list, tuple)) and len(prompt) == 2:
+        await _delete_message_safe(prompt[0], prompt[1])
+
+
+async def profile_send_prompt(uid: int, text: str, reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None):
+    chat = profile_chat_id(uid)
+    if not chat:
+        return None
+    await profile_clear_prompt(uid)
+    runtime = profile_runtime(uid)
+    if isinstance(reply_markup, ReplyKeyboardMarkup):
+        runtime["profile_reply_keyboard"] = True
+    else:
+        runtime.pop("profile_reply_keyboard", None)
+    msg = await bot.send_message(chat, text, reply_markup=reply_markup)
+    runtime["profile_prompt"] = (msg.chat.id, msg.message_id)
+    flow_track(uid, msg)
+    return msg
+
+
+def admin_edit_runtime(uid: int) -> dict:
+    runtime = users_runtime.setdefault(uid, {})
+    return runtime.setdefault("admin_edit", {})
+
+
+async def admin_edit_clear_prompt(uid: int):
+    runtime = admin_edit_runtime(uid)
+    prompt = runtime.pop("prompt", None)
+    if isinstance(prompt, (list, tuple)) and len(prompt) == 2:
+        await _delete_message_safe(prompt[0], prompt[1])
+
+
+async def admin_edit_send_prompt(
+    uid: int,
+    text: str,
+    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None,
+):
+    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if not chat:
+        return None
+    await admin_edit_clear_prompt(uid)
+    runtime = admin_edit_runtime(uid)
+    if isinstance(reply_markup, ReplyKeyboardMarkup):
+        runtime["reply_keyboard"] = True
+    else:
+        runtime.pop("reply_keyboard", None)
+    msg = await bot.send_message(chat, text, reply_markup=reply_markup)
+    runtime["prompt"] = (msg.chat.id, msg.message_id)
+    flow_track(uid, msg)
+    return msg
+
+
+async def admin_edit_notify(uid: int, text: str, *, remove_keyboard: bool = False):
+    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if not chat:
+        return
+    markup = ReplyKeyboardRemove() if remove_keyboard else None
+    msg = await bot.send_message(chat, text, reply_markup=markup)
+    flow_track(uid, msg)
+    schedule_auto_delete(msg.chat.id, msg.message_id, delay=8)
+
+
+async def profile_send_notification(uid: int, text: str, *, remove_keyboard: bool = False):
+    chat = profile_chat_id(uid)
+    if not chat:
+        return
+    markup = ReplyKeyboardRemove() if remove_keyboard else None
+    msg = await bot.send_message(chat, text, reply_markup=markup)
+    flow_track(uid, msg)
+    schedule_auto_delete(msg.chat.id, msg.message_id, delay=8)
+
+
+def profile_set_flags(uid: int, *, edit_mode: Optional[bool] = None, show_photo: Optional[bool] = None):
+    runtime = profile_runtime(uid)
+    if edit_mode is not None:
+        runtime["profile_edit_mode"] = bool(edit_mode)
+    if show_photo is not None:
+        runtime["profile_show_photo"] = bool(show_photo)
+
+
+def profile_get_flags(uid: int) -> Tuple[bool, bool]:
+    runtime = profile_runtime(uid)
+    return bool(runtime.get("profile_edit_mode")), bool(runtime.get("profile_show_photo"))
+
+
+async def profile_abort(uid: int, state: FSMContext, *, remove_keyboard: bool = False):
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=remove_keyboard)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
 # ========================== FLOW CLEANER ==========================
-def flow_track(uid: int, msg: types.Message):
-    users_runtime.setdefault(uid, {}).setdefault("flow_msgs", []).append((msg.chat.id, msg.message_id))
+def flow_track(uid: int, msg: Optional[types.Message], bucket: str = "flow_msgs"):
+    if not msg:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    runtime.setdefault(bucket, []).append((msg.chat.id, msg.message_id))
+
+
+def flow_track_warning(uid: int, msg: Optional[types.Message]):
+    if not msg:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    previous = runtime.get("flow_warns", [])
+    for chat_id, message_id in previous:
+        if not chat_id or not message_id:
+            continue
+        if chat_id == msg.chat.id and message_id == msg.message_id:
+            continue
+        asyncio.create_task(_delete_message_safe(chat_id, message_id))
+    runtime["flow_warns"] = [(msg.chat.id, msg.message_id)]
+
+
+async def flow_prepare_prompt(uid: int, reuse: Optional[Tuple[int, int]] = None) -> Optional[Tuple[int, int]]:
+    runtime = users_runtime.setdefault(uid, {})
+    current = runtime.get("flow_prompt")
+    if current and reuse and current == reuse:
+        return reuse
+    if current:
+        await _delete_message_safe(current[0], current[1])
+        runtime.pop("flow_prompt", None)
+    return reuse
+
+
+def flow_store_prompt(uid: int, msg: Optional[types.Message] = None, *, chat_id: Optional[int] = None, message_id: Optional[int] = None):
+    if msg:
+        chat_id = msg.chat.id
+        message_id = msg.message_id
+        flow_track(uid, msg)
+    if not chat_id or not message_id:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["flow_prompt"] = (chat_id, message_id)
+
+
+async def _flow_clear_bucket(uid: int, bucket: str):
+    runtime = users_runtime.setdefault(uid, {})
+    tracked = list(runtime.get(bucket, []))
+    runtime[bucket] = []
+    if not tracked:
+        return
+    await asyncio.gather(*[
+        _delete_message_safe(chat_id, mid)
+        for chat_id, mid in tracked
+        if chat_id and mid
+    ], return_exceptions=True)
+
+
+async def flow_clear_warnings(uid: int):
+    await _flow_clear_bucket(uid, "flow_warns")
 
 
 async def flow_clear(uid: int):
     runtime = users_runtime.setdefault(uid, {})
-    tracked = list(runtime.get("flow_msgs", []))
-    runtime["flow_msgs"] = []
-    tasks = [
-        _delete_message_safe(chat_id, mid)
-        for chat_id, mid in tracked
-        if chat_id and mid
-    ]
+    await _flow_clear_bucket(uid, "flow_msgs")
+    await _flow_clear_bucket(uid, "flow_warns")
+    runtime.pop("flow_prompt", None)
     last_card = runtime.pop("np_last_card", None)
     if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
-        tasks.append(_delete_message_safe(last_card[0], last_card[1]))
+        await _delete_message_safe(last_card[0], last_card[1])
     runtime.pop("alerts_cards", None)
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def flow_delete_message(uid: int, message: Optional[types.Message]):
+    if not message:
+        return
+    if is_anchor_message(uid, message.message_id):
+        return
+    await _delete_message_safe(message.chat.id, message.message_id)
+
+
+def schedule_auto_delete(chat_id: int, message_id: int, delay: int = 10):
+    async def _delayed():
+        try:
+            await asyncio.sleep(delay)
+        except Exception:
+            return
+        await _delete_message_safe(chat_id, message_id)
+
+    asyncio.create_task(_delayed())
 
 
 async def clear_then_anchor(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -3914,30 +5960,147 @@ def kb_language_picker(prefix: str = "lang_select") -> InlineKeyboardMarkup:
     return kb
 
 
-async def launch_intro(uid: int, chat_id: int, registered: bool):
-    runtime = users_runtime.setdefault(uid, {})
-    previous_intro = runtime.get("intro_flow", {}).get("message")
-    if previous_intro and isinstance(previous_intro, (list, tuple)) and len(previous_intro) == 2:
-        await _delete_message_safe(previous_intro[0], previous_intro[1])
-    text_key = "INTRO_GREETING_REGISTERED" if registered else "INTRO_GREETING_NEW"
-    msg = await bot.send_message(chat_id, tr(uid, text_key), reply_markup=kb_next_step(uid, "intro_next:1"))
-    runtime["intro_flow"] = {
-        "registered": registered,
-        "chat_id": chat_id,
-        "message": (msg.chat.id, msg.message_id),
+def registration_button_label(target: Any) -> str:
+    lang = resolve_lang(target)
+    labels = {
+        "uk": "🤖 Далі",
+        "en": "🤖 DALL·E",
+        "de": "🤖 Weiter",
+        "pl": "🤖 Dalej",
+        "ru": "🤖 Дальше",
     }
+    return labels.get(lang, labels.get(DEFAULT_LANG, "▶️ Next"))
+
+
+def registration_button_plain_label(target: Any) -> str:
+    label = registration_button_label(target)
+    cleaned = label.strip()
+    if cleaned.startswith("🤖"):
+        cleaned = cleaned[1:].strip()
+    return cleaned or label.strip()
+
+
+def kb_registration_next(target: Any, callback_data: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(registration_button_label(target), callback_data=callback_data))
+    return kb
+
+
+def kb_registration_gate_blocked(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_GATE_RETRY"), callback_data="onboard_stage:membership"))
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_GATE_CLOSE"), callback_data="reg_gate_close"))
+    return kb
+
+
+def kb_region_prompt(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_REGION_BUTTON"), callback_data="reg_region_open"))
+    return kb
+
+
+def kb_region_confirm(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(target, "REGISTER_REGION_BACK"), callback_data="reg_region_back"),
+        InlineKeyboardButton(registration_button_label(target), callback_data="reg_region_confirm"),
+    )
+    return kb
+
+
+def kb_admin_edit_region_prompt(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_BUTTON"), callback_data="adm_reg_open"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def kb_region_picker(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"reg_region_pick:{idx}"))
+    return kb
+
+
+def kb_admin_edit_region_picker(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"adm_reg_pick:{idx}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def kb_admin_edit_region_confirm(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(uid, "REGISTER_REGION_BACK"), callback_data="adm_reg_back"),
+        InlineKeyboardButton(registration_button_label(uid), callback_data="adm_reg_confirm"),
+    )
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def kb_phone_keyboard(target: Any) -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton(tr(target, "BTN_SEND_PHONE"), request_contact=True))
+    return kb
+
+
+def kb_photo_keyboard(target: Any, *, allow_keep: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    buttons = [InlineKeyboardButton(tr(target, "BTN_SKIP"), callback_data="reg_photo_skip")]
+    if allow_keep:
+        buttons.append(InlineKeyboardButton(registration_button_label(target), callback_data="reg_photo_keep"))
+    kb.row(*buttons)
+    return kb
+
+
+def kb_admin_edit_next(uid: int, callback_data: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(registration_button_label(uid), callback_data=callback_data))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
 
 
 @dp.message_handler(commands=["start"], state="*")
+
+
 async def start_cmd(m: types.Message, state: FSMContext):
-    ensure_dirs(); sync_state()
+    global BOT_USERNAME_CACHE
+
+    ensure_dirs()
+    sync_state()
+    required_community_settings(force_reload=True)
     uid = m.from_user.id
     runtime = users_runtime.setdefault(uid, {})
 
-    current_state = await state.get_state()
-    if current_state:
-        await state.finish()
+    await state.finish()
     await flow_clear(uid)
+
+    chat_type = getattr(m.chat, "type", "private")
+    if chat_type in {"group", "supergroup"}:
+        display_name = m.from_user.first_name or m.from_user.username or f"ID {uid}"
+        text = tr(uid, "START_GROUP_REDIRECT", name=h(display_name), workspace=h(WORKSPACE_BRAND))
+        link: Optional[str] = None
+        try:
+            if BOT_USERNAME_CACHE is None:
+                me = await bot.get_me()
+                BOT_USERNAME_CACHE = me.username or ""
+            if BOT_USERNAME_CACHE:
+                link = f"https://t.me/{BOT_USERNAME_CACHE}?start=workspace"
+        except Exception:
+            BOT_USERNAME_CACHE = BOT_USERNAME_CACHE or ""
+        markup = None
+        if link:
+            markup = InlineKeyboardMarkup().add(
+                InlineKeyboardButton(tr(uid, "START_GROUP_OPEN_BOT"), url=link)
+            )
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await bot.send_message(m.chat.id, text, reply_markup=markup)
+        return
 
     runtime["tg"] = {
         "user_id": uid,
@@ -3945,35 +6108,51 @@ async def start_cmd(m: types.Message, state: FSMContext):
         "username": m.from_user.username,
         "first_name": m.from_user.first_name,
         "last_name": m.from_user.last_name,
-        "last_seen": datetime.now().isoformat(),
+        "last_seen": datetime.now(timezone.utc).isoformat(),
     }
+
+    profile = ensure_user(uid, runtime["tg"], lang=m.from_user.language_code)
+    derived_completed = registration_profile_completed(profile)
+    if profile.get("profile_completed") != derived_completed:
+        profile["profile_completed"] = derived_completed
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    already_registered = registration_sync_runtime(uid, profile)
+    lang_confirmed = bool(profile.get("lang_confirmed"))
+
     try:
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    prof = ensure_user(uid, runtime["tg"])
-    registered = bool(prof.get("fullname") and prof.get("phone"))
 
-    if not prof.get("lang_confirmed"):
-        prompt = await m.answer(tr("uk", "LANGUAGE_PROMPT"), reply_markup=kb_language_picker("lang_select"))
-        runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
-        await OnboardFSM.language.set()
-        await state.update_data(after_language_registered=registered)
+    if already_registered and lang_confirmed:
+        runtime.pop("language_prompt", None)
+        runtime.pop("onboard_intro", None)
+        display_name = (
+            profile.get("first_name")
+            or profile.get("fullname")
+            or runtime["tg"].get("first_name")
+            or runtime["tg"].get("username")
+            or f"ID {uid}"
+        )
+        greet = await bot.send_message(m.chat.id, tr(uid, "START_WELCOME_BACK", name=h(display_name)))
+        schedule_auto_delete(greet.chat.id, greet.message_id, delay=12)
+        await anchor_show_root(uid)
         return
 
-    await launch_intro(uid, m.chat.id, registered)
+    await anchor_clear(uid)
+    prompt = await bot.send_message(m.chat.id, tr(uid, "LANGUAGE_PROMPT"), reply_markup=kb_language_picker())
+    runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
+    await OnboardFSM.language.set()
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("lang_select:"), state=OnboardFSM.language)
-async def language_selected(c: types.CallbackQuery, state: FSMContext):
+async def onboard_language_selected(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     code = c.data.split(":", 1)[1]
     if code not in LANG_CODES:
-        await c.answer("", show_alert=False)
+        await c.answer()
         return
-    data = await state.get_data()
-    registered = bool(data.get("after_language_registered"))
-    await state.finish()
 
     runtime = users_runtime.setdefault(uid, {})
     prompt = runtime.pop("language_prompt", None)
@@ -3981,114 +6160,930 @@ async def language_selected(c: types.CallbackQuery, state: FSMContext):
         await _delete_message_safe(prompt[0], prompt[1])
 
     set_user_lang(uid, code, confirmed=True)
-    await c.answer()
+    profile = load_user(uid) or {}
+    registration_sync_runtime(uid, profile)
 
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
-    confirm = await bot.send_message(chat_id, tr(uid, "LANGUAGE_SELECTED", language=LANG_LABELS[code]))
-    flow_track(uid, confirm)
-    await launch_intro(uid, chat_id, registered)
+    confirm = await bot.send_message(
+        chat_id,
+        tr(uid, "ONBOARD_LANGUAGE_CONFIRMED", language=LANG_LABELS.get(code, code)),
+        reply_markup=kb_registration_next(uid, "onboard_stage:membership"),
+    )
+    runtime["onboard_intro"] = {"chat_id": confirm.chat.id, "message_id": confirm.message_id}
+    await state.set_state(OnboardFSM.membership.state)
+    await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("intro_next:"))
-async def intro_next(c: types.CallbackQuery, state: FSMContext):
+@dp.callback_query_handler(
+    lambda c: c.data.startswith("onboard_stage:"),
+    state=[OnboardFSM.membership, OnboardFSM.welcome, OnboardFSM.briefing, OnboardFSM.instructions],
+)
+async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     runtime = users_runtime.setdefault(uid, {})
-    info = runtime.get("intro_flow") or {}
-    registered = info.get("registered")
-    if registered is None:
-        prof = load_user(uid) or {}
-        registered = bool(prof.get("fullname") and prof.get("phone"))
+    info = runtime.get("onboard_intro") or {}
     chat_id = info.get("chat_id") or c.message.chat.id
+    message_id = info.get("message_id") or c.message.message_id
+    profile = load_user(uid) or {}
+    already_registered = registration_profile_completed(profile)
+    registration_sync_runtime(uid, profile)
+    display_name = (
+        profile.get("first_name")
+        or runtime.get("tg", {}).get("first_name")
+        or profile.get("fullname")
+        or runtime.get("tg", {}).get("username")
+        or f"ID {uid}"
+    )
+    stage = c.data.split(":", 1)[1]
 
-    try:
-        await bot.delete_message(c.message.chat.id, c.message.message_id)
-    except Exception:
-        pass
+    if stage == "membership":
+        await state.set_state(OnboardFSM.membership.state)
+        community = registration_gate_render_community()
+        checking_text = tr(uid, "REGISTER_GATE_CHECKING", community=community)
+        try:
+            await bot.edit_message_text(checking_text, chat_id, message_id)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, checking_text)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+            chat_id = msg.chat.id
+            message_id = msg.message_id
 
-    step_raw = c.data.split(":", 1)[1]
-    try:
-        step = int(step_raw)
-    except ValueError:
-        step = 0
-
-    if not registered:
-        if step == 1:
-            msg = await bot.send_message(chat_id, tr(uid, "INTRO_REG_STEPS"), reply_markup=kb_next_step(uid, "intro_next:2"))
-            runtime["intro_flow"] = {"registered": False, "chat_id": chat_id, "message": (msg.chat.id, msg.message_id)}
-        elif step == 2:
-            runtime.pop("intro_flow", None)
-            prompt_msg = await bot.send_message(chat_id, tr(uid, "INTRO_PROMPT_NAME"), reply_markup=ReplyKeyboardRemove())
-            await OnboardFSM.fullname.set()
-            await state.update_data(name_prompt_id=prompt_msg.message_id)
+        allowed, status = await registration_check_membership(uid)
+        registration_gate_log_attempt(uid, runtime, allowed, status, lang=resolve_lang(uid))
+        runtime["membership_allowed"] = allowed
+        if allowed:
+            text = tr(
+                uid,
+                "REGISTER_GATE_ALLOWED",
+                community=community,
+                workspace=h(WORKSPACE_BRAND),
+                next_plain=h(registration_button_plain_label(uid)),
+            )
+            markup = kb_registration_next(uid, "onboard_stage:welcome")
         else:
-            runtime.pop("intro_flow", None)
-    else:
-        if step == 1:
-            msg = await bot.send_message(chat_id, tr(uid, "INTRO_SECTIONS"), reply_markup=kb_next_step(uid, "intro_next:2"))
-            runtime["intro_flow"] = {"registered": True, "chat_id": chat_id, "message": (msg.chat.id, msg.message_id)}
-        elif step == 2:
-            runtime.pop("intro_flow", None)
+            text = tr(
+                uid,
+                "REGISTER_GATE_DENIED",
+                community=community,
+                contact_name=h(registration_gate_contact_display_name()),
+                contact_role=h(REGISTRATION_GATE_CONTACT_ROLE),
+                name=h(display_name),
+            )
+            markup = kb_registration_gate_blocked(uid)
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+        await c.answer()
+        return
+
+    if stage == "welcome":
+        display_name = profile.get("first_name") or runtime.get("tg", {}).get("first_name") or profile.get("fullname") or runtime.get("tg", {}).get("username") or f"ID {uid}"
+        text = tr(uid, "ONBOARD_WELCOME", name=h(display_name), bot=h(BOT_NAME))
+        kb = kb_registration_next(uid, "onboard_stage:briefing")
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+        await state.set_state(OnboardFSM.briefing.state)
+        await c.answer()
+        return
+
+    if stage == "briefing":
+        text = tr(uid, "ONBOARD_BRIEFING")
+        if already_registered:
+            text = f"{text}\n\n{tr(uid, 'ONBOARD_RETURNING_SHORTCUT')}"
+        kb = kb_registration_next(uid, "onboard_stage:instructions")
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+        await state.set_state(OnboardFSM.instructions.state)
+        await c.answer()
+        return
+
+    if stage == "instructions":
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+        runtime.pop("onboard_intro", None)
+        await flow_clear(uid)
+        if already_registered:
+            await state.finish()
+            notice = await bot.send_message(chat_id, tr(uid, "ONBOARD_ALREADY_COMPLETED"))
+            schedule_auto_delete(notice.chat.id, notice.message_id, delay=12)
             await anchor_show_root(uid)
-        else:
-            runtime.pop("intro_flow", None)
-            await anchor_show_root(uid)
+            await c.answer()
+            return
+        intro = await bot.send_message(chat_id, tr(uid, "REGISTER_INTRO_PROMPT"))
+        flow_track(uid, intro)
+        await registration_start_sequence(uid, chat_id, state)
+        await c.answer()
+        return
 
     await c.answer()
 
 
-@dp.message_handler(state=OnboardFSM.fullname, content_types=ContentType.TEXT)
-async def onb_fullname(m: types.Message, state: FSMContext):
+@dp.callback_query_handler(lambda c: c.data == "reg_gate_close", state=OnboardFSM.membership)
+async def onboard_gate_close(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    info = runtime.pop("onboard_intro", None)
+    if info:
+        await _delete_message_safe(info.get("chat_id"), info.get("message_id"))
+    runtime.pop("membership_allowed", None)
+    await flow_clear(uid)
+    await state.finish()
+    await c.answer()
+
+
+async def onboard_prompt_first_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_FIRST_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.first_name.state)
+
+
+async def onboard_prompt_last_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_LAST_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.last_name.state)
+
+
+async def onboard_prompt_middle_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_MIDDLE_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.middle_name.state)
+
+
+async def onboard_prompt_birthdate(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_BIRTHDATE_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.birthdate.state)
+
+
+async def onboard_prompt_region(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_REGION_PROMPT")
+    markup = kb_region_prompt(uid)
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1], reply_markup=markup)
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.region.state)
+
+
+async def onboard_prompt_phone(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_PHONE_PROMPT_NEW")
+    msg = await bot.send_message(chat_id, text, reply_markup=kb_phone_keyboard(uid))
+    flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.phone.state)
+
+
+async def onboard_prompt_photo(uid: int, chat_id: int, state: FSMContext, profile: Optional[dict] = None, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_PHOTO_PROMPT")
+    allow_keep = registration_photo_completed(profile or ensure_user(uid, users_runtime.get(uid, {}).get("tg", {})))
+    markup = kb_photo_keyboard(uid, allow_keep=allow_keep)
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1], reply_markup=markup)
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.photo.state)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reg_next:"), state=OnboardFSM.await_next)
+async def onboard_ack_next(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    await registration_clear_ack(uid)
+    next_field = c.data.split(":", 1)[1]
+    await state.update_data(await_next=None)
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    if next_field == "final":
+        data = await state.get_data()
+        photo_meta = data.get("photo_meta_override")
+        skipped = bool(data.get("photo_skipped"))
+        await finalize_registration(uid, chat_id, state, photo_meta=photo_meta, skipped=skipped)
+    else:
+        await registration_continue(uid, chat_id, state)
+    await c.answer()
+
+
+@dp.message_handler(state=OnboardFSM.await_next, content_types=ContentType.ANY)
+async def onboard_waiting_next_input(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    full = (m.text or "").strip()
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    parts = full.split()
-    if len(parts) < 3:
-        x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_NAME_ERROR"))
-        flow_track(uid, x); return
+    await flow_delete_message(uid, m)
+
+
+@dp.message_handler(state=OnboardFSM.last_name, content_types=ContentType.TEXT)
+async def onboard_last_name(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not validate_name(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    cleaned = beautify_name(raw)
+    await state.update_data(last_name=cleaned)
+    profile = registration_update(uid, last_name=cleaned)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "last_name",
+        tr(uid, "REGISTER_LAST_NAME_OK", value=h(cleaned)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.first_name, content_types=ContentType.TEXT)
+async def onboard_first_name(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not validate_name(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    cleaned = beautify_name(raw)
+    await state.update_data(first_name=cleaned)
+    profile = registration_update(uid, first_name=cleaned)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "first_name",
+        tr(uid, "REGISTER_FIRST_NAME_OK", value=h(cleaned)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.middle_name, content_types=ContentType.TEXT)
+async def onboard_middle_name(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if raw.lower() in SKIP_KEYWORDS:
+        await flow_clear_warnings(uid)
+        await state.update_data(middle_name="", middle_name_status="skipped")
+        profile = registration_update(uid, middle_name="", middle_name_status="skipped")
+        await flow_prepare_prompt(uid)
+        await registration_send_ack(
+            uid,
+            m.chat.id,
+            state,
+            profile,
+            "middle_name",
+            tr(uid, "REGISTER_MIDDLE_NAME_SKIPPED"),
+        )
+        return
+    if not validate_name(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    cleaned = beautify_name(raw)
+    await state.update_data(middle_name=cleaned, middle_name_status="provided")
+    profile = registration_update(uid, middle_name=cleaned, middle_name_status="provided")
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "middle_name",
+        tr(uid, "REGISTER_MIDDLE_NAME_OK", value=h(cleaned)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.birthdate, content_types=ContentType.TEXT)
+async def onboard_birthdate(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    parsed = parse_birthdate_text(m.text)
+    if not parsed:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    iso = parsed.strftime("%Y-%m-%d")
+    await state.update_data(birthdate=iso)
+    profile = registration_update(uid, birthdate=iso)
+    display = format_birthdate_display(iso, resolve_lang(uid))
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "birthdate",
+        tr(uid, "REGISTER_BIRTHDATE_OK", value=h(display)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.region, content_types=ContentType.ANY)
+async def onboard_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_region_open", state=OnboardFSM.region)
+async def onboard_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id
+    message_id = c.message.message_id
+    text = tr(uid, "REGISTER_REGION_PICK")
+    markup = kb_region_picker(uid)
+    try:
+        await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        flow_store_prompt(uid, chat_id=chat_id, message_id=message_id)
+    except MessageNotModified:
+        pass
+    except Exception:
+        runtime = users_runtime.setdefault(uid, {})
+        fallback_chat = runtime.get("tg", {}).get("chat_id") or chat_id
+        msg = await bot.send_message(fallback_chat, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reg_region_pick:"), state=OnboardFSM.region)
+async def onboard_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    parts = c.data.split(":", 1)
+    try:
+        idx = int(parts[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        await c.answer()
+        return
+    await state.update_data(region=region)
+    await flow_clear_warnings(uid)
+    chat_id = c.message.chat.id
+    message_id = c.message.message_id
+    text = tr(uid, "REGISTER_REGION_SELECTED", region=h(region))
+    markup = kb_region_confirm(uid)
+    try:
+        await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        flow_store_prompt(uid, chat_id=chat_id, message_id=message_id)
+    except MessageNotModified:
+        pass
+    except Exception:
+        runtime = users_runtime.setdefault(uid, {})
+        fallback_chat = runtime.get("tg", {}).get("chat_id") or chat_id
+        msg = await bot.send_message(fallback_chat, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.region_confirm.state)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_region_back", state=OnboardFSM.region_confirm)
+async def onboard_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.set_state(OnboardFSM.region.state)
+    await onboard_region_open(c, state)
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_region_confirm", state=OnboardFSM.region_confirm)
+async def onboard_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
     data = await state.get_data()
-    prompt_id = data.get("name_prompt_id")
-    if prompt_id:
-        try: await bot.delete_message(m.chat.id, prompt_id)
-        except Exception: pass
-    await state.update_data(fullname=full, name_prompt_id=None)
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
-    x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_PROMPT"), reply_markup=kb)
-    flow_track(uid, x)
-    await OnboardFSM.phone.set()
+    region = data.get("region")
+    if region:
+        await state.update_data(region=region)
+        profile = registration_update(uid, region=region)
+        await flow_clear_warnings(uid)
+        await flow_prepare_prompt(uid)
+        await registration_send_ack(
+            uid,
+            chat_id,
+            state,
+            profile,
+            "region",
+            tr(uid, "REGISTER_REGION_OK", value=h(region)),
+        )
+    else:
+        await flow_prepare_prompt(uid)
+        await registration_send_ack(
+            uid,
+            chat_id,
+            state,
+            ensure_user(uid, runtime.get("tg", {})),
+            "region",
+            tr(uid, "REGISTER_REGION_OK", value="—"),
+        )
+    await c.answer()
 
 
 @dp.message_handler(content_types=ContentType.CONTACT, state=OnboardFSM.phone)
-async def onb_phone_contact(m: types.Message, state: FSMContext):
+async def onboard_phone_contact(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    phone = (m.contact.phone_number if m.contact else "").strip()
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    if not phone:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_ERROR"))
-        flow_track(uid, warn); return
-    data = await state.get_data()
-    prof = ensure_user(uid, users_runtime[uid]["tg"], fullname=data.get("fullname"), phone=phone)
-    save_user(prof)
-    await state.finish()
-    ok = await bot.send_message(m.chat.id, tr(uid, "START_PROFILE_SAVED", code=h(prof['bsu'])), reply_markup=ReplyKeyboardRemove())
-    flow_track(uid, ok)
-    await anchor_show_root(uid)
-    await flow_clear(uid)
+    phone_raw = (m.contact.phone_number if m.contact else "").strip()
+    normalized = sanitize_phone_input(phone_raw)
+    if not normalized:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_WARN"), reply_markup=kb_phone_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    await state.update_data(phone=normalized)
+    profile = registration_update(uid, phone=normalized)
+    if m.contact and m.contact.user_id:
+        profile.setdefault("tg", {})["contact_user_id"] = m.contact.user_id
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "phone",
+        tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
+        remove_reply_keyboard=True,
+    )
+    await flow_delete_message(uid, m)
 
 
 @dp.message_handler(state=OnboardFSM.phone, content_types=ContentType.TEXT)
-async def onb_phone_text_wrong(m: types.Message, state: FSMContext):
+async def onboard_phone_text(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
-    x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_PROMPT"), reply_markup=kb)
-    flow_track(uid, x)
+    await flow_delete_message(uid, m)
+    normalized = sanitize_phone_input(m.text)
+    if not normalized:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"), reply_markup=kb_phone_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    await state.update_data(phone=normalized)
+    profile = registration_update(uid, phone=normalized)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "phone",
+        tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
+        remove_reply_keyboard=True,
+    )
 
 
+@dp.callback_query_handler(lambda c: c.data == "reg_photo_skip", state=OnboardFSM.photo)
+async def onboard_photo_skip(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    await flow_prepare_prompt(uid)
+    await state.update_data(photo_meta_override=None, photo_skipped=True)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await registration_send_ack(
+        uid,
+        chat_id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_SKIP_CONFIRM"),
+    )
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_photo_keep", state=OnboardFSM.photo)
+async def onboard_photo_keep(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    await flow_prepare_prompt(uid)
+    await state.update_data(photo_meta_override=None, photo_skipped=False)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await registration_send_ack(
+        uid,
+        chat_id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_KEEP_CONFIRM"),
+    )
+    await c.answer()
+
+
+@dp.message_handler(content_types=ContentType.PHOTO, state=OnboardFSM.photo)
+async def onboard_photo_received(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    photo = m.photo[-1] if m.photo else None
+    if not photo:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"), reply_markup=kb_photo_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    try:
+        meta = await store_profile_photo(uid, photo)
+    except Exception:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"), reply_markup=kb_photo_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    await state.update_data(photo_meta_override=meta, photo_skipped=False)
+    profile = registration_update(uid, photo=meta)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_RECEIVED"),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.photo, content_types=ContentType.ANY)
+async def onboard_photo_other(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if m.content_type == ContentType.PHOTO:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"), reply_markup=kb_photo_keyboard(uid))
+    flow_track_warning(uid, warn)
+
+
+async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo_meta: Optional[dict], skipped: bool):
+    data = await state.get_data()
+    last_name = data.get("last_name", "")
+    first_name = data.get("first_name", "")
+    middle_name = data.get("middle_name", "")
+    birthdate = data.get("birthdate", "")
+    region = data.get("region", "")
+    phone = data.get("phone", "")
+
+    runtime = users_runtime.setdefault(uid, {})
+    current_profile = ensure_user(uid, runtime.get("tg", {}))
+    was_completed = registration_profile_completed(current_profile)
+    updates = {
+        "last_name": last_name,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "birthdate": birthdate,
+        "region": region,
+        "phone": phone,
+    }
+    middle_status = data.get("middle_name_status")
+    if middle_status is not None:
+        updates["middle_name_status"] = middle_status
+    if photo_meta is not None:
+        updates["photo"] = photo_meta
+    elif skipped and not registration_photo_completed(current_profile):
+        updates["photo"] = {"status": "skipped", "updated_at": datetime.now(timezone.utc).isoformat()}
+
+    profile = registration_update(uid, **updates)
+    now_completed = registration_profile_completed(profile)
+
+    if now_completed and not was_completed:
+        await registration_notify_new_user(uid, profile, runtime)
+
+    await registration_clear_ack(uid)
+    await state.finish()
+    await flow_clear(uid)
+    registration_sync_runtime(uid, profile)
+    runtime.pop("onboard_intro", None)
+
+    confirm = await bot.send_message(chat_id, tr(uid, "REGISTER_FINISH_CONFIRM", code=h(profile.get("bsu", "—"))))
+    schedule_auto_delete(confirm.chat.id, confirm.message_id, delay=20)
+    await anchor_show_root(uid)
+
+
+# ========================== PROFILE EDIT HANDLERS ==========================
+@dp.message_handler(state=ProfileEditFSM.waiting_last_name, content_types=ContentType.TEXT)
+async def profile_last_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if not raw or not NAME_VALID_RE.match(raw):
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["last_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile["last_name"], profile.get("first_name", ""), profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_first_name, content_types=ContentType.TEXT)
+async def profile_first_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if not raw or not NAME_VALID_RE.match(raw):
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["first_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile["first_name"], profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_middle_name, content_types=ContentType.TEXT)
+async def profile_middle_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if raw and raw.lower() in SKIP_KEYWORDS:
+        cleaned = ""
+    else:
+        if raw and NAME_VALID_RE.match(raw):
+            cleaned = beautify_name(raw)
+        else:
+            await flow_delete_message(uid, m)
+            warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+            flow_track_warning(uid, warn)
+            return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["middle_name"] = cleaned
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), cleaned)
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_birthdate, content_types=ContentType.TEXT)
+async def profile_birthdate_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    dt = parse_birthdate_text(m.text)
+    if not dt:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["birthdate"] = dt.strftime("%Y-%m-%d")
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_region, content_types=ContentType.TEXT)
+async def profile_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_profile_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_open", state=ProfileEditFSM.waiting_region)
+async def profile_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_profile_region_picker(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("profile_region_pick:"), state=ProfileEditFSM.waiting_region)
+async def profile_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    try:
+        idx = int(c.data.split(":", 1)[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+        return
+    await state.update_data(profile_region=region)
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_SELECTED", region=h(region)), reply_markup=kb_profile_region_confirm(uid))
+    await ProfileEditFSM.region_confirm.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_confirm", state=ProfileEditFSM.region_confirm)
+async def profile_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    region = data.get("profile_region")
+    if not region:
+        await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+        return
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["region"] = region
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_back", state=ProfileEditFSM.region_confirm)
+async def profile_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await ProfileEditFSM.waiting_region.set()
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_profile_region_picker(uid))
+    await c.answer()
+
+
+@dp.message_handler(content_types=ContentType.CONTACT, state=ProfileEditFSM.waiting_phone)
+async def profile_phone_contact(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    contact = m.contact
+    if not contact or not contact.phone_number:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["phone"] = contact.phone_number
+    profile.setdefault("tg", {})["contact_user_id"] = contact.user_id
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    runtime = profile_runtime(uid)
+    runtime.pop("profile_reply_keyboard", None)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHONE_SAVED"), remove_keyboard=True)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_phone, content_types=ContentType.TEXT)
+async def profile_phone_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    cancel_label = tr(uid, "BTN_PROFILE_CANCEL")
+    if text == cancel_label:
+        runtime = profile_runtime(uid)
+        runtime.pop("profile_reply_keyboard", None)
+        await flow_delete_message(uid, m)
+        await profile_abort(uid, state, remove_keyboard=True)
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_photo, content_types=ContentType.PHOTO)
+async def profile_photo_received(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    try:
+        meta = await store_profile_photo(uid, m.photo[-1])
+    except Exception:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["photo"] = meta or {"status": "uploaded", "updated_at": datetime.now(timezone.utc).isoformat()}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHOTO_UPDATED"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_photo, content_types=ContentType.ANY)
+async def profile_photo_invalid(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_remove_photo")
+async def profile_remove_photo_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    remove_profile_photo(uid)
+    profile["photo"] = {}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await flow_clear_warnings(uid)
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHOTO_REMOVED"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+# ========================== ADMIN PROMOTE ==========================
 # ========================== ADMIN PROMOTE ==========================
 @dp.message_handler(lambda m: m.text and m.text.strip() == ADMIN_CODE)
 async def become_admin(m: types.Message):
@@ -4107,6 +7102,9 @@ async def become_admin(m: types.Message):
 @dp.message_handler(content_types=ContentType.ANY, state=None)
 async def fallback_message(m: types.Message, state: FSMContext):
     uid = m.from_user.id
+    current_state = await state.get_state()
+    if current_state:
+        return
     text = m.text or ""
     if text.startswith("/"):
         return
@@ -4122,6 +7120,9 @@ async def fallback_message(m: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_about")
 async def menu_about(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     prof = load_user(uid) or {}
     about_text = (
         f"🤖 <b>{h(BOT_NAME)}</b>\n"
@@ -4147,6 +7148,9 @@ async def menu_about(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_alerts")
 async def menu_alerts(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     intro = tr(uid, "ALERTS_MENU_INTRO")
     count = alerts_active_oblast_count()
     if count:
@@ -4413,6 +7417,9 @@ async def alerts_push_actions(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "back_root")
 async def back_root(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, project_status_text(uid), kb_root(uid))
     await c.answer()
 
@@ -5590,7 +8597,7 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _alerts_user_agent() -> str:
-    base = "Bot.BSG-alerts/1.0 (+https://alerts.in.ua)"
+    base = "BSG-botSYSTEM-alerts/1.0 (+https://alerts.in.ua)"
     token = ALERTS_API_TOKEN or ""
     if len(token) >= 5:
         return f"{base} token:{token[:5]}"
@@ -6723,6 +9730,8 @@ def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[s
         uid = profile.get("user_id")
         if not uid:
             continue
+        if not registration_profile_completed(profile):
+            continue
         regions = alerts_user_regions(uid)
         canonical_regions = {alerts_canonical_region(r) or r for r in regions}
         if target_region not in canonical_regions:
@@ -6888,9 +9897,7 @@ async def alerts_broadcast(event_id: str, kind: str) -> None:
         _alerts_mark_notified(event_id, kind)
         return
     for uid, profile in recipients:
-        chat_id = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-        if not chat_id:
-            chat_id = (profile.get("tg") or {}).get("chat_id")
+        chat_id = registration_chat_id(uid, profile)
         if not chat_id:
             continue
         try:
@@ -7281,6 +10288,9 @@ def _np_trim_label(text: str, limit: int = 48) -> str:
 @dp.callback_query_handler(lambda c: c.data == "menu_np")
 async def menu_np(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
     await c.answer()
 
@@ -7644,8 +10654,14 @@ async def np_assigned_received_cb(c: types.CallbackQuery):
         pass
 
     for admin_id in admins:
-        chat_id = users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id") or (load_user(admin_id) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(admin_id) or {}
+        chat_id = (
+            users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if not chat_id:
+            continue
+        if not registration_profile_completed(admin_profile):
             continue
         admin_lang = resolve_lang(admin_id)
         alert = np_render_delivery_receipt(admin_lang, ttn, user_name, delivered_at)
@@ -8007,9 +11023,151 @@ async def np_cancel_flow(c: types.CallbackQuery, state: FSMContext):
     await c.answer(tr(uid, "NP_CANCELLED_TOAST"))
 
 # ========================== CHECKS ==========================
+@dp.callback_query_handler(lambda c: c.data == "menu_profile")
+async def menu_profile(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id, state=state):
+        return await c.answer()
+    await state.finish()
+    await flow_clear(uid)
+    profile_set_flags(uid, edit_mode=False, show_photo=False)
+    await show_profile(uid, edit_mode=False, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit")
+async def profile_enter_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.finish()
+    await flow_clear(uid)
+    profile_set_flags(uid, edit_mode=True, show_photo=False)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_done", state="*")
+async def profile_exit_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    runtime = profile_runtime(uid)
+    remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+    await state.finish()
+    profile_set_flags(uid, edit_mode=False, show_photo=False)
+    if remove_keyboard:
+        await profile_send_notification(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=True)
+    await show_profile(uid, edit_mode=False, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_view_photo")
+async def profile_view_photo(c: types.CallbackQuery):
+    uid = c.from_user.id
+    profile_set_flags(uid, show_photo=True)
+    await show_profile(uid, show_photo=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_hide_photo")
+async def profile_hide_photo(c: types.CallbackQuery):
+    uid = c.from_user.id
+    profile_set_flags(uid, show_photo=False)
+    await show_profile(uid, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(
+    lambda c: c.data == "profile_cancel",
+    state=[
+        ProfileEditFSM.waiting_last_name,
+        ProfileEditFSM.waiting_first_name,
+        ProfileEditFSM.waiting_middle_name,
+        ProfileEditFSM.waiting_birthdate,
+        ProfileEditFSM.waiting_region,
+        ProfileEditFSM.region_confirm,
+        ProfileEditFSM.waiting_phone,
+        ProfileEditFSM.waiting_photo,
+    ]
+)
+async def profile_cancel_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = profile_runtime(uid)
+    remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+    await profile_abort(uid, state, remove_keyboard=remove_keyboard)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_last")
+async def profile_prompt_last(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_last_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_first")
+async def profile_prompt_first(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_first_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_middle")
+async def profile_prompt_middle(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_middle_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_birthdate")
+async def profile_prompt_birthdate(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_birthdate.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_region")
+async def profile_prompt_region(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_REGION"), reply_markup=kb_profile_region_prompt(uid))
+    await ProfileEditFSM.waiting_region.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_phone")
+async def profile_prompt_phone(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    kb = kb_profile_phone_keyboard(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHONE"), reply_markup=kb)
+    await ProfileEditFSM.waiting_phone.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_photo")
+async def profile_prompt_photo(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_photo.set()
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "menu_checks")
 async def menu_checks(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "CHECKS_MENU_INTRO"), kb_checks(uid))
     await c.answer()
 
@@ -8017,6 +11175,9 @@ async def menu_checks(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_settings")
 async def menu_settings(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "SETTINGS_TITLE"), kb_settings(uid))
     await c.answer()
 
@@ -8024,6 +11185,9 @@ async def menu_settings(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "settings_language")
 async def settings_language(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "LANGUAGE_PROMPT"), kb_language_settings(uid))
     await c.answer()
 
@@ -8031,6 +11195,9 @@ async def settings_language(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "settings_back")
 async def settings_back(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "SETTINGS_TITLE"), kb_settings(uid))
     await c.answer()
 
@@ -8038,6 +11205,9 @@ async def settings_back(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data.startswith("settings_lang:"))
 async def settings_lang_change(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     code = c.data.split(":", 1)[1]
     if code not in LANG_CODES:
         await c.answer(tr(uid, "INVALID_COMMAND"), show_alert=True)
@@ -8330,6 +11500,15 @@ async def check_add(c: types.CallbackQuery, state: FSMContext):
 async def cancel_any(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     current_state = await state.get_state()
+    if current_state and current_state.startswith(ProfileEditFSM.__name__):
+        runtime = profile_runtime(uid)
+        remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+        await profile_abort(uid, state, remove_keyboard=remove_keyboard)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        return
     if current_state and current_state.startswith(ReceiptFSM.__name__):
         await remove_preview_message(state)
         await clear_edit_prompt(state)
@@ -8631,6 +11810,9 @@ async def rcp_preview_actions(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_photos")
 async def menu_photos(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     info = load_project_info(active_project["name"])
@@ -9042,6 +12224,9 @@ async def photo_delete(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_docs")
 async def menu_docs(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
@@ -9080,6 +12265,9 @@ def user_has_approved_not_confirmed(uid: int) -> bool:
 @dp.callback_query_handler(lambda c: c.data == "menu_finance")
 async def finance_menu(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
@@ -9266,7 +12454,13 @@ async def finance_request_payout(c: types.CallbackQuery):
     akb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{req_id}"))
     akb.add(InlineKeyboardButton("❌ Закрыть", callback_data=f"adm_req_close:{req_id}"))
     for ad in list(admins):
-        chat_id = users_runtime.get(ad, {}).get("tg", {}).get("chat_id") or (load_user(ad) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(ad) or {}
+        if not registration_profile_completed(admin_profile):
+            continue
+        chat_id = (
+            users_runtime.get(ad, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=akb)
             except Exception: pass
@@ -9485,7 +12679,13 @@ async def user_confirm_payout(c: types.CallbackQuery):
     )
     admin_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
     for ad in list(admins):
-        chat_id = users_runtime.get(ad, {}).get("tg", {}).get("chat_id") or (load_user(ad) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(ad) or {}
+        if not registration_profile_completed(admin_profile):
+            continue
+        chat_id = (
+            users_runtime.get(ad, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if chat_id:
             try:
                 await bot.send_message(chat_id, admin_note, reply_markup=admin_kb)
@@ -9775,7 +12975,7 @@ async def adm_req_close(c: types.CallbackQuery):
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
     user_id = obj.get("user_id")
     prof = load_user(user_id) or {}
-    chat_id = users_runtime.get(user_id, {}).get("tg", {}).get("chat_id") or prof.get("tg", {}).get("chat_id")
+    chat_id = registration_chat_id(user_id, prof)
     if chat_id:
         note = (
             "ℹ️ <b>Запрос на выплату закрыт</b>\n\n"
@@ -9818,7 +13018,7 @@ async def adm_req_paid(c: types.CallbackQuery):
     if c.message:
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
 
-    chat_id = users_runtime.get(user_id, {}).get("tg", {}).get("chat_id") or prof.get("tg", {}).get("chat_id")
+    chat_id = registration_chat_id(user_id, prof)
     recs = user_project_receipts(user_id, obj["project"])
     by_file = {r["file"]: r for r in recs}
     lines = []
@@ -9859,6 +13059,9 @@ async def adm_req_paid(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_sos")
 async def sos_start(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id, state=state):
+        return await c.answer()
     await state.finish()
     await flow_clear(uid)
     text = ("⚠️ Вы нажали кнопку <b>SOS</b>.\n\n"
@@ -9960,12 +13163,6 @@ async def sos_location(m: types.Message, state: FSMContext):
                 f"❗ Пользователь запросил помощь. Координаты ниже.")
     close_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть сообщение", callback_data="sos_close"))
 
-    def get_chat_id_for_user(u_id: int) -> Optional[int]:
-        ch = users_runtime.get(u_id, {}).get("tg", {}).get("chat_id")
-        if ch: return ch
-        up = load_user(u_id)
-        return (up.get("tg", {}).get("chat_id")) if up else None
-
     for f in os.listdir(USERS_PATH):
         if not f.endswith(".json"): continue
         try:
@@ -9975,7 +13172,7 @@ async def sos_location(m: types.Message, state: FSMContext):
         rec_uid = int(udata.get("user_id", 0))
         if rec_uid == uid:  # отправителю не шлём
             continue
-        chat_id = get_chat_id_for_user(rec_uid)
+        chat_id = registration_chat_id(rec_uid, udata)
         if not chat_id:
             continue
         try:
@@ -10025,6 +13222,9 @@ def paginate(lst: List[str], page: int, per_page: int=10) -> Tuple[List[str], in
 @dp.callback_query_handler(lambda c: c.data == "menu_admin")
 async def menu_admin(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if uid not in admins:
         return await c.answer("⛔ Доступ только для администраторов", show_alert=True)
     await clear_then_anchor(
@@ -10036,16 +13236,30 @@ async def menu_admin(c: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda c: c.data == "adm_users")
-async def adm_users(c: types.CallbackQuery):
+async def adm_users(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
     files = sorted([f for f in os.listdir(USERS_PATH) if f.endswith(".json")])
     page = 1
     slice_, total = paginate(files, page)
     kb = InlineKeyboardMarkup()
-    for f in slice_:
-        prof = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
-        kb.add(InlineKeyboardButton(f"{prof.get('fullname','—')} ({prof.get('bsu','—')})", callback_data=f"adm_user_{prof['user_id']}"))
+    for filename in slice_:
+        try:
+            target_uid = int(os.path.splitext(filename)[0])
+        except ValueError:
+            continue
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(
+            InlineKeyboardButton(
+                f"{fullname} ({code})",
+                callback_data=f"adm_user_{target_uid}"
+            )
+        )
     if total > 1:
         kb.row(
             InlineKeyboardButton("⏮", callback_data=f"adm_users_page_1"),
@@ -10062,17 +13276,33 @@ async def adm_users(c: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("adm_users_page_"))
-async def adm_users_page(c: types.CallbackQuery):
+async def adm_users_page(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
     files = sorted([f for f in os.listdir(USERS_PATH) if f.endswith(".json")])
-    try: page = int(c.data.split("_")[-1])
-    except: page = 1
+    try:
+        page = int(c.data.split("_")[-1])
+    except Exception:
+        page = 1
     slice_, total = paginate(files, page)
     kb = InlineKeyboardMarkup()
-    for f in slice_:
-        prof = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
-        kb.add(InlineKeyboardButton(f"{prof.get('fullname','—')} ({prof.get('bsu','—')})", callback_data=f"adm_user_{prof['user_id']}"))
+    for filename in slice_:
+        try:
+            target_uid = int(os.path.splitext(filename)[0])
+        except ValueError:
+            continue
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(
+            InlineKeyboardButton(
+                f"{fullname} ({code})",
+                callback_data=f"adm_user_{target_uid}"
+            )
+        )
     if total > 1:
         prev_page = max(1, page-1); next_page = min(total, page+1)
         kb.row(
@@ -10096,38 +13326,577 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
     target = int(c.data.split("adm_user_",1)[1])
-    await state.update_data(target_uid=target)
-    prof = load_user(target) or {"user_id": target}
-    projects = sorted(list((prof.get("receipts") or {}).keys()))
-    cnt_all = sum(len(prof.get("receipts", {}).get(p, [])) for p in projects)
-    sum_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, [])) for p in projects)
-    unpaid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is False) for p in projects)
-    paid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is True) for p in projects)
+    await state.reset_state(with_data=False)
+    await state.update_data(target_uid=target, admin_user_show_photo=False, admin_user_edit_mode=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=False)
+    await c.answer()
 
-    fullname_disp = h(prof.get('fullname', '—'))
-    bsu_disp = h(prof.get('bsu', '—'))
-    username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_disp = h(f"@{username_raw}" if username_raw else "—")
-    phone_disp = h(prof.get('phone', '—'))
-    text = (
-        f"👤 <b>{fullname_disp}</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 UserID: <code>{target}</code>\n"
-        f"🧾 BSU: <b>{bsu_disp}</b>\n"
-        f"🆘 Telegram: {username_disp}\n"
-        f"📱 Телефон: {phone_disp}\n"
-        f"🗂 Проектов: <b>{len(projects)}</b>\n"
-        f"🧾 Чеков всего: <b>{cnt_all}</b>\n"
-        f"💰 Сумма чеков: <b>{fmt_money(sum_all)} грн</b>\n"
-        f"✅ Оплачено: <b>{fmt_money(paid_all)} грн</b>\n"
-        f"❌ К выплате: <b>{fmt_money(unpaid_all)} грн</b>"
+
+async def admin_show_user(
+    uid: int,
+    target_uid: int,
+    state: FSMContext,
+    show_photo: Optional[bool] = None,
+    edit_mode: Optional[bool] = None,
+):
+    data = await state.get_data()
+    if show_photo is None:
+        show_photo = bool(data.get("admin_user_show_photo"))
+    if edit_mode is None:
+        edit_mode = bool(data.get("admin_user_edit_mode"))
+    await state.update_data(admin_user_show_photo=show_photo, admin_user_edit_mode=edit_mode)
+    profile = load_user(target_uid) or {"user_id": target_uid}
+    text = admin_user_card_text(uid, profile, edit_mode=edit_mode)
+    kb = kb_admin_user(uid, profile, show_photo=show_photo, edit_mode=edit_mode)
+    if show_photo and profile_has_photo(profile):
+        await anchor_replace_with_photo(uid, user_profile_photo_path(target_uid), text, kb)
+    else:
+        chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+        if chat:
+            await anchor_upsert(uid, chat, text, kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_photo_toggle")
+async def adm_user_photo_toggle(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    current = bool(data.get("admin_user_show_photo"))
+    await admin_show_user(uid, target, state, show_photo=not current)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_edit")
+async def adm_user_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.update_data(admin_user_edit_mode=True)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_edit_done", state="*")
+async def adm_user_edit_done(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    runtime = admin_edit_runtime(uid)
+    runtime.pop("reply_keyboard", False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await state.update_data(admin_user_edit_mode=False)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(
+    lambda c: c.data == "adm_edit_cancel",
+    state=[
+        AdminProfileEditFSM.waiting_last_name,
+        AdminProfileEditFSM.waiting_first_name,
+        AdminProfileEditFSM.waiting_middle_name,
+        AdminProfileEditFSM.waiting_birthdate,
+        AdminProfileEditFSM.waiting_region,
+        AdminProfileEditFSM.region_confirm,
+        AdminProfileEditFSM.waiting_phone,
+        AdminProfileEditFSM.waiting_photo,
+    ],
+)
+async def adm_edit_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    runtime = admin_edit_runtime(uid)
+    remove_keyboard = bool(runtime.pop("reply_keyboard", False))
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    if target:
+        await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    if remove_keyboard:
+        await admin_edit_notify(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=True)
+    else:
+        await c.answer(tr(uid, "PROFILE_CANCELLED"))
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_last")
+async def adm_edit_last_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_last_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_first")
+async def adm_edit_first_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_first_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_middle")
+async def adm_edit_middle_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_middle_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_birthdate")
+async def adm_edit_birthdate_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_birthdate.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_region")
+async def adm_edit_region_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_region.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_REGION"), reply_markup=kb_admin_edit_region_prompt(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_open", state=AdminProfileEditFSM.waiting_region)
+async def adm_edit_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await admin_edit_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_admin_edit_region_picker(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_reg_pick:"), state=AdminProfileEditFSM.waiting_region)
+async def adm_edit_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        idx = int(c.data.split(":", 1)[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        return await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+    await state.update_data(admin_region=region)
+    await admin_edit_send_prompt(
+        uid,
+        tr(uid, "REGISTER_REGION_SELECTED", region=h(region)),
+        reply_markup=kb_admin_edit_region_confirm(uid),
     )
+    await AdminProfileEditFSM.region_confirm.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_confirm", state=AdminProfileEditFSM.region_confirm)
+async def adm_edit_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    region = data.get("admin_region")
+    if not target or not region:
+        return await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["region"] = region
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_back", state=AdminProfileEditFSM.region_confirm)
+async def adm_edit_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await AdminProfileEditFSM.waiting_region.set()
+    await admin_edit_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_admin_edit_region_picker(uid))
+    await c.answer()
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_region, content_types=ContentType.TEXT)
+async def adm_edit_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_admin_edit_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_phone")
+async def adm_edit_phone_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_phone.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHONE"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_photo")
+async def adm_edit_photo_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_photo.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_remove_photo")
+async def adm_edit_remove_photo(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    remove_profile_photo(target)
+    profile["photo"] = {}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await flow_clear_warnings(uid)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHOTO_REMOVED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_last_name, content_types=ContentType.TEXT)
+async def adm_edit_last_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not raw or not NAME_VALID_RE.match(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["last_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile["last_name"], profile.get("first_name", ""), profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_first_name, content_types=ContentType.TEXT)
+async def adm_edit_first_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not raw or not NAME_VALID_RE.match(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["first_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile["first_name"], profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_middle_name, content_types=ContentType.TEXT)
+async def adm_edit_middle_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if raw and raw.lower() in SKIP_KEYWORDS:
+        cleaned = ""
+    elif raw and NAME_VALID_RE.match(raw):
+        cleaned = beautify_name(raw)
+    else:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["middle_name"] = cleaned
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), cleaned)
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_birthdate, content_types=ContentType.TEXT)
+async def adm_edit_birthdate_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    dt = parse_birthdate_text(m.text)
+    await flow_delete_message(uid, m)
+    if not dt:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["birthdate"] = dt.strftime("%Y-%m-%d")
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_phone, content_types=ContentType.TEXT)
+async def adm_edit_phone_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    phone = sanitize_phone_input(m.text)
+    await flow_delete_message(uid, m)
+    if not phone:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["phone"] = phone
+    profile.setdefault("tg", {})
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    runtime = admin_edit_runtime(uid)
+    runtime.pop("reply_keyboard", None)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHONE_SAVED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_phone, content_types=ContentType.CONTACT)
+async def adm_edit_phone_contact(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_photo, content_types=ContentType.PHOTO)
+async def adm_edit_photo_receive(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    photo = m.photo[-1] if m.photo else None
+    if not photo:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    try:
+        meta = await store_profile_photo(target, photo)
+    except Exception:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["photo"] = meta or {"status": "uploaded", "updated_at": datetime.now(timezone.utc).isoformat()}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHOTO_UPDATED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_photo, content_types=ContentType.ANY)
+async def adm_edit_photo_invalid(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    if m.photo:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance")
+async def adm_user_finance_view(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    stats = admin_collect_user_stats(profile)
+    pending = stats["pending_payouts"]
+    closed = stats["confirmed_payouts"]
+    fullname = h(profile.get("fullname", "—"))
+    bsu = h(profile.get("bsu", "—"))
+    lines = [
+        "💵 <b>Фінансовий огляд користувача</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"👤 {fullname} (BSU {bsu})",
+        f"📂 Активних проєктів з чеками: <b>{len(stats['projects'])}</b>",
+        f"🧾 Чеків у системі: <b>{stats['total_count']}</b>",
+        f"💰 Загальна сума: <b>{fmt_money(stats['total_sum'])} грн</b>",
+        f"✅ Оплачено: <b>{fmt_money(stats['paid_sum'])} грн</b>",
+        f"⏳ Очікує: <b>{fmt_money(stats['unpaid_sum'])} грн</b>",
+        "",
+        f"📬 Запитів у роботі: <b>{len(pending)}</b>",
+    ]
+    if pending:
+        for req in pending[:10]:
+            code = req.get("code") or req.get("id")
+            amount = fmt_money(float(req.get("sum") or 0.0))
+            status = req.get("status", "—")
+            lines.append(f"• {h(code)} — {amount} грн — {h(status)}")
+    if closed:
+        lines.append("")
+        lines.append(f"📗 Підтверджено/закрито: <b>{len(closed)}</b>")
+        for req in closed[-5:]:
+            code = req.get("code") or req.get("id")
+            amount = fmt_money(float(req.get("sum") or 0.0))
+            status = req.get("status", "—")
+            lines.append(f"• {h(code)} — {amount} грн — {h(status)}")
     kb = InlineKeyboardMarkup()
-    if projects:
-        kb.add(InlineKeyboardButton("📊 Статистика по проекту", callback_data="adm_stat_choose"))
-        kb.add(InlineKeyboardButton("📁 Чеки по проекту", callback_data="adm_recs_choose"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
-    await clear_then_anchor(uid, text, kb)
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
 
 
@@ -10423,7 +14192,7 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
             udata = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
         except:
             continue
-        chat_id = users_runtime.get(udata["user_id"], {}).get("tg", {}).get("chat_id") or udata.get("tg", {}).get("chat_id")
+        chat_id = registration_chat_id(int(udata.get("user_id", 0)), udata)
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
             except Exception: pass
@@ -10489,7 +14258,7 @@ async def proj_finish_do(c: types.CallbackQuery):
             udata = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
         except:
             continue
-        chat_id = users_runtime.get(udata["user_id"], {}).get("tg", {}).get("chat_id") or udata.get("tg", {}).get("chat_id")
+        chat_id = registration_chat_id(int(udata.get("user_id", 0)), udata)
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
             except Exception: pass
