@@ -2364,6 +2364,10 @@ class AdminPointsFSM(StatesGroup):
     confirm = State()
 
 
+class AdminFinancePayFSM(StatesGroup):
+    waiting_amount = State()
+
+
 class ReceiptFSM(StatesGroup):
     waiting_photo = State()
     waiting_amount = State()
@@ -2796,6 +2800,17 @@ def save_user(profile: dict):
     if uid is not None:
         completed = registration_profile_completed(profile)
         profile["profile_completed"] = completed
+        if completed:
+            completed_at = profile.get("registration_completed_at")
+            if not completed_at:
+                fallback = (
+                    profile.get("registration_completed_at")
+                    or profile.get("registered_at")
+                    or profile.get("updated_at")
+                )
+                profile["registration_completed_at"] = fallback or datetime.now(timezone.utc).isoformat()
+        else:
+            profile.pop("registration_completed_at", None)
     if "points_total" not in profile:
         profile["points_total"] = 0.0
     path = user_file(profile["user_id"])
@@ -2847,6 +2862,11 @@ def list_completed_user_ids() -> List[int]:
         profile = load_user(uid) or {}
         if not registration_profile_completed(profile):
             continue
+        if not profile.get("registration_completed_at"):
+            profile["registration_completed_at"] = profile.get("updated_at") or datetime.now(timezone.utc).isoformat()
+            save_user(profile)
+            if not profile.get("registration_completed_at"):
+                continue
         ids.append(uid)
     return ids
 
@@ -5623,37 +5643,106 @@ def kb_admin_projects() -> InlineKeyboardMarkup:
 
 def admin_collect_user_stats(profile: dict) -> dict:
     receipts = profile.get("receipts") or {}
-    projects = sorted(receipts.keys()) if isinstance(receipts, dict) else []
+    project_summaries: List[dict] = []
     total_count = 0
     total_sum = 0.0
     paid_sum = 0.0
     unpaid_sum = 0.0
-    for recs in receipts.values():
-        if not isinstance(recs, list):
-            continue
-        for entry in recs:
-            try:
-                amount = float(entry.get("sum") or 0.0)
-            except (TypeError, ValueError):
-                amount = 0.0
-            total_count += 1
-            total_sum += amount
-            if entry.get("paid") is True:
-                paid_sum += amount
-            elif entry.get("paid") is False:
-                unpaid_sum += amount
+    pending_sum = 0.0
+    unspecified_sum = 0.0
+    user_id = profile.get("user_id")
+    if isinstance(receipts, dict):
+        for project in sorted(receipts.keys()):
+            stats = user_project_stats(user_id, project)
+            info = load_project_info(project)
+            project_summaries.append({"name": project, "info": info, "stats": stats})
+            total_count += stats.get("count", 0)
+            total_sum += stats.get("total", 0.0)
+            paid_sum += stats.get("paid", 0.0)
+            unpaid_sum += stats.get("unpaid", 0.0)
+            pending_sum += stats.get("pending", 0.0)
+            unspecified_sum += stats.get("unspecified", 0.0)
     payouts = profile.get("payouts") or []
     pending_payouts = [p for p in payouts if (p.get("status") not in {"confirmed", "closed"})]
     confirmed_payouts = [p for p in payouts if p.get("status") in {"confirmed", "closed"}]
     return {
-        "projects": projects,
+        "projects": project_summaries,
         "total_count": total_count,
         "total_sum": total_sum,
         "paid_sum": paid_sum,
         "unpaid_sum": unpaid_sum,
+        "pending_sum": pending_sum,
+        "unspecified_sum": unspecified_sum,
         "pending_payouts": pending_payouts,
         "confirmed_payouts": confirmed_payouts,
     }
+
+
+def admin_user_photo_projects(uid: int) -> List[dict]:
+    summary: List[dict] = []
+    for name in sorted(list_projects()):
+        entries = [entry for entry in load_project_photos(name) if entry.get("uploader_id") == uid]
+        if not entries:
+            continue
+        info = load_project_info(name)
+        summary.append({"name": name, "info": info, "entries": entries})
+    return summary
+
+
+def admin_user_has_photos(uid: int) -> bool:
+    for payload in admin_user_photo_projects(uid):
+        if payload.get("entries"):
+            return True
+    return False
+
+
+def admin_finance_eligible_receipts(uid: int, project: str) -> List[dict]:
+    eligible: List[dict] = []
+    for entry in user_project_receipts(uid, project):
+        if entry.get("paid") is True:
+            continue
+        payout = entry.get("payout") if isinstance(entry.get("payout"), dict) else {}
+        if payout.get("status") in {"pending", "approved"}:
+            continue
+        eligible.append(entry)
+    return eligible
+
+
+def _receipt_amount_cents(entry: dict) -> int:
+    try:
+        value = float(entry.get("sum") or 0.0)
+    except (TypeError, ValueError):
+        value = 0.0
+    return int(round(value * 100))
+
+
+def admin_finance_receipts_total(receipts: List[dict]) -> float:
+    total_cents = sum(_receipt_amount_cents(entry) for entry in receipts)
+    return round(total_cents / 100.0, 2)
+
+
+def admin_finance_pick_receipts_for_amount(receipts: List[dict], target_amount: float) -> Optional[List[dict]]:
+    target_cents = int(round(target_amount * 100))
+    if target_cents <= 0:
+        return []
+    amounts = [_receipt_amount_cents(entry) for entry in receipts]
+    combos: Dict[int, List[int]] = {0: []}
+    for idx, amount in enumerate(amounts):
+        if amount <= 0:
+            continue
+        snapshot = list(combos.items())
+        for current_sum, selection in snapshot:
+            new_sum = current_sum + amount
+            if new_sum > target_cents:
+                continue
+            if new_sum in combos:
+                continue
+            combos[new_sum] = selection + [idx]
+        if target_cents in combos:
+            break
+    if target_cents not in combos:
+        return None
+    return [receipts[i] for i in combos[target_cents]]
 
 
 def admin_user_card_text(viewer_uid: int, profile: dict, *, edit_mode: bool = False) -> str:
@@ -5673,7 +5762,7 @@ def admin_user_card_text(viewer_uid: int, profile: dict, *, edit_mode: bool = Fa
     return "\n".join(lines)
 
 
-def kb_admin_user(viewer_uid: int, profile: dict, *, show_photo: bool = False, edit_mode: bool = False) -> InlineKeyboardMarkup:
+def kb_admin_user(viewer_uid: int, profile: dict, *, show_photo: bool = False, edit_mode: bool = False, has_photos: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     if profile_has_photo(profile):
         label = "📝 Повернути текст" if show_photo else "👁 Показати фото"
@@ -5698,6 +5787,8 @@ def kb_admin_user(viewer_uid: int, profile: dict, *, show_photo: bool = False, e
     else:
         kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_EDIT"), callback_data="adm_user_edit"))
         kb.add(InlineKeyboardButton("💵 Фінанси", callback_data="adm_user_finance"))
+        if has_photos:
+            kb.add(InlineKeyboardButton("🖼 Фотоархів", callback_data="adm_user_photos"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
     return kb
 
@@ -7115,6 +7206,9 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo
     profile = registration_update(uid, **updates)
     now_completed = registration_profile_completed(profile)
 
+    if now_completed and not was_completed and not profile.get("registration_completed_at"):
+        profile["registration_completed_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
     if now_completed and not was_completed:
         await registration_notify_new_user(uid, profile, runtime)
 
@@ -13530,64 +13624,33 @@ async def adm_req_close(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data.startswith("adm_req_paid:"))
 async def adm_req_paid(c: types.CallbackQuery):
     uid = c.from_user.id
-    if uid not in admins: return await c.answer("⛔", show_alert=True)
-    req_id = c.data.split(":",1)[1]
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    req_id = c.data.split(":", 1)[1]
     obj = finance_load_request(req_id)
     if not obj or obj.get("status") != "pending":
         return await c.answer("Запрос не найден/обработан", show_alert=True)
 
-    now_iso = datetime.now().isoformat()
-    obj["status"] = "approved"
-    obj["approved_by"] = uid
-    obj["approved_at"] = now_iso
-    finance_update_items_status(obj, "approved", now_iso)
-    finance_append_history(obj, "approved", {"by": uid})
-    finance_save_request(obj)
-    update_receipts_for_request(obj.get("user_id"), obj.get("project"), obj.get("files", []), "approved", obj)
-    fin_state_set(obj.get("project", ""), obj.get("user_id"), req_id, "approved")
-
-    user_id = obj["user_id"]
+    user_id = obj.get("user_id")
     prof = load_user(user_id) or {}
-    code = obj.get("code", obj["id"])
+    code = obj.get("code", obj.get("id"))
     proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
     if c.message:
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
 
-    chat_id = registration_chat_id(user_id, prof)
-    recs = user_project_receipts(user_id, obj["project"])
-    by_file = {r["file"]: r for r in recs}
-    lines = []
-    for f in obj["files"]:
-        r = by_file.get(f)
-        if r:
-            amount = float(r.get("sum") or 0.0)
-            lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн")
-        else:
-            lines.append(f"• {h(f)}")
-    details = "\n".join(lines) if lines else "—"
-    code_disp = h(code)
-    project_disp = h(obj.get('project', '—'))
-    project_code_txt = h(proj_info.get("code") or "—")
-    user_text = (
-        "💵 <b>Выплата согласована</b>\n\n"
-        f"Код: <b>{code_disp}</b>\n"
-        f"Проект: {project_disp} (код {project_code_txt})\n"
-        f"💰 К выдаче: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>\n"
-        "Вам должны передать указанную сумму. Как только получите деньги, подтвердите это внизу.\n\n"
-        "Чеки в выплате:\n"
-        f"{details}"
-    )
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("✅ Деньги получены", callback_data=f"user_confirm_payout:{obj['id']}"))
-    kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
-    if chat_id:
-        try:
-            await bot.send_message(chat_id, user_text, reply_markup=kb)
-        except Exception:
-            pass
+    obj = await finance_admin_apply_approval(obj, uid)
+    await finance_admin_notify_approval(obj)
 
-    await clear_then_anchor(uid, f"💸 Выплата {code_disp} по объекту {project_disp} (код {project_code_txt}) одобрена. Ожидаем подтверждения пользователя.", kb_admin_root())
+    code_disp = h(code)
+    project_disp = h(obj.get("project", "—"))
+    project_code_txt = h(proj_info.get("code") or "—")
+    await clear_then_anchor(
+        uid,
+        f"💸 Выплата {code_disp} по объекту {project_disp} (код {project_code_txt}) одобрена. Очікуємо підтвердження користувача.",
+        kb_admin_root(),
+    )
     await c.answer("Выплата одобрена")
+
 
 
 # ========================== SOS ==========================
@@ -14123,8 +14186,9 @@ async def admin_show_user(
         edit_mode = bool(data.get("admin_user_edit_mode"))
     await state.update_data(admin_user_show_photo=show_photo, admin_user_edit_mode=edit_mode)
     profile = load_user(target_uid) or {"user_id": target_uid}
+    has_photos = admin_user_has_photos(target_uid)
     text = admin_user_card_text(uid, profile, edit_mode=edit_mode)
-    kb = kb_admin_user(uid, profile, show_photo=show_photo, edit_mode=edit_mode)
+    kb = kb_admin_user(uid, profile, show_photo=show_photo, edit_mode=edit_mode, has_photos=has_photos)
     if show_photo and profile_has_photo(profile):
         await anchor_replace_with_photo(uid, user_profile_photo_path(target_uid), text, kb)
     else:
@@ -14181,6 +14245,140 @@ async def adm_user_edit_done(c: types.CallbackQuery, state: FSMContext):
     await state.update_data(admin_user_edit_mode=False)
     await admin_show_user(uid, target, state, show_photo=False, edit_mode=False)
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_photos")
+async def adm_user_photos(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    projects = admin_user_photo_projects(target)
+    if not projects:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+        await clear_then_anchor(uid, "🖼 Фотоархів цього користувача порожній.", kb)
+        return await c.answer()
+    mapping = {project_token(item["name"]): item["name"] for item in projects}
+    await state.update_data(admin_user_photo_tokens=mapping)
+    lines = [
+        "🖼 <b>Фотоархів користувача</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Оберіть проєкт, щоб переглянути завантажені зображення.",
+        "",
+    ]
+    kb = InlineKeyboardMarkup()
+    for payload in projects:
+        info = payload.get("info") or {}
+        display = info.get("name") or payload["name"]
+        code = info.get("code") or payload["name"]
+        count = len(payload.get("entries") or [])
+        lines.append(f"• {h(display)} (код {h(code)}) — {count} файлів")
+        kb.add(
+            InlineKeyboardButton(
+                f"{display} ({count})",
+                callback_data=f"adm_user_photos_project:{project_token(payload['name'])}"
+            )
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_photos_project:"))
+async def adm_user_photos_project(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_user_photo_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    mapping[project_token(project)] = project
+    await state.update_data(admin_user_photo_tokens=mapping)
+    entries = [entry for entry in load_project_photos(project) if entry.get("uploader_id") == target]
+    if not entries:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_photos"))
+        await clear_then_anchor(uid, "🖼 У цього користувача немає фото за вибраним проєктом.", kb)
+        return await c.answer()
+    entries_sorted = sorted(entries, key=lambda e: e.get("uploaded_at") or "", reverse=True)
+    info = load_project_info(project)
+    display = info.get("name") or project
+    code = info.get("code") or project
+    lines = [
+        "🖼 <b>Фото користувача</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📂 Проєкт: <b>{h(display)}</b> (код {h(code)})",
+        f"Файлів у архіві: <b>{len(entries_sorted)}</b>",
+        "",
+    ]
+    for entry in entries_sorted[:15]:
+        original = entry.get("original") or entry.get("file") or "—"
+        uploaded = entry.get("uploaded_at") or "—"
+        lines.append(f"• {h(original)} — {h(uploaded.replace('T', ' '))}")
+    kb = InlineKeyboardMarkup()
+    for entry in entries_sorted[:10]:
+        original = entry.get("original") or entry.get("file") or entry.get("id")
+        label = original if len(original) <= 32 else f"{original[:29]}…"
+        kb.add(
+            InlineKeyboardButton(
+                f"📥 {label}",
+                callback_data=f"adm_user_photo_send:{project_token(project)}:{entry.get('id')}"
+            )
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_photos"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_photo_send:"))
+async def adm_user_photo_send(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    parts = c.data.split(":", 2)
+    if len(parts) != 3:
+        return await c.answer()
+    token, photo_id = parts[1], parts[2]
+    data = await state.get_data()
+    mapping = dict(data.get("admin_user_photo_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    entries = load_project_photos(project)
+    target = data.get("target_uid")
+    entry = None
+    for candidate in entries:
+        if candidate.get("id") == photo_id and candidate.get("uploader_id") == target:
+            entry = candidate
+            break
+    if not entry:
+        return await c.answer("Фото не знайдено", show_alert=True)
+    stored = entry.get("file")
+    if not stored:
+        return await c.answer("Файл відсутній", show_alert=True)
+    path = os.path.join(proj_photos_dir(project), stored)
+    if not os.path.exists(path):
+        return await c.answer("Файл недоступний", show_alert=True)
+    original = entry.get("original") or stored
+    caption = f"📁 {h(original)}"
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+    ext = os.path.splitext(path)[1]
+    try:
+        if _should_send_as_photo(ext):
+            await bot.send_photo(c.message.chat.id, InputFile(path), caption=caption, reply_markup=kb)
+        else:
+            await bot.send_document(c.message.chat.id, InputFile(path), caption=caption, reply_markup=kb)
+    except Exception:
+        return await c.answer("Не вдалося відправити файл", show_alert=True)
+    await c.answer("Відправлено")
 
 
 @dp.callback_query_handler(
@@ -14639,44 +14837,174 @@ async def adm_user_finance_view(c: types.CallbackQuery, state: FSMContext):
         return await c.answer("Користувач не знайдений", show_alert=True)
     profile = load_user(target) or {"user_id": target}
     stats = admin_collect_user_stats(profile)
-    pending = stats["pending_payouts"]
-    closed = stats["confirmed_payouts"]
+    pending_requests = stats["pending_payouts"]
+    history_requests = stats["confirmed_payouts"]
     fullname = h(profile.get("fullname", "—"))
     bsu = h(profile.get("bsu", "—"))
+    debt_sum = stats.get("unpaid_sum", 0.0)
+    pending_sum = stats.get("pending_sum", 0.0)
+    unspecified_sum = stats.get("unspecified_sum", 0.0)
+    total_sum = stats.get("total_sum", 0.0)
+    total_count = stats.get("total_count", 0)
+    paid_sum = stats.get("paid_sum", 0.0)
     lines = [
-        "💵 <b>Фінансовий огляд користувача</b>",
+        "💵 <b>Фінанси користувача</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"👤 {fullname} (BSU {bsu})",
-        f"📂 Активних проєктів з чеками: <b>{len(stats['projects'])}</b>",
-        f"🧾 Чеків у системі: <b>{stats['total_count']}</b>",
-        f"💰 Загальна сума: <b>{fmt_money(stats['total_sum'])} грн</b>",
-        f"✅ Оплачено: <b>{fmt_money(stats['paid_sum'])} грн</b>",
-        f"⏳ Очікує: <b>{fmt_money(stats['unpaid_sum'])} грн</b>",
-        f"🏅 Баланс балів: <b>{fmt_points(points_total(target))}</b>",
+        f"🧾 Усього чеків: <b>{total_count}</b>",
+        f"💰 Сума чеків: <b>{fmt_money(total_sum)} грн</b>",
+        f"✅ Виплачено: <b>{fmt_money(paid_sum)} грн</b>",
+        f"💳 Борг до виплати: <b>{fmt_money(debt_sum)} грн</b>",
     ]
-    if pending:
+    if pending_sum > 0:
+        lines.append(f"⏳ Виплати в роботі: <b>{fmt_money(pending_sum)} грн</b>")
+    if unspecified_sum > 0:
+        lines.append(f"❔ Без статусу: <b>{fmt_money(unspecified_sum)} грн</b>")
+    lines.append(f"🏅 Баланс балів: <b>{fmt_points(points_total(target))}</b>")
+
+    focus_projects: List[str] = []
+    for payload in stats["projects"]:
+        proj_stats = payload.get("stats", {})
+        debt = proj_stats.get("unpaid", 0.0)
+        pending = proj_stats.get("pending", 0.0)
+        if debt <= 0 and pending <= 0:
+            continue
+        info = payload.get("info") or {}
+        display_name = info.get("name") or payload.get("name") or "—"
+        code = info.get("code") or payload.get("name") or "—"
+        pieces: List[str] = []
+        if debt > 0:
+            pieces.append(f"борг {fmt_money(debt)} грн")
+        if pending > 0:
+            pieces.append(f"в роботі {fmt_money(pending)} грн")
+        focus_projects.append(f"• {h(display_name)} (код {h(code)}): {', '.join(pieces)}")
+    if focus_projects:
         lines.append("")
-        lines.append(f"📬 Запитів у роботі: <b>{len(pending)}</b>")
-        for req in pending[:10]:
+        lines.append("📂 Об'єкти з боргами:")
+        lines.extend(focus_projects[:6])
+
+    if pending_requests:
+        lines.append("")
+        lines.append(f"📬 Запитів у роботі: <b>{len(pending_requests)}</b>")
+        for req in pending_requests[:6]:
             code = req.get("code") or req.get("id")
             amount = fmt_money(float(req.get("sum") or 0.0))
-            status = req.get("status", "—")
-            lines.append(f"• {h(code)} — {amount} грн — {h(status)}")
-    if closed:
+            project = h(req.get("project", "—"))
+            lines.append(f"• {h(code)} — {amount} грн — {project}")
+    if history_requests:
         lines.append("")
-        lines.append(f"📗 Підтверджено/закрито: <b>{len(closed)}</b>")
-        for req in closed[-5:]:
+        lines.append(f"📗 Підтверджено/закрито: <b>{len(history_requests)}</b>")
+        for req in history_requests[-5:]:
             code = req.get("code") or req.get("id")
             amount = fmt_money(float(req.get("sum") or 0.0))
-            status = req.get("status", "—")
-            lines.append(f"• {h(code)} — {amount} грн — {h(status)}")
+            project = h(req.get("project", "—"))
+            lines.append(f"• {h(code)} — {amount} грн — {project}")
+
+    project_token_map = {}
+    for payload in stats["projects"]:
+        raw_name = payload.get("name")
+        if not raw_name:
+            continue
+        project_token_map[project_token(raw_name)] = raw_name
+    await state.update_data(admin_finance_project_tokens=project_token_map)
+
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("📊 Статистика", callback_data="adm_stat_choose"))
-    kb.add(InlineKeyboardButton("🧾 Чеки", callback_data="adm_recs_choose"))
+    kb.add(InlineKeyboardButton("📂 Об'єкти та статистика", callback_data="adm_user_finance_projects"))
+    kb.add(InlineKeyboardButton("🧾 Переглянути чеки", callback_data="adm_user_finance_receipts"))
     kb.add(InlineKeyboardButton("💸 Запити на виплати", callback_data="adm_user_finance_requests"))
+    kb.add(InlineKeyboardButton("💵 Зробити виплату", callback_data="adm_user_finance_pay"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
     await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
+
+
+async def admin_finance_show_pay_options(uid: int, target: int, project: str, state: FSMContext) -> bool:
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance_pay"))
+        await clear_then_anchor(uid, "ℹ️ Немає чеків, готових до виплати за цим проєктом.", kb)
+        return False
+    total = admin_finance_receipts_total(eligible)
+    info = load_project_info(project)
+    display_name = info.get("name") or project
+    code = info.get("code") or project
+    lines = [
+        "💵 <b>Формування виплати</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📂 Проєкт: <b>{h(display_name)}</b> (код {h(code)})",
+        f"🧾 Чеків до виплати: <b>{len(eligible)}</b>",
+        f"💰 Сума боргу: <b>{fmt_money(total)} грн</b>",
+        "",
+        "Виплатіть усю суму або введіть власне значення, якщо потрібно часткове закриття.",
+    ]
+    token = project_token(project)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(f"💰 Виплатити {fmt_money(total)} грн", callback_data=f"adm_user_finance_pay_all:{token}"))
+    kb.add(InlineKeyboardButton("🔢 Вказати суму", callback_data=f"adm_user_finance_pay_custom:{token}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance_pay"))
+    await state.update_data(admin_finance_pay_project=project, admin_finance_pay_total=total)
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    return True
+
+
+async def finance_admin_apply_approval(obj: dict, admin_uid: int, *, note: Optional[str] = None) -> dict:
+    now_iso = datetime.now().isoformat()
+    obj["status"] = "approved"
+    obj["approved_by"] = admin_uid
+    obj["approved_at"] = now_iso
+    finance_update_items_status(obj, "approved", now_iso)
+    history_extra = {"by": admin_uid}
+    if note:
+        history_extra["note"] = note
+    finance_append_history(obj, "approved", history_extra)
+    finance_save_request(obj)
+    update_receipts_for_request(obj.get("user_id"), obj.get("project"), obj.get("files", []), "approved", obj)
+    fin_state_set(obj.get("project", ""), obj.get("user_id"), obj.get("id"), "approved")
+    return obj
+
+
+async def finance_admin_notify_approval(obj: dict) -> None:
+    user_id = obj.get("user_id")
+    if not user_id:
+        return
+    profile = load_user(user_id) or {}
+    chat_id = registration_chat_id(user_id, profile)
+    if not chat_id:
+        return
+    code = obj.get("code", obj.get("id"))
+    project_name = obj.get("project") or "—"
+    proj_info = load_project_info(project_name) if obj.get("project") else {}
+    recs = user_project_receipts(user_id, obj.get("project"))
+    by_file = {r.get("file"): r for r in recs}
+    lines: List[str] = []
+    for fname in obj.get("files", []):
+        receipt = by_file.get(fname)
+        if receipt:
+            amount = float(receipt.get("sum") or 0.0)
+            lines.append(f"• {h(receipt.get('receipt_no','—'))} — {fmt_money(amount)} грн")
+        else:
+            lines.append(f"• {h(fname)}")
+    details = "\n".join(lines) if lines else "—"
+    project_disp = h(project_name)
+    project_code_txt = h((proj_info or {}).get("code") or "—")
+    code_disp = h(code)
+    amount_text = fmt_money(float(obj.get("sum") or 0.0))
+    user_text = (
+        "💵 <b>Виплата погоджена</b>\n\n"
+        f"Код: <b>{code_disp}</b>\n"
+        f"Проєкт: {project_disp} (код {project_code_txt})\n"
+        f"💰 До видачі: <b>{amount_text} грн</b>\n"
+        "Як тільки отримаєте кошти — підтвердьте це кнопкою нижче.\n\n"
+        "Чеки у виплаті:\n"
+        f"{details}"
+    )
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("✅ Кошти отримано", callback_data=f"user_confirm_payout:{obj['id']}"))
+    kb.add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+    try:
+        await bot.send_message(chat_id, user_text, reply_markup=kb)
+    except Exception:
+        pass
 
 
 @dp.callback_query_handler(lambda c: c.data == "adm_user_finance_requests")
@@ -14716,16 +15044,274 @@ async def adm_user_finance_requests(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
 
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance_pay")
+async def adm_user_finance_pay(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    stats = admin_collect_user_stats(profile)
+    outstanding: List[dict] = []
+    for payload in stats.get("projects") or []:
+        name = payload.get("name")
+        if not name:
+            continue
+        eligible = admin_finance_eligible_receipts(target, name)
+        if not eligible:
+            continue
+        total = admin_finance_receipts_total(eligible)
+        info = payload.get("info") or {}
+        outstanding.append({
+            "name": name,
+            "info": info,
+            "total": total,
+            "count": len(eligible),
+        })
+    if not outstanding:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+        await clear_then_anchor(
+            uid,
+            "✅ У співробітника немає боргів: усі чеки вже оплачені або очікують підтвердження.",
+            kb,
+        )
+        return await c.answer()
+
+    token_map = {project_token(item["name"]): item["name"] for item in outstanding}
+    await state.update_data(admin_finance_pay_tokens=token_map, admin_finance_pay_project=None)
+
+    if len(outstanding) == 1:
+        await admin_finance_show_pay_options(uid, target, outstanding[0]["name"], state)
+        return await c.answer()
+
+    lines = [
+        "💵 <b>Виберіть проєкт для виплати</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Оберіть об'єкт нижче, щоб сформувати виплату на конкретні чеки.",
+        "",
+    ]
+    kb = InlineKeyboardMarkup()
+    for item in outstanding:
+        info = item.get("info") or {}
+        display = info.get("name") or item["name"]
+        code = info.get("code") or item["name"]
+        total_text = fmt_money(item["total"])
+        count_text = item["count"]
+        lines.append(f"• {h(display)} (код {h(code)}) — {total_text} грн, чеків {count_text}")
+        kb.add(
+            InlineKeyboardButton(
+                f"{display} — {total_text} грн",
+                callback_data=f"adm_user_finance_pay_project:{project_token(item['name'])}"
+            )
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_finance_pay_project:"))
+async def adm_user_finance_pay_project(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_finance_pay_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    mapping[project_token(project)] = project
+    await state.update_data(admin_finance_pay_tokens=mapping)
+    await admin_finance_show_pay_options(uid, target, project, state)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_finance_pay_all:"))
+async def adm_user_finance_pay_all(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_finance_pay_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        return await c.answer("Немає чеків для виплати", show_alert=True)
+    request_obj = finance_new_request(target, project, eligible)
+    request_obj = await finance_admin_apply_approval(request_obj, uid, note="admin_full")
+    await finance_admin_notify_approval(request_obj)
+    info = load_project_info(project)
+    display = info.get("name") or project
+    code = info.get("code") or project
+    total = admin_finance_receipts_total(eligible)
+    await clear_then_anchor(
+        uid,
+        f"💵 Виплата на {fmt_money(total)} грн по об'єкту {h(display)} (код {h(code)}) сформована. Очікуємо підтвердження користувача.",
+        kb_admin_root(),
+    )
+    await state.update_data(admin_finance_pay_project=None)
+    await c.answer("Виплату сформовано")
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_finance_pay_custom:"))
+async def adm_user_finance_pay_custom(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_finance_pay_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        return await c.answer("Немає чеків для виплати", show_alert=True)
+    total = admin_finance_receipts_total(eligible)
+    await AdminFinancePayFSM.waiting_amount.set()
+    await state.update_data(admin_finance_pay_tokens=mapping, admin_finance_pay_project=project, admin_finance_pay_total=total)
+    await flow_prepare_prompt(uid)
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        f"Введіть суму для виплати (доступно {fmt_money(total)} грн). Використовуйте крапку для копійок.",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data="adm_user_finance_pay_cancel")),
+    )
+    flow_store_prompt(uid, prompt)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance_pay_cancel", state=AdminFinancePayFSM.waiting_amount)
+async def adm_user_finance_pay_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    project = data.get("admin_finance_pay_project")
+    target = data.get("target_uid")
+    await flow_clear(uid)
+    await state.reset_state(with_data=False)
+    if project and target:
+        await admin_finance_show_pay_options(uid, target, project, state)
+    else:
+        await c.answer("Скасовано")
+        return
+    await c.answer("Скасовано")
+
+
+@dp.message_handler(state=AdminFinancePayFSM.waiting_amount, content_types=ContentType.TEXT)
+async def adm_user_finance_pay_amount(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    project = data.get("admin_finance_pay_project")
+    if not target or not project:
+        await state.reset_state(with_data=False)
+        return
+    text_value = (m.text or "").strip().replace(",", ".")
+    try:
+        amount = float(text_value)
+    except ValueError:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, "⚠️ Введіть числове значення суми у форматі 123.45", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close")))
+        flow_track(uid, warn)
+        return
+    amount = round(max(amount, 0.0), 2)
+    if amount <= 0:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, "⚠️ Сума має бути більшою за нуль.", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close")))
+        flow_track(uid, warn)
+        return
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        await flow_delete_message(uid, m)
+        await state.reset_state(with_data=False)
+        await bot.send_message(m.chat.id, "⚠️ Немає чеків для виплати за вказаним проєктом.")
+        return
+    selection = admin_finance_pick_receipts_for_amount(eligible, amount)
+    if not selection:
+        await flow_delete_message(uid, m)
+        total = admin_finance_receipts_total(eligible)
+        warn = await bot.send_message(
+            m.chat.id,
+            f"⚠️ Не вдалося підібрати чеки на суму {fmt_money(amount)} грн. Спробуйте іншу суму або виплатіть усі {fmt_money(total)} грн.",
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close")),
+        )
+        flow_track(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    request_obj = finance_new_request(target, project, selection)
+    request_obj = await finance_admin_apply_approval(request_obj, uid, note="admin_partial")
+    await finance_admin_notify_approval(request_obj)
+    info = load_project_info(project)
+    display = info.get("name") or project
+    code = info.get("code") or project
+    selected_total = admin_finance_receipts_total(selection)
+    await flow_clear(uid)
+    await state.reset_state(with_data=False)
+    await clear_then_anchor(
+        uid,
+        f"💵 Виплата на {fmt_money(selected_total)} грн по об'єкту {h(display)} (код {h(code)}) сформована та відправлена користувачу на підтвердження.",
+        kb_admin_root(),
+    )
+
+
+@dp.message_handler(state=AdminFinancePayFSM.waiting_amount, content_types=ContentType.ANY)
+async def adm_user_finance_pay_amount_other(m: types.Message, state: FSMContext):
+    await flow_delete_message(m.from_user.id, m)
 # ======= Admin: per-project stats / receipts (reuse from previous version) =======
-@dp.callback_query_handler(lambda c: c.data == "adm_stat_choose")
+@dp.callback_query_handler(lambda c: c.data in {"adm_stat_choose", "adm_user_finance_projects"})
 async def adm_stat_choose(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
-    target = (await state.get_data()).get("target_uid")
-    projs = sorted(list((load_user(target) or {}).get("receipts", {}).keys()))
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    stats = admin_collect_user_stats(profile)
+    projects = stats.get("projects") or []
+    if not projects:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+        await clear_then_anchor(uid, "📂 Активних проєктів з чеками немає.", kb)
+        return await c.answer()
+
+    lines = [
+        "📊 <b>Проєкти та показники</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Оберіть об'єкт, щоб переглянути деталізацію чеків та сум.",
+        "",
+    ]
     kb = InlineKeyboardMarkup()
-    for p in projs: kb.add(InlineKeyboardButton(p, callback_data=f"adm_stat_{p}"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
-    await clear_then_anchor(uid, "Выберите проект:", kb)
+    for payload in projects:
+        raw_name = payload.get("name") or "—"
+        info = payload.get("info") or {}
+        display_name = info.get("name") or raw_name
+        code = info.get("code") or raw_name
+        st = payload.get("stats") or {}
+        total = fmt_money(float(st.get("total", 0.0)))
+        debt = fmt_money(float(st.get("unpaid", 0.0)))
+        pending = fmt_money(float(st.get("pending", 0.0)))
+        count = st.get("count", 0)
+        lines.append(
+            f"• {h(display_name)} (код {h(code)}) — чеків {count}, сума {total} грн, борг {debt} грн, в роботі {pending} грн"
+        )
+        kb.add(InlineKeyboardButton(display_name, callback_data=f"adm_stat_{raw_name}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
 
 
@@ -14748,15 +15334,16 @@ async def adm_stat_show(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data == "adm_recs_choose")
+@dp.callback_query_handler(lambda c: c.data in {"adm_recs_choose", "adm_user_finance_receipts"})
 async def adm_recs_choose(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     target = (await state.get_data()).get("target_uid")
     projs = sorted(list((load_user(target) or {}).get("receipts", {}).keys()))
     kb = InlineKeyboardMarkup()
-    for p in projs: kb.add(InlineKeyboardButton(p, callback_data=f"adm_recs_{p}"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_"+str(target)))
-    await clear_then_anchor(uid, "Выберите проект:", kb)
+    for p in projs:
+        kb.add(InlineKeyboardButton(p, callback_data=f"adm_recs_{p}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+    await clear_then_anchor(uid, "Оберіть проєкт для перегляду чеків:", kb)
     await c.answer()
 
 
