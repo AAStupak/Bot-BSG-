@@ -5215,45 +5215,76 @@ async def send_receipt_card(chat_id: int, project: str, owner_uid: int, receipt:
     return await bot.send_message(chat_id, body, reply_markup=kb)
 
 
+def _finance_requests_amount(entries: List[dict]) -> float:
+    total = Decimal("0")
+    for item in entries:
+        try:
+            total += Decimal(str(item.get("sum") or 0))
+        except Exception:
+            continue
+    return float(total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def project_status_text(uid: int) -> str:
     points_line = tr(uid, "ANCHOR_POINTS_LINE", points=fmt_points(points_total(uid)))
     if not active_project["name"]:
-        return tr(uid, "ANCHOR_NO_PROJECT", bot=h(BOT_NAME), points_line=points_line)
-    info = load_project_info(active_project["name"])
-    photo_total = project_photo_count(active_project["name"])
-    assignments = np_list_assignments(uid)
-    total_assigned = len(assignments)
-    pending_assigned = sum(1 for item in assignments if not item.get("delivered_at"))
-    delivered_count = max(0, total_assigned - pending_assigned)
-    bsg_section = tr(
-        uid,
-        "ANCHOR_PROJECT_BSG_SUMMARY",
-        total=total_assigned,
-        pending=pending_assigned,
-        delivered=delivered_count,
-    )
-    alerts_section = alerts_anchor_section(uid)
-    name = h(info.get("name", "—")) or "—"
-    region = h(info.get("region") or "—")
-    location = h(info.get("location", "—")) or "—"
-    start = h(info.get("start_date", "—")) or "—"
-    end = h(info.get("end_date", "—")) or "—"
-    code = h(info.get("code") or "—")
-    return tr(
-        uid,
-        "ANCHOR_PROJECT",
-        bot=h(BOT_NAME),
-        points_line=points_line,
-        name=name,
-        code=code,
-        region=region,
-        location=location,
-        photos=photo_total,
-        start=start,
-        end=end,
-        bsg_section=bsg_section,
-        alerts_section=alerts_section,
-    )
+        base = tr(uid, "ANCHOR_NO_PROJECT", bot=h(BOT_NAME), points_line=points_line)
+        lines = [base]
+    else:
+        info = load_project_info(active_project["name"])
+        photo_total = project_photo_count(active_project["name"])
+        assignments = np_list_assignments(uid)
+        total_assigned = len(assignments)
+        pending_assigned = sum(1 for item in assignments if not item.get("delivered_at"))
+        delivered_count = max(0, total_assigned - pending_assigned)
+        bsg_section = tr(
+            uid,
+            "ANCHOR_PROJECT_BSG_SUMMARY",
+            total=total_assigned,
+            pending=pending_assigned,
+            delivered=delivered_count,
+        )
+        alerts_section = alerts_anchor_section(uid)
+        name = h(info.get("name", "—")) or "—"
+        region = h(info.get("region") or "—")
+        location = h(info.get("location", "—")) or "—"
+        start = h(info.get("start_date", "—")) or "—"
+        end = h(info.get("end_date", "—")) or "—"
+        code = h(info.get("code") or "—")
+        base = tr(
+            uid,
+            "ANCHOR_PROJECT",
+            bot=h(BOT_NAME),
+            points_line=points_line,
+            name=name,
+            code=code,
+            region=region,
+            location=location,
+            photos=photo_total,
+            start=start,
+            end=end,
+            bsg_section=bsg_section,
+            alerts_section=alerts_section,
+        )
+        lines = [base]
+
+    if uid in admins:
+        pending = finance_list("pending")
+        approved = finance_list("approved")
+        waiting_total = _finance_requests_amount(pending)
+        approved_total = _finance_requests_amount(approved)
+        if pending or approved:
+            lines.append("")
+            lines.append("💼 <b>Финансы (администратор)</b>")
+            if pending:
+                lines.append(
+                    f"📨 В ожидании: <b>{len(pending)}</b> — {fmt_money(waiting_total)} грн"
+                )
+            if approved:
+                lines.append(
+                    f"✅ Ожидают подтверждения: <b>{len(approved)}</b> — {fmt_money(approved_total)} грн"
+                )
+    return "\n".join(lines)
 
 
 
@@ -12834,17 +12865,19 @@ async def finance_menu(c: types.CallbackQuery):
         )
         return await c.answer("Нет доступных данных", show_alert=True)
     stats = user_project_stats(uid, project) if project else {"count": 0, "total": 0.0, "paid": 0.0, "unpaid": 0.0, "pending": 0.0, "unspecified": 0.0}
+    company_due = stats["unpaid"] + stats["pending"]
     lines = [
         "💵 <b>Финансовый раздел</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"📂 Проект: <b>{h(project) if project else '—'}</b>",
         f"🧾 Загружено чеков: <b>{stats['count']}</b>",
-        f"💰 Общая сумма: <b>{fmt_money(stats['total'])} грн</b>",
-        f"✅ Оплачено фирмой: <b>{fmt_money(stats['paid'])} грн</b>",
-        f"❌ Ожидает оплаты: <b>{fmt_money(stats['unpaid'])} грн</b>"
+        f"💰 Общая сумма чеков: <b>{fmt_money(stats['total'])} грн</b>",
+        f"✅ Выплачено компанией: <b>{fmt_money(stats['paid'])} грн</b>",
+        f"🏦 Долг компании: <b>{fmt_money(company_due)} грн</b>",
+        f"   • Чеки без запроса: {fmt_money(stats['unpaid'])} грн",
     ]
     if stats["pending"]:
-        lines.append(f"⏳ Уже в запросах: <b>{fmt_money(stats['pending'])} грн</b>")
+        lines.append(f"   • В активных запросах: {fmt_money(stats['pending'])} грн")
     if stats["unspecified"]:
         lines.append(f"❔ Без статуса оплаты: <b>{fmt_money(stats['unspecified'])} грн</b>")
     alerts: List[str] = []
