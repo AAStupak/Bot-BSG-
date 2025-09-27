@@ -197,7 +197,7 @@ def required_community_settings(force_reload: bool = False) -> Tuple[Optional[Un
 required_community_settings()
 REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
 REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
-REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Панченко Алексей")
+REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Алексей")
 REGISTRATION_GATE_CONTACT_ROLE = os.getenv("BSG_REQUIRED_CONTACT_ROLE", "директор компании BSG")
 _registration_notify_raw = (os.getenv("BSG_REG_NOTIFY_CHAT") or "").strip()
 if _registration_notify_raw:
@@ -210,6 +210,11 @@ if _registration_notify_raw:
         REGISTRATION_NOTIFY_CHAT = _registration_notify_raw
 else:
     REGISTRATION_NOTIFY_CHAT = None
+
+if REGISTRATION_NOTIFY_CHAT is None:
+    fallback_chat, _, _ = required_community_settings()
+    if fallback_chat:
+        REGISTRATION_NOTIFY_CHAT = fallback_chat
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
 
@@ -3064,12 +3069,12 @@ async def registration_notify_new_user(uid: int, profile: dict, runtime: dict) -
     bsu_code = profile.get("bsu") or "—"
     timestamp = alerts_now().strftime("%d.%m.%Y %H:%M")
     text = (
-        f"Нова реєстрація в {h(WORKSPACE_BRAND)}\n"
+        f"<b>Нова реєстрація в {h(WORKSPACE_BRAND)}</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"Користувач {h(full_name)} успішно зареєструвався у боті {h(WORKSPACE_BRAND)}.\n\n"
-        "Тепер мій доступ — активовано\n"
-        f"BSGID: {h(bsu_code)}\n\n"
-        f"Вітаю в робочому просторі {h(WORKSPACE_BRAND)} — усе в одному місці, без зайвих пошуків.\n"
+        f"Користувач <b>{h(full_name)}</b> успішно зареєструвався у боті <b>{h(WORKSPACE_BRAND)}</b>.\n\n"
+        "<b>Тепер мій доступ — активовано</b>\n"
+        f"BSGID: <b>{h(bsu_code)}</b>\n\n"
+        f"Вітаю в робочому просторі <b>{h(WORKSPACE_BRAND)}</b> — усе в одному місці, без зайвих пошуків.\n"
         "Це економить твій час і залишає більше простору для інших справ.\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"Telegram ID: {uid}\n"
