@@ -4045,6 +4045,7 @@ def finance_new_request(
     scope: Optional[List[str]] = None,
     amount_override: Optional[float] = None,
     mode: str = "receipts",
+    scope_snapshot: Optional[Dict[str, dict]] = None,
 ) -> dict:
     ensure_dirs()
     now_iso = datetime.now().isoformat()
@@ -4115,6 +4116,8 @@ def finance_new_request(
         "created_at": now_iso,
         "history": [{"status": "pending", "timestamp": now_iso}]
     }
+    if scope_snapshot:
+        payload["scope_snapshot"] = scope_snapshot
     data.setdefault("requests", {})[req_id] = payload
     if storage == "project" and storage_key:
         save_finance_data(storage_key, data)
@@ -4485,6 +4488,18 @@ def h(value: Any) -> str:
     if value is None:
         return ""
     return html_escape(str(value), quote=False)
+
+
+def format_username_link(username: Optional[str]) -> str:
+    """Render a Telegram username with a clickable link."""
+    if not username:
+        return "—"
+    plain = str(username).lstrip("@")
+    if not plain:
+        return "—"
+    safe_href = html_escape(plain, quote=True)
+    safe_text = h(f"@{plain}")
+    return f"<a href=\"https://t.me/{safe_href}\">{safe_text}</a>"
 
 
 def format_datetime_short(value: Optional[str]) -> str:
@@ -5506,7 +5521,7 @@ def profile_summary_text(
     tg = profile.get("tg") or {}
     tg_id = str(profile.get("user_id", "—"))
     tg_username = tg.get("username")
-    username_disp = h(f"@{tg_username}" if tg_username else missing)
+    username_disp = format_username_link(tg_username) if tg_username else h(missing)
     bsu = h(profile.get("bsu") or missing)
     photo_status = h(profile_photo_status_label(uid, profile))
     lines = [
@@ -5897,7 +5912,9 @@ def admin_finance_eligible_receipts(uid: int, project: str) -> List[dict]:
         payout = entry.get("payout") if isinstance(entry.get("payout"), dict) else {}
         if payout.get("status") in {"pending", "approved"}:
             continue
-        eligible.append(entry)
+        clone = dict(entry)
+        clone.setdefault("project", project)
+        eligible.append(clone)
     return eligible
 
 
@@ -13033,6 +13050,13 @@ async def finance_menu(c: types.CallbackQuery):
         )
         return await c.answer("Нет доступных данных", show_alert=True)
     stats = user_project_stats(uid, project) if project else {"count": 0, "total": 0.0, "paid": 0.0, "unpaid": 0.0, "pending": 0.0, "unspecified": 0.0}
+    aggregate_unpaid = 0.0
+    aggregate_pending = 0.0
+    for proj_name in projects:
+        proj_stats = user_project_stats(uid, proj_name)
+        aggregate_unpaid += proj_stats.get("unpaid", 0.0)
+        aggregate_pending += proj_stats.get("pending", 0.0)
+    aggregate_due = aggregate_unpaid + aggregate_pending
     company_due = stats["unpaid"] + stats["pending"]
     lines = [
         "💵 <b>Финансовый раздел</b>",
@@ -13041,7 +13065,7 @@ async def finance_menu(c: types.CallbackQuery):
         f"🧾 Загружено чеков: <b>{stats['count']}</b>",
         f"💰 Общая сумма чеков: <b>{fmt_money(stats['total'])} грн</b>",
         f"✅ Выплачено компанией: <b>{fmt_money(stats['paid'])} грн</b>",
-        f"🏦 Долг компании: <b>{fmt_money(company_due)} грн</b>",
+        f"🏦 Долг компании по объекту: <b>{fmt_money(company_due)} грн</b>",
         f"   • Чеки без запроса: {fmt_money(stats['unpaid'])} грн",
     ]
     if stats["pending"]:
@@ -13060,6 +13084,12 @@ async def finance_menu(c: types.CallbackQuery):
     if alerts:
         lines.append("")
         lines.extend(alerts)
+    lines.append("")
+    lines.append(f"🏛 Загальний борг за всіма об'єктами: <b>{fmt_money(aggregate_due)} грн</b>")
+    if aggregate_unpaid:
+        lines.append(f"   • Готово до запиту: {fmt_money(aggregate_unpaid)} грн")
+    if aggregate_pending:
+        lines.append(f"   • В запитах: {fmt_money(aggregate_pending)} грн")
     if len(projects) > 1:
         lines.append("")
         lines.append("📂 Дополнительные проекты:")
@@ -13266,8 +13296,53 @@ def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tupl
 def finance_group_receipts(receipts: List[dict]) -> Dict[str, List[dict]]:
     grouped: Dict[str, List[dict]] = {}
     for rec in receipts:
-        grouped.setdefault(rec.get("project"), []).append(rec)
+        project_name = rec.get("project")
+        grouped.setdefault(project_name, []).append(rec)
     return grouped
+
+
+def finance_receipts_total(receipts: List[dict]) -> float:
+    total = 0.0
+    for rec in receipts:
+        raw_amount = rec.get("sum")
+        if raw_amount is None:
+            raw_amount = rec.get("amount")
+        try:
+            total += float(raw_amount or 0.0)
+        except (TypeError, ValueError):
+            continue
+    return round(total, 2)
+
+
+def finance_scope_snapshot(uid: int, scope: List[str], grouped: Dict[str, List[dict]]) -> Dict[str, dict]:
+    snapshot: Dict[str, dict] = {}
+    scope_list = list(scope or grouped.keys())
+    total_before = 0.0
+    total_after = 0.0
+    total_selected = 0.0
+    for name in scope_list:
+        if not name:
+            continue
+        stats = user_project_stats(uid, name)
+        outstanding_before = round(float(stats.get("unpaid", 0.0)) + float(stats.get("pending", 0.0)), 2)
+        selected_total = finance_receipts_total(grouped.get(name, []))
+        remaining = round(max(outstanding_before - selected_total, 0.0), 2)
+        snapshot[name] = {
+            "outstanding_before": outstanding_before,
+            "selected_total": selected_total,
+            "outstanding_after": remaining,
+            "unpaid": round(float(stats.get("unpaid", 0.0)), 2),
+            "pending": round(float(stats.get("pending", 0.0)), 2),
+        }
+        total_before += outstanding_before
+        total_after += remaining
+        total_selected += selected_total
+    snapshot["__summary__"] = {
+        "outstanding_before": round(total_before, 2),
+        "selected_total": round(total_selected, 2),
+        "outstanding_after": round(total_after, 2),
+    }
+    return snapshot
 
 
 def finance_scope_lines(scope: List[str]) -> List[str]:
@@ -13309,14 +13384,27 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
         lines.append(f"Запитувана сума: {fmt_money(requested)} грн")
     lines.append(f"Чеків у запиті: <b>{len(selected)}</b>")
     grouped = finance_group_receipts(selected)
+    snapshot = finance_scope_snapshot(uid, scope, grouped)
+    summary_snapshot = snapshot.get("__summary__", {})
+    if summary_snapshot:
+        before = summary_snapshot.get("outstanding_before")
+        after = summary_snapshot.get("outstanding_after")
+        if before is not None:
+            lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(before))} грн</b>")
+        if after is not None:
+            lines.append(f"📉 Залишок після: <b>{fmt_money(float(after))} грн</b>")
     for proj, recs in grouped.items():
-        subtotal = 0.0
-        for r in recs:
-            try:
-                subtotal += float(r.get("sum") or 0.0)
-            except (TypeError, ValueError):
-                continue
-        lines.append(f"• {h(proj)} — {fmt_money(subtotal)} грн ({len(recs)} шт.)")
+        subtotal = finance_receipts_total(recs)
+        proj_line = f"• {h(proj)} — {fmt_money(subtotal)} грн ({len(recs)} шт.)"
+        info_snapshot = snapshot.get(proj) or {}
+        extras: List[str] = []
+        if info_snapshot.get("outstanding_before") is not None:
+            extras.append(f"до: {fmt_money(float(info_snapshot['outstanding_before']))} грн")
+        if info_snapshot.get("outstanding_after") is not None:
+            extras.append(f"після: {fmt_money(float(info_snapshot['outstanding_after']))} грн")
+        if extras:
+            proj_line += f" ({'; '.join(extras)})"
+        lines.append(proj_line)
     preview: List[str] = []
     for rec in selected[:8]:
         rid = h(rec.get("receipt_no", "—"))
@@ -13552,23 +13640,32 @@ async def finance_request_cancel(c: types.CallbackQuery, state: FSMContext):
     await finance_menu(c)
 
 
-def finance_admin_scope_summary(scope: List[str], grouped: Dict[str, List[dict]]) -> Tuple[str, str]:
+def finance_admin_scope_summary(
+    scope: List[str],
+    grouped: Dict[str, List[dict]],
+    snapshot: Optional[Dict[str, dict]] = None,
+) -> Tuple[str, str]:
     detail_lines: List[str] = []
     brief_parts: List[str] = []
+    snapshot = snapshot or {}
     for name in scope:
         info = load_project_info(name)
         code_txt = h((info or {}).get("code") or "—")
         recs = grouped.get(name, [])
-        subtotal = 0.0
-        for rec in recs:
-            try:
-                raw_amount = rec.get("sum")
-                if raw_amount is None:
-                    raw_amount = rec.get("amount")
-                subtotal += float(raw_amount or 0.0)
-            except (TypeError, ValueError):
-                continue
-        detail_lines.append(f"• {h(name)} (код {code_txt}) — {fmt_money(subtotal)} грн ({len(recs)} шт.)")
+        subtotal = finance_receipts_total(recs)
+        base_line = f"• {h(name)} (код {code_txt}) — {fmt_money(subtotal)} грн ({len(recs)} шт.)"
+        info_snapshot = snapshot.get(name) or {}
+        before = info_snapshot.get("outstanding_before")
+        after = info_snapshot.get("outstanding_after")
+        if before is not None or after is not None:
+            extras: List[str] = []
+            if before is not None:
+                extras.append(f"📊 Борг до запиту: {fmt_money(float(before))} грн")
+            if after is not None:
+                extras.append(f"📉 Залишок після: {fmt_money(float(after))} грн")
+            if extras:
+                base_line = "\n".join([base_line, "   " + "\n   ".join(extras)])
+        detail_lines.append(base_line)
         brief_parts.append(f"{h(name)} (код {code_txt})")
     return "\n".join(detail_lines), ", ".join(brief_parts)
 
@@ -13585,6 +13682,8 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     amount = draft.get("amount", 0.0)
     mode = draft.get("mode", "auto")
     project_hint = draft.get("project") if len(scope) <= 1 else None
+    grouped = finance_group_receipts(receipts)
+    scope_snapshot = finance_scope_snapshot(uid, scope, grouped)
     request = finance_new_request(
         uid,
         project_hint,
@@ -13592,40 +13691,68 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
         scope=scope,
         amount_override=amount,
         mode=mode,
+        scope_snapshot=scope_snapshot,
     )
     code = request.get("code", request.get("id"))
-    grouped = finance_group_receipts(receipts)
-    scope_lines, scope_brief = finance_admin_scope_summary(scope, grouped)
+    scope_lines, scope_brief = finance_admin_scope_summary(scope, grouped, scope_snapshot)
     prof = load_user(uid) or {}
     fullname = h(prof.get("fullname", "—"))
     bsu_code = h(prof.get("bsu", "—"))
     phone = h(prof.get("phone", "—"))
     username_raw = (prof.get("tg", {}) or {}).get("username")
-    username_display = h(f"@{username_raw}" if username_raw else "—")
+    username_display = format_username_link(username_raw)
     request_id = request.get("id")
-    user_summary = (
-        "📨 <b>Запит на виплату надіслано</b>\n"
-        f"Код: <b>{h(code)}</b>\n"
-        f"Об'єкти: {scope_brief or '—'}\n"
-        f"Чеків: {len(receipts)} шт.\n"
-        f"Сума: <b>{fmt_money(amount)} грн</b>\n\n"
-        "Очікуйте рішення адміністратора."
-    )
+    requested_sum = float(request.get("sum") or amount)
+    calc_sum = float(request.get("calc_sum") or amount)
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
+    user_lines = [
+        "📨 <b>Запит на виплату надіслано</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🔖 Код: <b>{h(code)}</b>",
+        f"📂 Об'єкти: {scope_brief or '—'}",
+        f"🧾 Чеків у запиті: <b>{len(receipts)}</b>",
+    ]
+    if abs(requested_sum - calc_sum) > 0.01:
+        user_lines.append(f"💰 Запитана сума: <b>{fmt_money(requested_sum)} грн</b>")
+        user_lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    else:
+        user_lines.append(f"💰 Сума до виплати: <b>{fmt_money(calc_sum)} грн</b>")
+    if outstanding_before is not None:
+        user_lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(outstanding_before))} грн</b>")
+    if outstanding_after is not None:
+        user_lines.append(f"📉 Залишок після виплати: <b>{fmt_money(float(outstanding_after))} грн</b>")
+    user_lines.append("")
+    user_lines.append("Очікуйте рішення адміністратора.")
+    user_summary = "\n".join(user_lines)
     await clear_then_anchor(uid, user_summary, finance_root_keyboard(uid))
     await c.answer("Запит надіслано адміністратору.")
 
-    admin_text = (
-        "📢 <b>Запит на виплату</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"Код: <b>{h(code)}</b>\n"
-        f"Файл: <code>{h(request_id)}</code>\n"
-        f"👤 {fullname} (ID {uid}, {bsu_code})\n"
-        f"📱 {phone}\n"
-        f"🆔 {username_display}\n"
-        f"📂 Об'єкти:\n{scope_lines or '—'}\n"
-        f"💰 До виплати: <b>{fmt_money(amount)} грн</b>\n"
-        f"Чеків: {len(receipts)} шт."
-    )
+    admin_lines = [
+        "📢 <b>Запит на виплату</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🔖 Код: <b>{h(code)}</b>",
+        f"🗂 Файл: <code>{h(request_id)}</code>",
+        f"👤 {fullname} (ID {uid}, {bsu_code})",
+        f"📱 {phone}",
+        f"🆔 {username_display}",
+        "",
+        "💵 <b>Фінансові показники</b>",
+        f"• Запитано: <b>{fmt_money(requested_sum)} грн</b>",
+    ]
+    if abs(requested_sum - calc_sum) > 0.01:
+        admin_lines.append(f"• Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    admin_lines.append(f"• Кількість чеків: {len(receipts)}")
+    if outstanding_before is not None:
+        admin_lines.append(f"• Борг до запиту: {fmt_money(float(outstanding_before))} грн")
+    if outstanding_after is not None:
+        admin_lines.append(f"• Залишок після виплати: {fmt_money(float(outstanding_after))} грн")
+    if scope_lines:
+        admin_lines.append("")
+        admin_lines.append("📂 Об'єкти у запиті:")
+        admin_lines.append(scope_lines)
+    admin_text = "\n".join(admin_lines)
     akb = InlineKeyboardMarkup()
     akb.add(InlineKeyboardButton("👀 Посмотреть чеки", callback_data=f"adm_req_view_checks:{request_id}"))
     akb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{request_id}"))
@@ -13664,6 +13791,7 @@ async def fin_history(c: types.CallbackQuery):
         return await c.answer()
     requests.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
+    status_icons = {"pending": "⏳", "approved": "✅", "confirmed": "💰", "closed": "🔒", "rejected": "❌"}
     lines = [
         "📚 <b>История выплат</b>",
         "━━━━━━━━━━━━━━━━━━",
@@ -13674,11 +13802,13 @@ async def fin_history(c: types.CallbackQuery):
     kb = InlineKeyboardMarkup()
     for req in requests[:20]:
         code = req.get("code", req["id"])
-        status_txt = status_map.get(req.get("status"), req.get("status", "—"))
+        status_key = req.get("status")
+        status_txt = status_map.get(status_key, req.get("status", "—"))
         amount = fmt_money(float(req.get("sum") or 0.0))
         scope_text = finance_scope_brief_text(finance_request_scope(req))
-        lines.append(f"• {h(code)} — {amount} грн — {h(status_txt)} — {scope_text}")
-        kb.add(InlineKeyboardButton(f"{code} • {status_txt}", callback_data=f"fin_hist_open:{req['id']}"))
+        icon = status_icons.get(status_key, "•")
+        lines.append(f"{icon} {h(code)} — {amount} грн — {h(status_txt)} — {scope_text}")
+        kb.add(InlineKeyboardButton(f"{icon} {code} • {status_txt}", callback_data=f"fin_hist_open:{req['id']}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_finance"))
     await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
@@ -13692,25 +13822,36 @@ async def fin_hist_open(c: types.CallbackQuery):
     if not obj or obj.get("user_id") != uid:
         return await c.answer("Запись не найдена", show_alert=True)
     code = obj.get("code", req_id)
-    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
-    project_code_txt = h(proj_info.get("code") or "—")
     scope = finance_request_scope(obj)
-    scope_lines = finance_scope_lines(scope)
+    grouped_items = finance_group_receipts(obj.get("items", []))
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    scope_lines_text, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot)
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
     status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
     status_disp = status_map.get(obj.get("status"), obj.get("status", "—"))
+    calc_sum = float(obj.get("calc_sum") or obj.get("sum") or 0.0)
     lines = [
         f"💵 <b>Выплата {h(code)}</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"Статус: <b>{h(status_disp)}</b>",
-        f"Сумма: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>"
+        f"Сума виплати: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>"
     ]
-    if len(scope_lines) == 1:
-        lines.append(scope_lines[0])
-    elif scope_lines:
-        lines.append("Об'єкти виплати:")
-        lines.extend(scope_lines)
-    else:
-        lines.append("Проект: —")
+    if abs(calc_sum - float(obj.get("sum") or 0.0)) > 0.01:
+        lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    if outstanding_before is not None:
+        lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(outstanding_before))} грн</b>")
+    if outstanding_after is not None:
+        lines.append(f"📉 Залишок після: <b>{fmt_money(float(outstanding_after))} грн</b>")
+    if scope_lines_text:
+        lines.append("")
+        lines.append("📂 Об'єкти у виплаті:")
+        lines.extend(scope_lines_text.splitlines())
+    elif scope:
+        lines.append("")
+        lines.append("📂 Об'єкти у виплаті:")
+        lines.append("• —")
     lines.append(f"Связанных чеков: {len(obj.get('files', []))}")
     lines.append("")
     def fmt_ts(value: Optional[str]) -> str:
@@ -13837,7 +13978,6 @@ async def user_confirm_payout(c: types.CallbackQuery):
     update_receipts_for_request(uid, obj.get("project"), obj.get("files", []), "confirmed", obj)
     finance_scope_clear_state(obj)
     code = obj.get("code", obj["id"])
-    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
     amount = float(obj.get('sum') or 0.0)
     if c.message:
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
@@ -13845,19 +13985,30 @@ async def user_confirm_payout(c: types.CallbackQuery):
     code_disp = h(code)
     scope = finance_request_scope(obj)
     scope_text = finance_scope_brief_text(scope)
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
     fullname = h(prof.get('fullname', '—'))
     bsu_code = h(prof.get('bsu', '—'))
     phone = h(prof.get('phone', '—'))
-    admin_note = (
-        "💸 <b>Выплата подтверждена</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"Код: <b>{code_disp}</b>\n"
-        f"Об'єкти: {scope_text}\n"
-        f"Сумма: <b>{fmt_money(amount)} грн</b>\n"
-        f"Получатель: {fullname} (ID {uid}, {bsu_code})\n"
-        f"Телефон: {phone}\n"
-        f"Подтверждено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    admin_lines = [
+        "💸 <b>Выплата подтверждена</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Код: <b>{code_disp}</b>",
+        f"Об'єкти: {scope_text}",
+        f"Сумма: <b>{fmt_money(amount)} грн</b>",
+    ]
+    if outstanding_before is not None:
+        admin_lines.append(f"Борг до: {fmt_money(float(outstanding_before))} грн")
+    if outstanding_after is not None:
+        admin_lines.append(f"Залишок після: {fmt_money(float(outstanding_after))} грн")
+    admin_lines.extend([
+        f"Получатель: {fullname} (ID {uid}, {bsu_code})",
+        f"Телефон: {phone}",
+        f"Подтверждено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+    ])
+    admin_note = "\n".join(admin_lines)
     admin_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
     for ad in list(admins):
         admin_profile = load_user(ad) or {}
@@ -14007,7 +14158,7 @@ async def adm_hist_open(c: types.CallbackQuery):
     bsu_code = h(prof.get('bsu', '—'))
     phone = h(prof.get('phone', '—'))
     username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_display = h(f"@{username_raw}" if username_raw else "—")
+    username_display = format_username_link(username_raw)
     project_block: List[str] = []
     if len(scope_lines) == 1:
         project_block.append(scope_lines[0])
@@ -14096,41 +14247,55 @@ async def adm_req_open(c: types.CallbackQuery):
     code = obj.get("code", obj["id"])
     scope = finance_request_scope(obj)
     grouped_items = finance_group_receipts(obj.get("items", []))
-    scope_detail, _ = finance_admin_scope_summary(scope, grouped_items)
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    scope_detail, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot)
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
     fullname = h(prof.get('fullname', '—'))
     bsu_code = h(prof.get('bsu', '—'))
     phone = h(prof.get('phone', '—'))
     username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_display = h(f"@{username_raw}" if username_raw else "—")
+    username_display = format_username_link(username_raw)
     code_disp = h(code)
     file_disp = h(obj['id'])
     project_block: List[str] = []
-    if len(scope) == 1:
+    if scope_detail:
+        project_block.append("📂 Об'єкти у виплаті:")
+        project_block.extend(scope_detail.splitlines())
+    elif len(scope) == 1:
         project_name = scope[0]
         proj_info = load_project_info(project_name) or {}
-        project_block.append(f"📂 Проект: {h(project_name)}")
-        project_block.append(f"🆔 Код объекта: {h(proj_info.get('code') or '—')}")
-        project_block.append(f"🌍 Область: {h(proj_info.get('region') or '—')}")
-        project_block.append(f"📍 Локация: {h(proj_info.get('location', '—'))}")
+        project_block.append("📂 Об'єкти у виплаті:")
+        project_block.append(f"• {h(project_name)} (код {h(proj_info.get('code') or '—')})")
     else:
         project_block.append("📂 Об'єкти у виплаті:")
-        if scope_detail:
-            project_block.extend(scope_detail.splitlines())
-        else:
-            project_block.append("• —")
-    text = (
-        "📢 <b>Запрос на выплату</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"Код выплаты: <b>{code_disp}</b>\n"
-        f"Файл: <code>{file_disp}</code>\n"
-        f"👤 {fullname} (ID {obj['user_id']}, {bsu_code})\n"
-        f"📱 {phone}\n"
-        f"🆔 {username_display}\n"
-        f"{chr(10).join(project_block)}\n"
-        f"❌ Неоплаченных чеков: {len(obj['files'])} шт.\n"
-        f"💰 К выплате: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>\n\n"
-        "Просмотрите прикреплённые чеки перед одобрением выплаты."
-    )
+        project_block.append("• —")
+    requested_sum = float(obj.get("sum") or 0.0)
+    calc_sum = float(obj.get("calc_sum") or requested_sum)
+    text_lines = [
+        "📢 <b>Запрос на выплату</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Код выплаты: <b>{code_disp}</b>",
+        f"Файл: <code>{file_disp}</code>",
+        f"👤 {fullname} (ID {obj['user_id']}, {bsu_code})",
+        f"📱 {phone}",
+        f"🆔 {username_display}",
+        "",
+        *project_block,
+        "",
+        f"❌ Неоплаченных чеков: {len(obj['files'])} шт.",
+        f"💰 Запитана сума: <b>{fmt_money(requested_sum)} грн</b>",
+    ]
+    if abs(requested_sum - calc_sum) > 0.01:
+        text_lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    if outstanding_before is not None:
+        text_lines.append(f"🏦 Борг до запиту: {fmt_money(float(outstanding_before))} грн")
+    if outstanding_after is not None:
+        text_lines.append(f"📉 Залишок після: {fmt_money(float(outstanding_after))} грн")
+    text_lines.append("")
+    text_lines.append("Просмотрите прикреплённые чеки перед одобрением выплаты.")
+    text = "\n".join(text_lines)
     akb = InlineKeyboardMarkup()
     akb.add(InlineKeyboardButton("👀 Посмотреть чеки", callback_data=f"adm_req_view_checks:{req_id}"))
     akb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{req_id}"))
@@ -15650,6 +15815,10 @@ async def finance_admin_notify_approval(obj: dict) -> None:
     scope_text = finance_scope_brief_text(scope)
     code_disp = h(code)
     amount_text = fmt_money(float(obj.get("sum") or 0.0))
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
     grouped_files: Dict[str, List[str]] = {}
     for item in obj.get("items", []):
         if not isinstance(item, dict):
@@ -15675,15 +15844,25 @@ async def finance_admin_notify_approval(obj: dict) -> None:
             else:
                 lines.append(f"• {h(fname)}")
     details = "\n".join(lines) if lines else "—"
-    user_text = (
-        "💵 <b>Виплата погоджена</b>\n\n"
-        f"Код: <b>{code_disp}</b>\n"
-        f"Об'єкти: {scope_text}\n"
-        f"💰 До видачі: <b>{amount_text} грн</b>\n"
-        "Як тільки отримаєте кошти — підтвердьте це кнопкою нижче.\n\n"
-        "Чеки у виплаті:\n"
-        f"{details}"
-    )
+    user_lines = [
+        "💵 <b>Виплата погоджена</b>",
+        "",
+        f"Код: <b>{code_disp}</b>",
+        f"Об'єкти: {scope_text}",
+        f"💰 До видачі: <b>{amount_text} грн</b>",
+    ]
+    if outstanding_before is not None:
+        user_lines.append(f"🏦 Борг до виплати: <b>{fmt_money(float(outstanding_before))} грн</b>")
+    if outstanding_after is not None:
+        user_lines.append(f"📉 Залишок після: <b>{fmt_money(float(outstanding_after))} грн</b>")
+    user_lines.extend([
+        "",
+        "Як тільки отримаєте кошти — підтвердьте це кнопкою нижче.",
+        "",
+        "Чеки у виплаті:",
+        details,
+    ])
+    user_text = "\n".join(user_lines)
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("✅ Кошти отримано", callback_data=f"user_confirm_payout:{obj['id']}"))
     kb.add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
@@ -15836,7 +16015,15 @@ async def adm_user_finance_pay_all(c: types.CallbackQuery, state: FSMContext):
     eligible = admin_finance_eligible_receipts(target, project)
     if not eligible:
         return await c.answer("Немає чеків для виплати", show_alert=True)
-    request_obj = finance_new_request(target, project, eligible)
+    grouped = finance_group_receipts(eligible)
+    snapshot = finance_scope_snapshot(target, [project], grouped)
+    request_obj = finance_new_request(
+        target,
+        project,
+        eligible,
+        scope=[project],
+        scope_snapshot=snapshot,
+    )
     request_obj = await finance_admin_apply_approval(request_obj, uid, note="admin_full")
     await finance_admin_notify_approval(request_obj)
     info = load_project_info(project)
@@ -15941,7 +16128,15 @@ async def adm_user_finance_pay_amount(m: types.Message, state: FSMContext):
         flow_track(uid, warn)
         return
     await flow_delete_message(uid, m)
-    request_obj = finance_new_request(target, project, selection)
+    grouped = finance_group_receipts(selection)
+    snapshot = finance_scope_snapshot(target, [project], grouped)
+    request_obj = finance_new_request(
+        target,
+        project,
+        selection,
+        scope=[project],
+        scope_snapshot=snapshot,
+    )
     request_obj = await finance_admin_apply_approval(request_obj, uid, note="admin_partial")
     await finance_admin_notify_approval(request_obj)
     info = load_project_info(project)
