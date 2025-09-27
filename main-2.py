@@ -988,26 +988,28 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✅ Профиль сохранён. Ваш код: <b>{code}</b>\nДобро пожаловать!",
     },
     "ONBOARD_LANGUAGE_CONFIRMED": {
-        "uk": "Мову переключено на {language}. Натисніть кнопку нижче, щоб продовжити реєстрацію.",
-        "en": "Language switched to {language}. Tap the button below to continue your registration.",
-        "de": "Sprache auf {language} umgestellt. Tippen Sie auf die Schaltfläche unten, um fortzufahren.",
-        "pl": "Język zmieniono na {language}. Naciśnij przycisk poniżej, aby kontynuować rejestrację.",
-        "ru": "Язык переключён на {language}. Нажмите кнопку ниже, чтобы продолжить регистрацию.",
+        "uk": "Мову переключено на {language}.",
+        "en": "Language switched to {language}.",
+        "de": "Sprache auf {language} umgestellt.",
+        "pl": "Język zmieniono na {language}.",
+        "ru": "Язык переключен на {language}.",
     },
     "ONBOARD_WELCOME": {
-        "uk": "👋 Привіт, {name}!\nЛаскаво просимо до робочого простору <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nТут зібрані проєкти, фінанси, архіви документів і тривоги.",
-        "en": "👋 Hello, {name}!\nWelcome to the <b>{bot}</b> workspace\n━━━━━━━━━━━━━━━━━━\nHere you will find projects, finance tools, document archives, and alert summaries.",
-        "de": "👋 Hallo, {name}!\nWillkommen im Arbeitsbereich <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nHier finden Sie Projekte, Finanzwerkzeuge, Dokumentarchive und Alarmübersichten.",
-        "pl": "👋 Cześć, {name}!\nWitamy w przestrzeni roboczej <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nTutaj znajdziesz projekty, finanse, archiwum dokumentów i podsumowania alarmów.",
-        "ru": "👋 Привет, {name}!\nДобро пожаловать в рабочее пространство <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nЗдесь собраны проекты, финансы, архив документов и сводки тревог.",
+        "uk": "👋 Привіт, {name}!\nЛаскаво просимо до робочого простору <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nТут зібрано все, що допомагає працювати швидко та тримати під контролем важливі справи.\n\n> <b>{bot}</b> — ваш особистий інструмент порядку, швидкості та впевненості в роботі.\n\nℹ️ Хочете приєднатися й дізнатися, як пройти реєстрацію?\nПросто натисніть <b>«Далі»</b> і отримайте покрокову інструкцію (підпис автоматично локалізовано).",
+        "en": "👋 Hello, {name}!\nWelcome to the <b>{bot}</b> workspace\n━━━━━━━━━━━━━━━━━━\nEverything you need to work fast and stay in control of critical tasks lives here.\n\n> <b>{bot}</b> is your personal toolkit for order, speed, and confidence at work.\n\nℹ️ Ready to join and learn how to complete registration?\nJust tap <b>“Next”</b> to receive the step-by-step guide (the button label is localized automatically).",
+        "de": "👋 Hallo, {name}!\nWillkommen im Arbeitsbereich <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nHier finden Sie alles, was schnelles Arbeiten und die Kontrolle über wichtige Aufgaben erleichtert.\n\n> <b>{bot}</b> ist Ihr persönliches Werkzeug für Ordnung, Tempo und Sicherheit im Arbeitsalltag.\n\nℹ️ Möchten Sie beitreten und erfahren, wie die Registrierung funktioniert?\nTippen Sie einfach auf <b>„Weiter“</b>, um die Schritt-für-Schritt-Anleitung zu erhalten (die Beschriftung wird automatisch lokalisiert).",
+        "pl": "👋 Cześć, {name}!\nWitamy w przestrzeni roboczej <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nTutaj znajdziesz wszystko, co pomaga pracować szybko i mieć kontrolę nad ważnymi zadaniami.\n\n> <b>{bot}</b> to Twoje osobiste narzędzie porządku, szybkości i pewności w pracy.\n\nℹ️ Chcesz dołączyć i zobaczyć, jak przejść rejestrację?\nPo prostu kliknij <b>„Dalej”</b>, aby otrzymać instrukcję krok po kroku (podpis przycisku dostosowuje się automatycznie).",
+        "ru": "👋 Привет, {name}!\nДобро пожаловать в рабочее пространство <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nЗдесь собрано всё, что помогает работать быстро и не терять контроль над важными делами.\n\n> <b>{bot}</b> — ваш личный инструмент для порядка, скорости и уверенности в работе.\n\nℹ️ Хотите присоединиться и узнать, как пройти регистрацию?\nПросто нажмите <b>«Дальше»</b> и получите пошаговую инструкцию (подпись автоматически локализуется).",
     },
     "ONBOARD_BRIEFING": {
-        "uk": "🧭 Як пройти реєстрацію\n━━━━━━━━━━━━━━━━━━\n1. Напишіть прізвище.\n2. Вкажіть ім'я.\n3. За потреби додайте по батькові (можна пропустити).\n4. Введіть дату народження у форматі ДД.ММ.РРРР.\n5. Оберіть область проживання кнопкою.\n6. Надішліть номер телефону кнопкою «📱 Надіслати номер».\n7. Додайте паспортне фото або пропустіть, якщо поки нема.\n\nГотові? Натисніть кнопку, щоб почати.",
-        "en": "🧭 How to complete registration\n━━━━━━━━━━━━━━━━━━\n1. Enter your last name.\n2. Provide your first name.\n3. Add a patronymic/middle name (optional).\n4. Submit your birth date in DD.MM.YYYY format.\n5. Pick your home region using the button.\n6. Send your phone number via the “📱 Share phone number” button.\n7. Upload a passport-style photo or skip for now.\n\nReady? Tap the button to begin.",
-        "de": "🧭 So schließen Sie die Registrierung ab\n━━━━━━━━━━━━━━━━━━\n1. Nachnamen eingeben.\n2. Vornamen angeben.\n3. Vatersnamen/Zweitnamen ergänzen (optional).\n4. Geburtsdatum im Format TT.MM.JJJJ eingeben.\n5. Region per Schaltfläche auswählen.\n6. Telefonnummer über „📱 Nummer senden“ teilen.\n7. Ein Passfoto hochladen oder vorerst überspringen.\n\nBereit? Tippen Sie auf die Schaltfläche zum Start.",
-        "pl": "🧭 Jak ukończyć rejestrację\n━━━━━━━━━━━━━━━━━━\n1. Podaj nazwisko.\n2. Wpisz imię.\n3. Dodaj imię ojca / drugie imię (opcjonalnie).\n4. Wprowadź datę urodzenia w formacie DD.MM.RRRR.\n5. Wybierz region zamieszkania przyciskiem.\n6. Wyślij numer telefonu przyciskiem „📱 Wyślij numer”.\n7. Dodaj zdjęcie paszportowe lub pomiń na razie.\n\nGotowe? Kliknij przycisk, aby rozpocząć.",
-        "ru": "🧭 Как пройти регистрацию\n━━━━━━━━━━━━━━━━━━\n1. Укажите фамилию.\n2. Напишите имя.\n3. При необходимости добавьте отчество (можно пропустить).\n4. Введите дату рождения в формате ДД.ММ.ГГГГ.\n5. Выберите область проживания через кнопку.\n6. Отправьте номер телефона кнопкой «📱 Отправить номер».\n7. Загрузите фото в формате паспортного или пропустите пока.\n\nГотовы? Нажмите кнопку, чтобы начать.",
+        "uk": "📝 <b>Як пройти реєстрацію</b>\n━━━━━━━━━━━━━━━━━━\n1. Вкажіть своє ім'я без скорочень.\n\n2. Запишіть прізвище точно так, як у документах.\n\n3. Додайте по батькові або напишіть, що його немає.\n\n4. Введіть дату народження у форматі ДД.ММ.РРРР.\n\n5. Оберіть область кнопкою «📍 Вибрати область».\n\n6. Поділіться телефоном через кнопку «📱 Надіслати номер».\n\n7. Завантажте фото у паспортному стилі або додайте його пізніше.\n\nГотові? Натисніть <b>«Далі»</b>, щоб почати.",
+        "en": "📝 <b>How to complete registration</b>\n━━━━━━━━━━━━━━━━━━\n1. Enter your first name without abbreviations.\n\n2. Write your last name exactly as it appears in your documents.\n\n3. Add a patronymic/middle name or tell us you don't have one.\n\n4. Provide your birth date in DD.MM.YYYY format.\n\n5. Choose your oblast using the “📍 Choose region” button.\n\n6. Share your phone number with the “📱 Share phone number” button.\n\n7. Upload a passport-style photo or add it later.\n\nReady? Press <b>“Next”</b> to begin.",
+        "de": "📝 <b>So läuft die Registrierung</b>\n━━━━━━━━━━━━━━━━━━\n1. Geben Sie Ihren Vornamen ohne Abkürzungen ein.\n\n2. Schreiben Sie den Nachnamen genau wie im Ausweis.\n\n3. Ergänzen Sie den Vatersnamen/Zweitnamen oder teilen Sie mit, dass er nicht vorhanden ist.\n\n4. Tragen Sie das Geburtsdatum im Format TT.MM.JJJJ ein.\n\n5. Wählen Sie Ihre Oblast über die Schaltfläche „📍 Region wählen“.\n\n6. Senden Sie Ihre Telefonnummer mit „📱 Nummer senden“.\n\n7. Laden Sie ein Passfoto hoch oder fügen Sie es später hinzu.\n\nBereit? Tippen Sie auf <b>„Weiter“</b>, um zu starten.",
+        "pl": "📝 <b>Jak przejść rejestrację</b>\n━━━━━━━━━━━━━━━━━━\n1. Wpisz swoje imię bez skrótów.\n\n2. Zapisz nazwisko dokładnie jak w dokumentach.\n\n3. Dodaj drugie imię/imię ojca lub napisz, że go nie ma.\n\n4. Podaj datę urodzenia w formacie DD.MM.RRRR.\n\n5. Wybierz obwód przyciskiem „📍 Wybierz region”.\n\n6. Udostępnij telefon przyciskiem „📱 Wyślij numer”.\n\n7. Prześlij zdjęcie paszportowe albo dodaj je później.\n\nGotowi? Kliknij <b>„Dalej”</b>, aby rozpocząć.",
+        "ru": "📝 <b>Как пройти регистрацию</b>\n━━━━━━━━━━━━━━━━━━\n1. Укажите своё имя без сокращений.\n\n2. Запишите фамилию точно как в паспорте.\n\n3. Добавьте отчество или сообщите, что его нет.\n\n4. Введите дату рождения в формате ДД.ММ.ГГГГ.\n\n5. Выберите область кнопкой «📍 Выбрать область».\n\n6. Поделитесь телефоном кнопкой «📱 Отправить номер».\n\n7. Загрузите фото в паспортном стиле или добавьте его позже.\n\nГотовы? Нажмите <b>«Дальше»</b>, чтобы начать.",
     },
+
+
     "ONBOARD_RETURNING_SHORTCUT": {
         "uk": "Виглядає, що ви вже проходили реєстрацію. Натисніть кнопку, щоб перейти до головного меню або продовжити оновлення даних.",
         "en": "It seems you have already completed registration. Use the button to open the main menu or continue updating your data.",
@@ -1100,11 +1102,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "фото",
     },
     "REGISTER_LAST_NAME_PROMPT": {
-        "uk": "1. Вкажіть ваше прізвище.",
-        "en": "1. Please enter your last name.",
-        "de": "1. Geben Sie Ihren Nachnamen ein.",
-        "pl": "1. Podaj swoje nazwisko.",
-        "ru": "1. Укажите вашу фамилию.",
+        "uk": "2. ✍️ <b>Вкажіть своє прізвище.</b>\nНапишіть повністю, як у паспорті.",
+        "en": "2. ✍️ <b>Enter your last name.</b>\nWrite it exactly as it appears in your ID.",
+        "de": "2. ✍️ <b>Geben Sie Ihren Nachnamen an.</b>\nSchreiben Sie ihn vollständig wie im Ausweis.",
+        "pl": "2. ✍️ <b>Podaj swoje nazwisko.</b>\nZapisz je dokładnie tak, jak w dokumentach.",
+        "ru": "2. ✍️ <b>Укажите свою фамилию.</b>\nНапишите полностью, как в паспорте."
     },
     "REGISTER_LAST_NAME_WARN": {
         "uk": "❗ Перевірте прізвище: допускаються лише літери, апостроф та дефіс.",
@@ -1121,18 +1123,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Фамилия сохранена: <b>{value}</b> ✅",
     },
     "REGISTER_FIRST_NAME_PROMPT": {
-        "uk": "2. Вкажіть ваше ім'я.",
-        "en": "2. Please enter your first name.",
-        "de": "2. Geben Sie Ihren Vornamen ein.",
-        "pl": "2. Podaj swoje imię.",
-        "ru": "2. Укажите ваше имя.",
+        "uk": "1. ✍️ <b>Вкажіть своє ім'я.</b>\nПишіть повністю, без скорочень, як у документах.",
+        "en": "1. ✍️ <b>Enter your first name.</b>\nWrite it fully, without abbreviations, exactly as in your documents.",
+        "de": "1. ✍️ <b>Geben Sie Ihren Vornamen ein.</b>\nSchreiben Sie ihn vollständig und ohne Abkürzungen wie in den Dokumenten.",
+        "pl": "1. ✍️ <b>Podaj swoje imię.</b>\nPisz pełnym imieniem, bez skrótów, tak jak w dokumentach.",
+        "ru": "1. ✍️ <b>Укажите своё имя.</b>\nПишите полностью, без сокращений, как в документах."
     },
     "REGISTER_FIRST_NAME_WARN": {
-        "uk": "❗ Перевірте ім'я: допускаються лише літери, апостроф та дефіс.",
-        "en": "❗ Please check your first name: only letters, apostrophes, and dashes are allowed.",
-        "de": "❗ Prüfen Sie den Vornamen: Es sind nur Buchstaben, Apostroph und Bindestrich erlaubt.",
-        "pl": "❗ Sprawdź imię: dozwolone są tylko litery, apostrof i myślnik.",
-        "ru": "❗ Проверьте имя: допустимы только буквы, апостроф и дефис.",
+        "uk": "❗ Перевірте ім'я: допускаються лише літери.",
+        "en": "❗ Please check your first name: only letters are allowed.",
+        "de": "❗ Prüfen Sie den Vornamen: Es sind nur Buchstaben erlaubt.",
+        "pl": "❗ Sprawdź imię: dozwolone są tylko litery.",
+        "ru": "❗ Проверьте имя: допускаются только буквы."
     },
     "REGISTER_FIRST_NAME_OK": {
         "uk": "Ім'я збережено: <b>{value}</b> ✅",
@@ -1142,18 +1144,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Имя сохранено: <b>{value}</b> ✅",
     },
     "REGISTER_MIDDLE_NAME_PROMPT": {
-        "uk": "3. Вкажіть по батькові (якщо є). Якщо немає — напишіть «немає».",
-        "en": "3. Enter your patronymic or middle name (optional). Type “no” if you wish to skip.",
-        "de": "3. Geben Sie Ihren Vatersnamen/Zweitnamen an (optional). Schreiben Sie „kein“, um zu überspringen.",
-        "pl": "3. Podaj drugie imię/imię ojca (opcjonalnie). Wpisz „brak”, aby pominąć.",
-        "ru": "3. Укажите отчество (если есть). Если нет — напишите «нет».",
+        "uk": "3. ✍️ <b>По батькові.</b>\nЯкщо немає — напишіть «немає».",
+        "en": "3. ✍️ <b>Patronymic or middle name.</b>\nIf you don't have one, write “no”.",
+        "de": "3. ✍️ <b>Zweitname/Vatersname.</b>\nWenn keiner vorhanden ist, schreiben Sie „kein“.",
+        "pl": "3. ✍️ <b>Drugie imię / imię ojca.</b>\nJeśli go nie ma, wpisz „brak”.",
+        "ru": "3. ✍️ <b>Отчество.</b>\nЕсли его нет — напишите «Нет»."
     },
     "REGISTER_MIDDLE_NAME_WARN": {
-        "uk": "❗ Перевірте по батькові: допускаються лише літери, апостроф та дефіс.",
-        "en": "❗ Please check the patronymic: only letters, apostrophes, and dashes are allowed.",
-        "de": "❗ Prüfen Sie den Zweitnamen: Es sind nur Buchstaben, Apostroph und Bindestrich erlaubt.",
-        "pl": "❗ Sprawdź drugie imię: dozwolone są tylko litery, apostrof i myślnik.",
-        "ru": "❗ Проверьте отчество: допустимы только буквы, апостроф и дефис.",
+        "uk": "❗ Перевірте по батькові: використовуйте літери або напишіть «немає».",
+        "en": "❗ Check the patronymic: use letters or type “no”.",
+        "de": "❗ Prüfen Sie den Zweitnamen: Verwenden Sie Buchstaben oder schreiben Sie „kein“.",
+        "pl": "❗ Sprawdź drugie imię: użyj liter lub wpisz „brak”.",
+        "ru": "❗ Проверьте отчество: используйте буквы или напишите «Нет»."
     },
     "REGISTER_MIDDLE_NAME_OK": {
         "uk": "По батькові збережено: <b>{value}</b> ✅",
@@ -1170,11 +1172,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Отчество пропущено. Его можно добавить позже в профиле.",
     },
     "REGISTER_BIRTHDATE_PROMPT": {
-        "uk": "4. Вкажіть дату народження у форматі ДД.ММ.РРРР.",
-        "en": "4. Please enter your birth date in DD.MM.YYYY format.",
-        "de": "4. Geben Sie Ihr Geburtsdatum im Format TT.MM.JJJJ ein.",
-        "pl": "4. Wpisz datę urodzenia w formacie DD.MM.RRRR.",
-        "ru": "4. Укажите дату рождения в формате ДД.ММ.ГГГГ.",
+        "uk": "4. 📆 <b>Дата народження.</b>\nФормат: ДД.ММ.РРРР (наприклад, 25.07.1995).",
+        "en": "4. 📆 <b>Birth date.</b>\nFormat: DD.MM.YYYY (e.g., 25.07.1995).",
+        "de": "4. 📆 <b>Geburtsdatum.</b>\nFormat: TT.MM.JJJJ (z. B. 25.07.1995).",
+        "pl": "4. 📆 <b>Data urodzenia.</b>\nFormat: DD.MM.RRRR (np. 25.07.1995).",
+        "ru": "4. 📆 <b>Дата рождения.</b>\nФормат: ДД.ММ.ГГГГ (например, 25.07.1995)."
     },
     "REGISTER_BIRTHDATE_WARN": {
         "uk": "❗ Не вдалося розпізнати дату. Використовуйте формат ДД.ММ.РРРР.",
@@ -1191,11 +1193,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Дата рождения сохранена: <b>{value}</b> ✅",
     },
     "REGISTER_REGION_PROMPT": {
-        "uk": "5. Оберіть область проживання кнопкою нижче.",
-        "en": "5. Pick your home region using the button below.",
-        "de": "5. Wählen Sie Ihre Region über die Schaltfläche unten.",
-        "pl": "5. Wybierz region zamieszkania przyciskiem poniżej.",
-        "ru": "5. Выберите область проживания кнопкой ниже.",
+        "uk": "5. 📍 <b>Виберіть область.</b>\nНатисніть «📍 Вибрати область» і підтвердьте вибір.",
+        "en": "5. 📍 <b>Select your oblast.</b>\nTap “📍 Choose region” and confirm your choice.",
+        "de": "5. 📍 <b>Wählen Sie Ihre Oblast.</b>\nTippen Sie auf „📍 Region wählen“ und bestätigen Sie Ihre Auswahl.",
+        "pl": "5. 📍 <b>Wybierz obwód.</b>\nKliknij „📍 Wybierz region” i zatwierdź wybór.",
+        "ru": "5. 📍 <b>Выберите область.</b>\nНажмите «📍 Выбрать область» и подтвердите выбор."
     },
     "REGISTER_REGION_BUTTON": {
         "uk": "📍 Вибрати область",
@@ -1204,26 +1206,34 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "📍 Wybierz region",
         "ru": "📍 Выбрать область",
     },
+    "REGISTER_REGION_BACK": {
+        "uk": "⬅️ Назад",
+        "en": "⬅️ Back",
+        "de": "⬅️ Zurück",
+        "pl": "⬅️ Wstecz",
+        "ru": "⬅️ Назад"
+    },
+
     "REGISTER_REGION_PICK": {
-        "uk": "Оберіть область зі списку:",
-        "en": "Select your region from the list:",
-        "de": "Wählen Sie Ihre Region aus der Liste:",
-        "pl": "Wybierz region z listy:",
-        "ru": "Выберите область из списка:",
+        "uk": "📍 Виберіть свою область зі списку нижче.",
+        "en": "📍 Pick your oblast from the list below.",
+        "de": "📍 Wählen Sie Ihre Oblast aus der Liste unten.",
+        "pl": "📍 Wybierz swój obwód z poniższej listy.",
+        "ru": "📍 Выберите свою область из списка ниже."
     },
     "REGISTER_REGION_REMIND": {
-        "uk": "Будь ласка, скористайтеся кнопкою «📍 Вибрати область».",
-        "en": "Please use the “📍 Choose region” button.",
-        "de": "Bitte verwenden Sie die Schaltfläche „📍 Region wählen“.",
-        "pl": "Użyj przycisku „📍 Wybierz region”.",
-        "ru": "Пожалуйста, воспользуйтесь кнопкой «📍 Выбрать область».",
+        "uk": "❗ Скористайтеся кнопкою «📍 Вибрати область», щоб обрати зі списку.",
+        "en": "❗ Use the “📍 Choose region” button to select from the list.",
+        "de": "❗ Nutzen Sie die Schaltfläche „📍 Region wählen“, um aus der Liste zu wählen.",
+        "pl": "❗ Użyj przycisku „📍 Wybierz region”, aby wybrać z listy.",
+        "ru": "❗ Используйте кнопку «📍 Выбрать область», чтобы выбрать из списка."
     },
     "REGISTER_REGION_SELECTED": {
-        "uk": "Область <b>{region}</b> збережено. Натисніть кнопку, щоб продовжити.",
-        "en": "Region <b>{region}</b> saved. Tap the button to continue.",
-        "de": "Region <b>{region}</b> gespeichert. Tippen Sie auf die Schaltfläche zum Fortfahren.",
-        "pl": "Region <b>{region}</b> zapisano. Naciśnij przycisk, aby kontynuować.",
-        "ru": "Область <b>{region}</b> сохранена. Нажмите кнопку, чтобы продолжить.",
+        "uk": "✅ Область збережено: <b>{region}</b>. Натисніть <b>«Далі»</b>, щоб перейти до телефону, або «⬅️ Назад», щоб змінити.",
+        "en": "✅ Region saved: <b>{region}</b>. Press <b>“Next”</b> to continue to the phone step or “⬅️ Back” to change it.",
+        "de": "✅ Region gespeichert: <b>{region}</b>. Tippen Sie auf <b>„Weiter“</b>, um mit der Telefonnummer fortzufahren, oder auf „⬅️ Zurück“, um sie zu ändern.",
+        "pl": "✅ Obwód zapisany: <b>{region}</b>. Kliknij <b>„Dalej”</b>, aby przejść do telefonu, lub „⬅️ Wstecz”, aby zmienić.",
+        "ru": "✅ Область сохранена: <b>{region}</b>. Нажмите <b>«Дальше»</b>, чтобы перейти к телефону, или «⬅️ Назад», чтобы изменить."
     },
     "REGISTER_REGION_OK": {
         "uk": "Область підтверджено: <b>{value}</b> ✅",
@@ -1233,25 +1243,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Область подтверждена: <b>{value}</b> ✅",
     },
     "REGISTER_PHONE_PROMPT_NEW": {
-        "uk": "6. Надішліть номер телефону кнопкою «📱 Надіслати номер».",
-        "en": "6. Send your phone number using the “📱 Share phone number” button.",
-        "de": "6. Senden Sie Ihre Telefonnummer über die Schaltfläche „📱 Nummer senden“.",
-        "pl": "6. Wyślij numer telefonu przyciskiem „📱 Wyślij numer”.",
-        "ru": "6. Отправьте номер телефона кнопкой «📱 Отправить номер».",
+        "uk": "6. 📞 <b>Номер телефону для реєстрації.</b>\nНатисніть «📱 Надіслати номер», щоб поділитися контактом.",
+        "en": "6. 📞 <b>Phone number for registration.</b>\nTap “📱 Share phone number” to send your contact.",
+        "de": "6. 📞 <b>Telefonnummer für die Registrierung.</b>\nTippen Sie auf „📱 Nummer senden“, um Ihren Kontakt zu teilen.",
+        "pl": "6. 📞 <b>Numer telefonu do rejestracji.</b>\nKliknij „📱 Wyślij numer”, aby udostępnić kontakt.",
+        "ru": "6. 📞 <b>Номер телефона для регистрации.</b>\nНажмите «📱 Отправить номер», чтобы поделиться контактом."
     },
     "REGISTER_PHONE_WARN": {
-        "uk": "❗ Не вдалося зчитати контакт. Спробуйте ще раз кнопкою нижче.",
-        "en": "❗ Could not read the contact. Please try again with the button below.",
-        "de": "❗ Kontakt konnte nicht erkannt werden. Bitte erneut über die Schaltfläche unten versuchen.",
-        "pl": "❗ Nie udało się pobrać kontaktu. Spróbuj ponownie przyciskiem poniżej.",
-        "ru": "❗ Не удалось получить контакт. Повторите попытку кнопкой ниже.",
+        "uk": "📞 Скористайтеся кнопкою «📱 Надіслати номер», щоб ми отримали правильний контакт.",
+        "en": "📞 Please tap “📱 Share phone number” so we receive the correct contact.",
+        "de": "📞 Tippen Sie auf „📱 Nummer senden“, damit wir die richtige Nummer erhalten.",
+        "pl": "📞 Kliknij „📱 Wyślij numer”, aby przesłać poprawny kontakt.",
+        "ru": "📞 Пожалуйста, нажмите «📱 Отправить номер», чтобы мы сохранили верный контакт."
     },
     "REGISTER_PHONE_TEXT_WARN": {
-        "uk": "📞 Надішліть коректний номер або скористайтеся кнопкою «📱 Надіслати номер».",
-        "en": "📞 Please send a valid phone number or use the “📱 Share phone number” button.",
-        "de": "📞 Bitte senden Sie eine gültige Telefonnummer oder nutzen Sie die Schaltfläche „📱 Nummer senden“.",
-        "pl": "📞 Wyślij poprawny numer telefonu lub użyj przycisku „📱 Wyślij numer”.",
-        "ru": "📞 Отправьте корректный номер телефона или воспользуйтесь кнопкой «📱 Отправить номер».",
+        "uk": "📞 Надішліть коректний номер або натисніть «📱 Надіслати номер».",
+        "en": "📞 Send a valid phone number or tap “📱 Share phone number”.",
+        "de": "📞 Senden Sie eine gültige Nummer oder tippen Sie auf „📱 Nummer senden“.",
+        "pl": "📞 Wyślij poprawny numer lub kliknij „📱 Wyślij numer”.",
+        "ru": "📞 Отправьте корректный номер или нажмите «📱 Отправить номер»."
     },
     "REGISTER_PHONE_OK": {
         "uk": "Номер збережено: <b>{value}</b> ✅",
@@ -1261,18 +1271,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "Номер телефона сохранён: <b>{value}</b> ✅",
     },
     "REGISTER_PHOTO_PROMPT": {
-        "uk": "7. Додайте паспортне фото.\n━━━━━━━━━━━━━━━━━━\n• фронтальний ракурс\n• нейтральний фон\n• рівне освітлення\nЯкщо поки що нема фото, натисніть «Пропустити».",
-        "en": "7. Upload a passport-style photo.\n━━━━━━━━━━━━━━━━━━\n• frontal view\n• neutral background\n• even lighting\nIf you don't have one yet, tap “Skip”.",
-        "de": "7. Laden Sie ein Passfoto hoch.\n━━━━━━━━━━━━━━━━━━\n• frontale Ansicht\n• neutraler Hintergrund\n• gleichmäßige Beleuchtung\nFalls Sie noch keines haben, tippen Sie auf „Überspringen“.",
-        "pl": "7. Dodaj zdjęcie paszportowe.\n━━━━━━━━━━━━━━━━━━\n• ujęcie frontalne\n• neutralne tło\n• równomierne oświetlenie\nJeśli nie masz zdjęcia, wybierz „Pomiń”.",
-        "ru": "7. Загрузите фото формата «на документы».\n━━━━━━━━━━━━━━━━━━\n• фронтальный ракурс\n• нейтральный фон\n• ровное освещение\nЕсли фото пока нет, нажмите «Пропустить».",
+        "uk": "7. 📸 <b>Фото профілю.</b>\nПаспортний формат: чітке обличчя та нейтральний фон. Можна додати пізніше кнопкою «Пропустити».",
+        "en": "7. 📸 <b>Profile photo.</b>\nPassport style: clear face and neutral background. You can add it later with “Skip”.",
+        "de": "7. 📸 <b>Profilfoto.</b>\nPassfoto-Format: klares Gesicht und neutraler Hintergrund. Sie können es später über „Überspringen“ hinzufügen.",
+        "pl": "7. 📸 <b>Zdjęcie profilowe.</b>\nFormat paszportowy: wyraźna twarz i neutralne tło. Możesz dodać je później przyciskiem „Pomiń”.",
+        "ru": "7. 📸 <b>Фото профиля.</b>\nПаспортный формат: чёткое лицо и нейтральный фон. Можно добавить позже кнопкой «Пропустить»."
     },
     "REGISTER_PHOTO_WARN": {
-        "uk": "❗ Не вдалося обробити фото. Спробуйте інший файл або зробіть нове фото.",
-        "en": "❗ Could not process the photo. Please try another file or take a new picture.",
-        "de": "❗ Foto konnte nicht verarbeitet werden. Bitte versuchen Sie eine andere Datei oder machen Sie ein neues Foto.",
-        "pl": "❗ Nie udało się przetworzyć zdjęcia. Spróbuj innego pliku lub zrób nowe zdjęcie.",
-        "ru": "❗ Не удалось обработать фото. Попробуйте другой файл или сделайте новое фото.",
+        "uk": "❗ Не вдалося обробити фото. Надішліть його знову у форматі JPG або PNG.",
+        "en": "❗ Could not process the photo. Please send it again in JPG or PNG format.",
+        "de": "❗ Foto konnte nicht verarbeitet werden. Bitte senden Sie es erneut als JPG oder PNG.",
+        "pl": "❗ Nie udało się przetworzyć zdjęcia. Wyślij je ponownie w formacie JPG lub PNG.",
+        "ru": "❗ Не удалось обработать фото. Пожалуйста, отправьте его снова в формате JPG или PNG."
     },
     "REGISTER_PHOTO_RECEIVED": {
         "uk": "Фото отримано ✅",
@@ -2751,32 +2761,38 @@ async def registration_seed_state(state: FSMContext, profile: dict):
         await state.update_data(**payload)
 
 
-async def registration_continue(uid: int, chat_id: int, state: FSMContext, profile: Optional[dict] = None):
+async def registration_continue(
+    uid: int,
+    chat_id: int,
+    state: FSMContext,
+    profile: Optional[dict] = None,
+    reuse_message: Optional[Tuple[int, int]] = None,
+):
     runtime = users_runtime.setdefault(uid, {})
     profile = profile or ensure_user(uid, runtime.get("tg", {}))
     data = await state.get_data()
     snapshot = registration_build_snapshot(profile, data)
 
-    if not snapshot.get("last_name"):
-        await onboard_prompt_last_name(uid, chat_id, state)
-        return
     if not snapshot.get("first_name"):
-        await onboard_prompt_first_name(uid, chat_id, state)
+        await onboard_prompt_first_name(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("last_name"):
+        await onboard_prompt_last_name(uid, chat_id, state, reuse=reuse_message)
         return
     if not registration_middle_name_completed(snapshot):
-        await onboard_prompt_middle_name(uid, chat_id, state)
+        await onboard_prompt_middle_name(uid, chat_id, state, reuse=reuse_message)
         return
     if not snapshot.get("birthdate"):
-        await onboard_prompt_birthdate(uid, chat_id, state)
+        await onboard_prompt_birthdate(uid, chat_id, state, reuse=reuse_message)
         return
     if not snapshot.get("region"):
-        await onboard_prompt_region(uid, chat_id, state)
+        await onboard_prompt_region(uid, chat_id, state, reuse=reuse_message)
         return
     if not snapshot.get("phone"):
-        await onboard_prompt_phone(uid, chat_id, state)
+        await onboard_prompt_phone(uid, chat_id, state, reuse=reuse_message)
         return
     if not registration_photo_completed(profile):
-        await onboard_prompt_photo(uid, chat_id, state)
+        await onboard_prompt_photo(uid, chat_id, state, profile=profile, reuse=reuse_message)
         return
 
     await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=False)
@@ -4569,6 +4585,16 @@ def kb_profile_region_picker(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
+def kb_profile_region_confirm(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(uid, "REGISTER_REGION_BACK"), callback_data="profile_region_back"),
+        InlineKeyboardButton(registration_button_label(uid), callback_data="profile_region_confirm"),
+    )
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
 def kb_profile_phone_keyboard(uid: int) -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
@@ -5196,6 +5222,28 @@ def flow_track_warning(uid: int, msg: Optional[types.Message]):
     flow_track(uid, msg, bucket="flow_warns")
 
 
+async def flow_prepare_prompt(uid: int, reuse: Optional[Tuple[int, int]] = None) -> Optional[Tuple[int, int]]:
+    runtime = users_runtime.setdefault(uid, {})
+    current = runtime.get("flow_prompt")
+    if current and reuse and current == reuse:
+        return reuse
+    if current:
+        await _delete_message_safe(current[0], current[1])
+        runtime.pop("flow_prompt", None)
+    return reuse
+
+
+def flow_store_prompt(uid: int, msg: Optional[types.Message] = None, *, chat_id: Optional[int] = None, message_id: Optional[int] = None):
+    if msg:
+        chat_id = msg.chat.id
+        message_id = msg.message_id
+        flow_track(uid, msg)
+    if not chat_id or not message_id:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["flow_prompt"] = (chat_id, message_id)
+
+
 async def _flow_clear_bucket(uid: int, bucket: str):
     runtime = users_runtime.setdefault(uid, {})
     tracked = list(runtime.get(bucket, []))
@@ -5217,6 +5265,7 @@ async def flow_clear(uid: int):
     runtime = users_runtime.setdefault(uid, {})
     await _flow_clear_bucket(uid, "flow_msgs")
     await _flow_clear_bucket(uid, "flow_warns")
+    runtime.pop("flow_prompt", None)
     last_card = runtime.pop("np_last_card", None)
     if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
         await _delete_message_safe(last_card[0], last_card[1])
@@ -5413,6 +5462,15 @@ def kb_region_prompt(target: Any) -> InlineKeyboardMarkup:
     return kb
 
 
+def kb_region_confirm(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(target, "REGISTER_REGION_BACK"), callback_data="reg_region_back"),
+        InlineKeyboardButton(registration_button_label(target), callback_data="reg_region_confirm"),
+    )
+    return kb
+
+
 def kb_admin_edit_region_prompt(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_BUTTON"), callback_data="adm_reg_open"))
@@ -5435,15 +5493,28 @@ def kb_admin_edit_region_picker(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
+def kb_admin_edit_region_confirm(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(uid, "REGISTER_REGION_BACK"), callback_data="adm_reg_back"),
+        InlineKeyboardButton(registration_button_label(uid), callback_data="adm_reg_confirm"),
+    )
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
 def kb_phone_keyboard(target: Any) -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     kb.add(KeyboardButton(tr(target, "BTN_SEND_PHONE"), request_contact=True))
     return kb
 
 
-def kb_photo_keyboard(target: Any) -> InlineKeyboardMarkup:
+def kb_photo_keyboard(target: Any, *, allow_keep: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(tr(target, "BTN_SKIP"), callback_data="reg_photo_skip"))
+    buttons = [InlineKeyboardButton(tr(target, "BTN_SKIP"), callback_data="reg_photo_skip")]
+    if allow_keep:
+        buttons.append(InlineKeyboardButton(registration_button_label(target), callback_data="reg_photo_keep"))
+    kb.row(*buttons)
     return kb
 
 
@@ -5604,52 +5675,129 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-async def onboard_prompt_last_name(uid: int, chat_id: int, state: FSMContext):
+async def onboard_prompt_first_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
     await flow_clear_warnings(uid)
-    msg = await bot.send_message(chat_id, tr(uid, "REGISTER_LAST_NAME_PROMPT"))
-    flow_track(uid, msg)
-    await state.set_state(OnboardFSM.last_name.state)
-
-
-async def onboard_prompt_first_name(uid: int, chat_id: int, state: FSMContext):
-    await flow_clear_warnings(uid)
-    msg = await bot.send_message(chat_id, tr(uid, "REGISTER_FIRST_NAME_PROMPT"))
-    flow_track(uid, msg)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_FIRST_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
     await state.set_state(OnboardFSM.first_name.state)
 
 
-async def onboard_prompt_middle_name(uid: int, chat_id: int, state: FSMContext):
+async def onboard_prompt_last_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
     await flow_clear_warnings(uid)
-    msg = await bot.send_message(chat_id, tr(uid, "REGISTER_MIDDLE_NAME_PROMPT"))
-    flow_track(uid, msg)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_LAST_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.last_name.state)
+
+
+async def onboard_prompt_middle_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_MIDDLE_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
     await state.set_state(OnboardFSM.middle_name.state)
 
 
-async def onboard_prompt_birthdate(uid: int, chat_id: int, state: FSMContext):
+async def onboard_prompt_birthdate(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
     await flow_clear_warnings(uid)
-    msg = await bot.send_message(chat_id, tr(uid, "REGISTER_BIRTHDATE_PROMPT"))
-    flow_track(uid, msg)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_BIRTHDATE_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
     await state.set_state(OnboardFSM.birthdate.state)
 
 
-async def onboard_prompt_region(uid: int, chat_id: int, state: FSMContext):
+async def onboard_prompt_region(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
     await flow_clear_warnings(uid)
-    msg = await bot.send_message(chat_id, tr(uid, "REGISTER_REGION_PROMPT"), reply_markup=kb_region_prompt(uid))
-    flow_track(uid, msg)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_REGION_PROMPT")
+    markup = kb_region_prompt(uid)
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1], reply_markup=markup)
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
     await state.set_state(OnboardFSM.region.state)
 
 
-async def onboard_prompt_phone(uid: int, chat_id: int, state: FSMContext):
+async def onboard_prompt_phone(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
     await flow_clear_warnings(uid)
-    msg = await bot.send_message(chat_id, tr(uid, "REGISTER_PHONE_PROMPT_NEW"), reply_markup=kb_phone_keyboard(uid))
-    flow_track(uid, msg)
+    await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_PHONE_PROMPT_NEW")
+    msg = await bot.send_message(chat_id, text, reply_markup=kb_phone_keyboard(uid))
+    flow_store_prompt(uid, msg=msg)
     await state.set_state(OnboardFSM.phone.state)
 
 
-async def onboard_prompt_photo(uid: int, chat_id: int, state: FSMContext):
+async def onboard_prompt_photo(uid: int, chat_id: int, state: FSMContext, profile: Optional[dict] = None, reuse: Optional[Tuple[int, int]] = None):
     await flow_clear_warnings(uid)
-    msg = await bot.send_message(chat_id, tr(uid, "REGISTER_PHOTO_PROMPT"), reply_markup=kb_photo_keyboard(uid))
-    flow_track(uid, msg)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_PHOTO_PROMPT")
+    allow_keep = registration_photo_completed(profile or ensure_user(uid, users_runtime.get(uid, {}).get("tg", {})))
+    markup = kb_photo_keyboard(uid, allow_keep=allow_keep)
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1], reply_markup=markup)
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
     await state.set_state(OnboardFSM.photo.state)
 
 
@@ -5666,9 +5814,10 @@ async def onboard_last_name(m: types.Message, state: FSMContext):
     cleaned = beautify_name(raw)
     await state.update_data(last_name=cleaned)
     profile = registration_update(uid, last_name=cleaned)
+    await flow_prepare_prompt(uid)
     ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_OK", value=h(cleaned)))
-    flow_track(uid, ack)
     await registration_continue(uid, m.chat.id, state, profile=profile)
+    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.message_handler(state=OnboardFSM.first_name, content_types=ContentType.TEXT)
@@ -5684,9 +5833,10 @@ async def onboard_first_name(m: types.Message, state: FSMContext):
     cleaned = beautify_name(raw)
     await state.update_data(first_name=cleaned)
     profile = registration_update(uid, first_name=cleaned)
+    await flow_prepare_prompt(uid)
     ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_OK", value=h(cleaned)))
-    flow_track(uid, ack)
     await registration_continue(uid, m.chat.id, state, profile=profile)
+    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.message_handler(state=OnboardFSM.middle_name, content_types=ContentType.TEXT)
@@ -5698,9 +5848,10 @@ async def onboard_middle_name(m: types.Message, state: FSMContext):
         await flow_clear_warnings(uid)
         await state.update_data(middle_name="", middle_name_status="skipped")
         profile = registration_update(uid, middle_name="", middle_name_status="skipped")
+        await flow_prepare_prompt(uid)
         note = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_SKIPPED"))
-        flow_track(uid, note)
         await registration_continue(uid, m.chat.id, state, profile=profile)
+        await _delete_message_safe(note.chat.id, note.message_id)
         return
     if not validate_name(raw):
         warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
@@ -5710,9 +5861,10 @@ async def onboard_middle_name(m: types.Message, state: FSMContext):
     cleaned = beautify_name(raw)
     await state.update_data(middle_name=cleaned, middle_name_status="provided")
     profile = registration_update(uid, middle_name=cleaned, middle_name_status="provided")
+    await flow_prepare_prompt(uid)
     ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_OK", value=h(cleaned)))
-    flow_track(uid, ack)
     await registration_continue(uid, m.chat.id, state, profile=profile)
+    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.message_handler(state=OnboardFSM.birthdate, content_types=ContentType.TEXT)
@@ -5729,9 +5881,10 @@ async def onboard_birthdate(m: types.Message, state: FSMContext):
     await state.update_data(birthdate=iso)
     profile = registration_update(uid, birthdate=iso)
     display = format_birthdate_display(iso, resolve_lang(uid))
+    await flow_prepare_prompt(uid)
     ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_OK", value=h(display)))
-    flow_track(uid, ack)
     await registration_continue(uid, m.chat.id, state, profile=profile)
+    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.message_handler(state=OnboardFSM.region, content_types=ContentType.ANY)
@@ -5745,10 +5898,20 @@ async def onboard_region_text(m: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "reg_region_open", state=OnboardFSM.region)
 async def onboard_region_open(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
-    runtime = users_runtime.setdefault(uid, {})
-    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
-    picker = await bot.send_message(chat_id, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_region_picker(uid))
-    flow_track(uid, picker)
+    chat_id = c.message.chat.id
+    message_id = c.message.message_id
+    text = tr(uid, "REGISTER_REGION_PICK")
+    markup = kb_region_picker(uid)
+    try:
+        await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        flow_store_prompt(uid, chat_id=chat_id, message_id=message_id)
+    except MessageNotModified:
+        pass
+    except Exception:
+        runtime = users_runtime.setdefault(uid, {})
+        fallback_chat = runtime.get("tg", {}).get("chat_id") or chat_id
+        msg = await bot.send_message(fallback_chat, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
     await c.answer()
 
 
@@ -5764,19 +5927,34 @@ async def onboard_region_pick(c: types.CallbackQuery, state: FSMContext):
         return
     await state.update_data(region=region)
     await flow_clear_warnings(uid)
-    await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
-    runtime = users_runtime.setdefault(uid, {})
-    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
-    confirm = await bot.send_message(chat_id, tr(uid, "REGISTER_REGION_SELECTED", region=h(region)), reply_markup=kb_registration_next(uid, "reg_region_confirm"))
-    flow_track(uid, confirm)
+    chat_id = c.message.chat.id
+    message_id = c.message.message_id
+    text = tr(uid, "REGISTER_REGION_SELECTED", region=h(region))
+    markup = kb_region_confirm(uid)
+    try:
+        await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        flow_store_prompt(uid, chat_id=chat_id, message_id=message_id)
+    except MessageNotModified:
+        pass
+    except Exception:
+        runtime = users_runtime.setdefault(uid, {})
+        fallback_chat = runtime.get("tg", {}).get("chat_id") or chat_id
+        msg = await bot.send_message(fallback_chat, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
     await state.set_state(OnboardFSM.region_confirm.state)
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_region_back", state=OnboardFSM.region_confirm)
+async def onboard_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.set_state(OnboardFSM.region.state)
+    await onboard_region_open(c, state)
 
 
 @dp.callback_query_handler(lambda c: c.data == "reg_region_confirm", state=OnboardFSM.region_confirm)
 async def onboard_region_confirm(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
-    await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
     runtime = users_runtime.setdefault(uid, {})
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
     data = await state.get_data()
@@ -5785,10 +5963,10 @@ async def onboard_region_confirm(c: types.CallbackQuery, state: FSMContext):
         await state.update_data(region=region)
         profile = registration_update(uid, region=region)
         await flow_clear_warnings(uid)
-        ack = await bot.send_message(chat_id, tr(uid, "REGISTER_REGION_OK", value=h(region)))
-        flow_track(uid, ack)
+        await flow_prepare_prompt(uid)
         await registration_continue(uid, chat_id, state, profile=profile)
     else:
+        await flow_prepare_prompt(uid)
         await registration_continue(uid, chat_id, state)
     await c.answer()
 
@@ -5797,9 +5975,9 @@ async def onboard_region_confirm(c: types.CallbackQuery, state: FSMContext):
 async def onboard_phone_contact(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     phone_raw = (m.contact.phone_number if m.contact else "").strip()
-    await flow_delete_message(uid, m)
     normalized = sanitize_phone_input(phone_raw)
     if not normalized:
+        await flow_delete_message(uid, m)
         warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_WARN"), reply_markup=kb_phone_keyboard(uid))
         flow_track_warning(uid, warn)
         return
@@ -5810,13 +5988,14 @@ async def onboard_phone_contact(m: types.Message, state: FSMContext):
         profile.setdefault("tg", {})["contact_user_id"] = m.contact.user_id
         profile["updated_at"] = datetime.now(timezone.utc).isoformat()
         save_user(profile)
+    await flow_prepare_prompt(uid)
     ack = await bot.send_message(
         m.chat.id,
         tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
         reply_markup=ReplyKeyboardRemove(),
     )
-    flow_track(uid, ack)
     await registration_continue(uid, m.chat.id, state, profile=profile)
+    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.message_handler(state=OnboardFSM.phone, content_types=ContentType.TEXT)
@@ -5831,13 +6010,14 @@ async def onboard_phone_text(m: types.Message, state: FSMContext):
     await flow_clear_warnings(uid)
     await state.update_data(phone=normalized)
     profile = registration_update(uid, phone=normalized)
+    await flow_prepare_prompt(uid)
     ack = await bot.send_message(
         m.chat.id,
         tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
         reply_markup=ReplyKeyboardRemove(),
     )
-    flow_track(uid, ack)
     await registration_continue(uid, m.chat.id, state, profile=profile)
+    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data == "reg_photo_skip", state=OnboardFSM.photo)
@@ -5845,9 +6025,20 @@ async def onboard_photo_skip(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     runtime = users_runtime.setdefault(uid, {})
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    await flow_prepare_prompt(uid)
     note = await bot.send_message(chat_id, tr(uid, "REGISTER_PHOTO_SKIP_CONFIRM"))
-    flow_track(uid, note)
     await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=True)
+    await _delete_message_safe(note.chat.id, note.message_id)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_photo_keep", state=OnboardFSM.photo)
+async def onboard_photo_keep(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    await flow_prepare_prompt(uid)
+    await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=False)
     await c.answer()
 
 
@@ -5868,11 +6059,12 @@ async def onboard_photo_received(m: types.Message, state: FSMContext):
         flow_track_warning(uid, warn)
         return
     await flow_clear_warnings(uid)
+    await flow_prepare_prompt(uid)
     ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_RECEIVED"))
-    flow_track(uid, ack)
     runtime = users_runtime.setdefault(uid, {})
     chat_id = runtime.get("tg", {}).get("chat_id") or m.chat.id
     await finalize_registration(uid, chat_id, state, photo_meta=meta, skipped=False)
+    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.message_handler(state=OnboardFSM.photo, content_types=ContentType.ANY)
@@ -6042,7 +6234,7 @@ async def profile_region_pick(c: types.CallbackQuery, state: FSMContext):
         await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
         return
     await state.update_data(profile_region=region)
-    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_SELECTED", region=h(region)), reply_markup=kb_registration_next(uid, "profile_region_confirm"))
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_SELECTED", region=h(region)), reply_markup=kb_profile_region_confirm(uid))
     await ProfileEditFSM.region_confirm.set()
     await c.answer()
 
@@ -6064,6 +6256,14 @@ async def profile_region_confirm(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
     await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
     await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_back", state=ProfileEditFSM.region_confirm)
+async def profile_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await ProfileEditFSM.waiting_region.set()
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_profile_region_picker(uid))
     await c.answer()
 
 
@@ -12543,7 +12743,7 @@ async def adm_edit_region_pick(c: types.CallbackQuery, state: FSMContext):
     await admin_edit_send_prompt(
         uid,
         tr(uid, "REGISTER_REGION_SELECTED", region=h(region)),
-        reply_markup=kb_admin_edit_next(uid, "adm_reg_confirm"),
+        reply_markup=kb_admin_edit_region_confirm(uid),
     )
     await AdminProfileEditFSM.region_confirm.set()
     await c.answer()
@@ -12570,6 +12770,16 @@ async def adm_edit_region_confirm(c: types.CallbackQuery, state: FSMContext):
     await state.reset_state(with_data=False)
     await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
     await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_back", state=AdminProfileEditFSM.region_confirm)
+async def adm_edit_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await AdminProfileEditFSM.waiting_region.set()
+    await admin_edit_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_admin_edit_region_picker(uid))
     await c.answer()
 
 
