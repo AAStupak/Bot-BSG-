@@ -5344,7 +5344,13 @@ def profile_photo_status_label(uid: int, profile: dict) -> str:
     return tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
 
 
-def profile_summary_text(uid: int, profile: dict, edit_mode: bool = False) -> str:
+def profile_summary_text(
+    uid: int,
+    profile: dict,
+    edit_mode: bool = False,
+    *,
+    points_owner: Optional[int] = None,
+) -> str:
     missing = tr(uid, "PROFILE_VALUE_MISSING")
     last_name = h(profile.get("last_name") or missing)
     first_name = h(profile.get("first_name") or missing)
@@ -5373,7 +5379,18 @@ def profile_summary_text(uid: int, profile: dict, edit_mode: bool = False) -> st
         f"{tr(uid, 'PROFILE_FIELD_PHOTO')}: <b>{photo_status}</b>",
     ]
     if not edit_mode:
-        lines.append(tr(uid, "PROFILE_POINTS_INLINE", points=fmt_points(points_total(uid))))
+        owner_uid = points_owner if points_owner is not None else profile.get("user_id") or uid
+        try:
+            owner_uid_int = int(owner_uid)
+        except (TypeError, ValueError):
+            owner_uid_int = uid
+        lines.append(
+            tr(
+                uid,
+                "PROFILE_POINTS_INLINE",
+                points=fmt_points(points_total(owner_uid_int)),
+            )
+        )
     if edit_mode:
         lines.append("")
         lines.append(tr(uid, "PROFILE_EDIT_HINT"))
@@ -5459,7 +5476,7 @@ async def show_profile(uid: int, *, edit_mode: Optional[bool] = None, show_photo
         await profile_send_notification(uid, tr(uid, "PROFILE_NO_PHOTO"))
         show_photo = False
     profile_set_flags(uid, edit_mode=edit_mode, show_photo=show_photo and has_photo)
-    caption = profile_summary_text(uid, profile, edit_mode=edit_mode)
+    caption = profile_summary_text(uid, profile, edit_mode=edit_mode, points_owner=profile.get("user_id", uid))
     kb = kb_profile_menu(uid, profile, edit_mode=edit_mode, show_photo=show_photo and has_photo)
     if show_photo and has_photo:
         await anchor_replace_with_photo(uid, user_profile_photo_path(uid), caption, kb)
@@ -5777,11 +5794,17 @@ def admin_finance_pick_receipts_for_amount(receipts: List[dict], target_amount: 
 
 
 def admin_user_card_text(viewer_uid: int, profile: dict, *, edit_mode: bool = False) -> str:
-    base = profile_summary_text(viewer_uid, profile, edit_mode=False)
+    target_uid = profile.get("user_id")
+    base = profile_summary_text(
+        viewer_uid,
+        profile,
+        edit_mode=False,
+        points_owner=target_uid if target_uid is not None else viewer_uid,
+    )
     points_line = tr(
         viewer_uid,
         "POINTS_ADMIN_CARD_LINE",
-        points=fmt_points(points_total(profile.get("user_id", 0)))
+        points=fmt_points(points_total(target_uid or 0))
     )
     lines = [base, "", points_line]
     if not edit_mode:
