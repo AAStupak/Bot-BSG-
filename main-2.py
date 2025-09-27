@@ -88,6 +88,17 @@ REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
 REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
 REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Панченко Алексей")
 REGISTRATION_GATE_CONTACT_ROLE = os.getenv("BSG_REQUIRED_CONTACT_ROLE", "директор компании BSG")
+_registration_notify_raw = (os.getenv("BSG_REG_NOTIFY_CHAT") or "").strip()
+if _registration_notify_raw:
+    if _registration_notify_raw.lstrip("-").isdigit():
+        try:
+            REGISTRATION_NOTIFY_CHAT: Optional[Union[int, str]] = int(_registration_notify_raw)
+        except Exception:
+            REGISTRATION_NOTIFY_CHAT = _registration_notify_raw
+    else:
+        REGISTRATION_NOTIFY_CHAT = _registration_notify_raw
+else:
+    REGISTRATION_NOTIFY_CHAT = None
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
 
@@ -1017,11 +1028,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "✅ Доступ подтверждён! Вы состоите в группе <b>{community}</b>. Нажмите «Дальше», чтобы продолжить регистрацию.",
     },
     "REGISTER_GATE_DENIED": {
-        "uk": "🚫 Реєстрація поки недоступна.\n\nВи ще не приєдналися до групи <b>{community}</b>. Напишіть, будь ласка, <b>{contact_name}</b> ({contact_role}), щоб вас додали. Після підтвердження натисніть «Продовжити», щоб перевірити ще раз, або «Закрити», щоб прибрати повідомлення.",
-        "en": "🚫 Registration is currently unavailable.\n\nYou are not a member of <b>{community}</b> yet. Please message <b>{contact_name}</b> ({contact_role}) so they can add you. After joining, press “Continue” to check again or “Close” to hide this message.",
-        "de": "🚫 Registrierung momentan nicht möglich.\n\nSie sind noch kein Mitglied von <b>{community}</b>. Bitte kontaktieren Sie <b>{contact_name}</b> ({contact_role}), damit Sie hinzugefügt werden. Nachdem Sie beigetreten sind, tippen Sie auf „Fortfahren“, um erneut zu prüfen, oder auf „Schließen“, um diese Nachricht auszublenden.",
-        "pl": "🚫 Rejestracja jest chwilowo zablokowana.\n\nNie należysz jeszcze do grupy <b>{community}</b>. Skontaktuj się z <b>{contact_name}</b> ({contact_role}), aby dodał Cię do społeczności. Po dołączeniu kliknij „Kontynuować”, aby sprawdzić ponownie, albo „Zamknąć”, aby ukryć tę wiadomość.",
-        "ru": "🚫 Регистрация пока недоступна.\n\nВы ещё не вступили в группу <b>{community}</b>. Напишите, пожалуйста, <b>{contact_name}</b> ({contact_role}), чтобы он добавил вас. После вступления нажмите «Продолжить», чтобы проверить снова, или «Закрыть», чтобы скрыть сообщение.",
+        "uk": "🚫 Реєстрація поки недоступна, {name}.\n\nВи ще не приєдналися до групи <b>{community}</b>. Напишіть, будь ласка, <b>{contact_name}</b> ({contact_role}), щоб вас додали. Після підтвердження натисніть «Продовжити», щоб перевірити ще раз, або «Закрити», щоб прибрати повідомлення.",
+        "en": "🚫 Registration is currently unavailable, {name}.\n\nYou are not a member of <b>{community}</b> yet. Please message <b>{contact_name}</b> ({contact_role}) so they can add you. After joining, press “Continue” to check again or “Close” to hide this message.",
+        "de": "🚫 Registrierung momentan nicht möglich, {name}.\n\nSie sind noch kein Mitglied von <b>{community}</b>. Bitte kontaktieren Sie <b>{contact_name}</b> ({contact_role}), damit Sie hinzugefügt werden. Nachdem Sie beigetreten sind, tippen Sie auf „Fortfahren“, um erneut zu prüfen, oder auf „Schließen“, um diese Nachricht auszublenden.",
+        "pl": "🚫 Rejestracja jest chwilowo zablokowana, {name}.\n\nNie należysz jeszcze do grupy <b>{community}</b>. Skontaktuj się z <b>{contact_name}</b> ({contact_role}), aby dodał Cię do społeczności. Po dołączeniu kliknij „Kontynuować”, aby sprawdzić ponownie, albo „Zamknąć”, aby ukryć tę wiadomość.",
+        "ru": "🚫 Регистрация пока недоступна, {name}.\n\nВы ещё не вступили в группу <b>{community}</b>. Напишите, пожалуйста, <b>{contact_name}</b> ({contact_role}), чтобы он добавил вас. После вступления нажмите «Продолжить», чтобы проверить снова, или «Закрыть», чтобы скрыть сообщение.",
     },
     "REGISTER_GATE_RETRY": {
         "uk": "🔄 Продовжити",
@@ -2911,6 +2922,36 @@ def registration_gate_log_attempt(uid: int, runtime: dict, allowed: bool, status
                 os.remove(tmp_path)
             except Exception:
                 pass
+
+
+async def registration_notify_new_user(uid: int, profile: dict, runtime: dict) -> None:
+    if not REGISTRATION_NOTIFY_CHAT:
+        return
+    full_name = profile.get("fullname") or compose_fullname(
+        profile.get("last_name", ""),
+        profile.get("first_name", ""),
+        profile.get("middle_name"),
+    )
+    if not full_name:
+        full_name = runtime.get("tg", {}).get("first_name") or runtime.get("tg", {}).get("username") or f"ID {uid}"
+    bsu_code = profile.get("bsu") or "—"
+    timestamp = alerts_now().strftime("%d.%m.%Y %H:%M")
+    text = (
+        "Нова реєстрація в BSG › SYSTEM\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"Користувач {h(full_name)} успішно зареєструвався у боті BSG › SYSTEM.\n\n"
+        "Тепер мій доступ — активовано\n"
+        f"BSGID: {h(bsu_code)}\n\n"
+        "Вітаю в робочому просторі BSG › SYSTEM — усе в одному місці, без зайвих пошуків.\n"
+        "Це економить твій час і залишає більше простору для інших справ.\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"Telegram ID: {uid}\n"
+        f"Час: {timestamp}"
+    )
+    try:
+        await bot.send_message(REGISTRATION_NOTIFY_CHAT, text)
+    except Exception:
+        pass
 
 
 async def registration_check_membership(uid: int) -> Tuple[bool, str]:
@@ -5936,6 +5977,13 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
     profile = load_user(uid) or {}
     already_registered = registration_profile_completed(profile)
     registration_sync_runtime(uid, profile)
+    display_name = (
+        profile.get("first_name")
+        or runtime.get("tg", {}).get("first_name")
+        or profile.get("fullname")
+        or runtime.get("tg", {}).get("username")
+        or f"ID {uid}"
+    )
     stage = c.data.split(":", 1)[1]
 
     if stage == "membership":
@@ -5966,6 +6014,7 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
                 community=community,
                 contact_name=h(REGISTRATION_GATE_CONTACT_NAME),
                 contact_role=h(REGISTRATION_GATE_CONTACT_ROLE),
+                name=h(display_name),
             )
             markup = kb_registration_gate_blocked(uid)
         try:
@@ -6550,6 +6599,7 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo
 
     runtime = users_runtime.setdefault(uid, {})
     current_profile = ensure_user(uid, runtime.get("tg", {}))
+    was_completed = registration_profile_completed(current_profile)
     updates = {
         "last_name": last_name,
         "first_name": first_name,
@@ -6567,6 +6617,10 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo
         updates["photo"] = {"status": "skipped", "updated_at": datetime.now(timezone.utc).isoformat()}
 
     profile = registration_update(uid, **updates)
+    now_completed = registration_profile_completed(profile)
+
+    if now_completed and not was_completed:
+        await registration_notify_new_user(uid, profile, runtime)
 
     await registration_clear_ack(uid)
     await state.finish()
