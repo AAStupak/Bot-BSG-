@@ -771,11 +771,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📬 Закрепить ТТН за пользователем",
     },
     "BTN_PROFILE": {
-        "uk": "👤 Мій профіль",
-        "en": "👤 My profile",
-        "de": "👤 Mein Profil",
-        "pl": "👤 Mój profil",
-        "ru": "👤 Мой профиль",
+        "uk": "➕ Долучитися",
+        "en": "➕ Join workspace",
+        "de": "➕ Beitreten",
+        "pl": "➕ Dołączyć",
+        "ru": "➕ Добавиться",
     },
     "BTN_PROFILE_EDIT": {
         "uk": "✏️ Редагувати профіль",
@@ -1863,6 +1863,17 @@ class ProfileEditFSM(StatesGroup):
     waiting_photo = State()
 
 
+class AdminProfileEditFSM(StatesGroup):
+    waiting_last_name = State()
+    waiting_first_name = State()
+    waiting_middle_name = State()
+    waiting_birthdate = State()
+    waiting_region = State()
+    region_confirm = State()
+    waiting_phone = State()
+    waiting_photo = State()
+
+
 class ReceiptFSM(StatesGroup):
     waiting_photo = State()
     waiting_amount = State()
@@ -2464,6 +2475,28 @@ def compose_fullname(last_name: str, first_name: str, middle_name: Optional[str]
     if middle_name:
         parts.append(middle_name)
     return " ".join(part for part in parts if part)
+
+
+def sanitize_phone_input(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    raw = text.strip()
+    digits = re.sub(r"\D+", "", raw)
+    if not digits:
+        return None
+    if raw.startswith("+"):
+        normalized = "+" + digits
+    elif len(digits) == 10 and digits.startswith("0"):
+        normalized = "+38" + digits
+    elif len(digits) >= 11 and digits.startswith("380"):
+        normalized = "+" + digits
+    elif len(digits) >= 10:
+        normalized = "+" + digits
+    else:
+        return None
+    if len(re.sub(r"\D", "", normalized)) < 10:
+        return None
+    return normalized
 
 
 def parse_birthdate_text(value: Optional[str]) -> Optional[datetime]:
@@ -4130,6 +4163,12 @@ def kb_profile_cancel(uid: int) -> InlineKeyboardMarkup:
     return kb
 
 
+def kb_admin_edit_cancel(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
 def profile_has_photo(profile: dict) -> bool:
     photo = profile.get("photo") or {}
     if not isinstance(photo, dict):
@@ -4510,7 +4549,7 @@ def admin_collect_user_stats(profile: dict) -> dict:
     }
 
 
-def admin_user_card_text(viewer_uid: int, profile: dict) -> str:
+def admin_user_card_text(viewer_uid: int, profile: dict, *, edit_mode: bool = False) -> str:
     stats = admin_collect_user_stats(profile)
     base = profile_summary_text(viewer_uid, profile, edit_mode=False)
     lines = [base, "", "💼 <b>Активність</b>"]
@@ -4523,19 +4562,41 @@ def admin_user_card_text(viewer_uid: int, profile: dict) -> str:
     lines.append("💵 <b>Запити на виплати</b>")
     lines.append(f"⌛ В роботі: <b>{len(stats['pending_payouts'])}</b>")
     lines.append(f"📗 Завершено: <b>{len(stats['confirmed_payouts'])}</b>")
+    if edit_mode:
+        lines.append("")
+        lines.append(tr(viewer_uid, "PROFILE_EDIT_HINT"))
     return "\n".join(lines)
 
 
-def kb_admin_user(profile: dict, show_photo: bool = False) -> InlineKeyboardMarkup:
+def kb_admin_user(viewer_uid: int, profile: dict, *, show_photo: bool = False, edit_mode: bool = False) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     if profile_has_photo(profile):
         label = "📝 Повернути текст" if show_photo else "👁 Показати фото"
         kb.add(InlineKeyboardButton(label, callback_data="adm_user_photo_toggle"))
-    kb.row(
-        InlineKeyboardButton("📊 Статистика", callback_data="adm_stat_choose"),
-        InlineKeyboardButton("🧾 Чеки", callback_data="adm_recs_choose"),
-    )
-    kb.add(InlineKeyboardButton("💵 Фінанси", callback_data="adm_user_finance"))
+    if edit_mode:
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_LAST"), callback_data="adm_edit_last"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_FIRST"), callback_data="adm_edit_first"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_MIDDLE"), callback_data="adm_edit_middle"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_BIRTHDATE"), callback_data="adm_edit_birthdate"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_REGION"), callback_data="adm_edit_region"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_PHONE"), callback_data="adm_edit_phone"),
+        )
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_UPDATE_PHOTO"), callback_data="adm_edit_photo"))
+        if profile_has_photo(profile):
+            kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_REMOVE_PHOTO"), callback_data="adm_edit_remove_photo"))
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_DONE"), callback_data="adm_user_edit_done"))
+    else:
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_EDIT"), callback_data="adm_user_edit"))
+        kb.row(
+            InlineKeyboardButton("📊 Статистика", callback_data="adm_stat_choose"),
+            InlineKeyboardButton("🧾 Чеки", callback_data="adm_recs_choose"),
+        )
+        kb.add(InlineKeyboardButton("💵 Фінанси", callback_data="adm_user_finance"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
     return kb
 
@@ -4748,6 +4809,48 @@ async def profile_send_prompt(uid: int, text: str, reply_markup: Optional[Union[
     runtime["profile_prompt"] = (msg.chat.id, msg.message_id)
     flow_track(uid, msg)
     return msg
+
+
+def admin_edit_runtime(uid: int) -> dict:
+    runtime = users_runtime.setdefault(uid, {})
+    return runtime.setdefault("admin_edit", {})
+
+
+async def admin_edit_clear_prompt(uid: int):
+    runtime = admin_edit_runtime(uid)
+    prompt = runtime.pop("prompt", None)
+    if isinstance(prompt, (list, tuple)) and len(prompt) == 2:
+        await _delete_message_safe(prompt[0], prompt[1])
+
+
+async def admin_edit_send_prompt(
+    uid: int,
+    text: str,
+    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None,
+):
+    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if not chat:
+        return None
+    await admin_edit_clear_prompt(uid)
+    runtime = admin_edit_runtime(uid)
+    if isinstance(reply_markup, ReplyKeyboardMarkup):
+        runtime["reply_keyboard"] = True
+    else:
+        runtime.pop("reply_keyboard", None)
+    msg = await bot.send_message(chat, text, reply_markup=reply_markup)
+    runtime["prompt"] = (msg.chat.id, msg.message_id)
+    flow_track(uid, msg)
+    return msg
+
+
+async def admin_edit_notify(uid: int, text: str, *, remove_keyboard: bool = False):
+    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if not chat:
+        return
+    markup = ReplyKeyboardRemove() if remove_keyboard else None
+    msg = await bot.send_message(chat, text, reply_markup=markup)
+    flow_track(uid, msg)
+    schedule_auto_delete(msg.chat.id, msg.message_id, delay=8)
 
 
 async def profile_send_notification(uid: int, text: str, *, remove_keyboard: bool = False):
@@ -5010,10 +5113,25 @@ def kb_region_prompt(target: Any) -> InlineKeyboardMarkup:
     return kb
 
 
+def kb_admin_edit_region_prompt(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_BUTTON"), callback_data="adm_reg_open"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
 def kb_region_picker(target: Any) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     for idx, region in enumerate(UKRAINE_REGIONS):
         kb.insert(InlineKeyboardButton(region, callback_data=f"reg_region_pick:{idx}"))
+    return kb
+
+
+def kb_admin_edit_region_picker(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"adm_reg_pick:{idx}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
     return kb
 
 
@@ -5026,6 +5144,13 @@ def kb_phone_keyboard(target: Any) -> ReplyKeyboardMarkup:
 def kb_photo_keyboard(target: Any) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(target, "BTN_SKIP"), callback_data="reg_photo_skip"))
+    return kb
+
+
+def kb_admin_edit_next(uid: int, callback_data: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(registration_button_label(uid), callback_data=callback_data))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
     return kb
 
 
@@ -11740,9 +11865,12 @@ async def menu_admin(c: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda c: c.data == "adm_users")
-async def adm_users(c: types.CallbackQuery):
+async def adm_users(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
     files = sorted([f for f in os.listdir(USERS_PATH) if f.endswith(".json")])
     page = 1
     slice_, total = paginate(files, page)
@@ -11777,9 +11905,12 @@ async def adm_users(c: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("adm_users_page_"))
-async def adm_users_page(c: types.CallbackQuery):
+async def adm_users_page(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
     files = sorted([f for f in os.listdir(USERS_PATH) if f.endswith(".json")])
     try:
         page = int(c.data.split("_")[-1])
@@ -11824,19 +11955,30 @@ async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
     target = int(c.data.split("adm_user_",1)[1])
-    await state.update_data(target_uid=target, admin_user_show_photo=False)
-    await admin_show_user(uid, target, state, show_photo=False)
+    await state.reset_state(with_data=False)
+    await state.update_data(target_uid=target, admin_user_show_photo=False, admin_user_edit_mode=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=False)
     await c.answer()
 
 
-async def admin_show_user(uid: int, target_uid: int, state: FSMContext, show_photo: Optional[bool] = None):
+async def admin_show_user(
+    uid: int,
+    target_uid: int,
+    state: FSMContext,
+    show_photo: Optional[bool] = None,
+    edit_mode: Optional[bool] = None,
+):
+    data = await state.get_data()
     if show_photo is None:
-        data = await state.get_data()
         show_photo = bool(data.get("admin_user_show_photo"))
-    await state.update_data(admin_user_show_photo=show_photo)
+    if edit_mode is None:
+        edit_mode = bool(data.get("admin_user_edit_mode"))
+    await state.update_data(admin_user_show_photo=show_photo, admin_user_edit_mode=edit_mode)
     profile = load_user(target_uid) or {"user_id": target_uid}
-    text = admin_user_card_text(uid, profile)
-    kb = kb_admin_user(profile, show_photo=show_photo)
+    text = admin_user_card_text(uid, profile, edit_mode=edit_mode)
+    kb = kb_admin_user(uid, profile, show_photo=show_photo, edit_mode=edit_mode)
     if show_photo and profile_has_photo(profile):
         await anchor_replace_with_photo(uid, user_profile_photo_path(target_uid), text, kb)
     else:
@@ -11857,6 +11999,477 @@ async def adm_user_photo_toggle(c: types.CallbackQuery, state: FSMContext):
     current = bool(data.get("admin_user_show_photo"))
     await admin_show_user(uid, target, state, show_photo=not current)
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_edit")
+async def adm_user_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.update_data(admin_user_edit_mode=True)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_edit_done", state="*")
+async def adm_user_edit_done(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    runtime = admin_edit_runtime(uid)
+    runtime.pop("reply_keyboard", False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await state.update_data(admin_user_edit_mode=False)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(
+    lambda c: c.data == "adm_edit_cancel",
+    state=[
+        AdminProfileEditFSM.waiting_last_name,
+        AdminProfileEditFSM.waiting_first_name,
+        AdminProfileEditFSM.waiting_middle_name,
+        AdminProfileEditFSM.waiting_birthdate,
+        AdminProfileEditFSM.waiting_region,
+        AdminProfileEditFSM.region_confirm,
+        AdminProfileEditFSM.waiting_phone,
+        AdminProfileEditFSM.waiting_photo,
+    ],
+)
+async def adm_edit_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    runtime = admin_edit_runtime(uid)
+    remove_keyboard = bool(runtime.pop("reply_keyboard", False))
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    if target:
+        await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    if remove_keyboard:
+        await admin_edit_notify(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=True)
+    else:
+        await c.answer(tr(uid, "PROFILE_CANCELLED"))
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_last")
+async def adm_edit_last_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_last_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_first")
+async def adm_edit_first_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_first_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_middle")
+async def adm_edit_middle_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_middle_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_birthdate")
+async def adm_edit_birthdate_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_birthdate.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_region")
+async def adm_edit_region_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_region.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_REGION"), reply_markup=kb_admin_edit_region_prompt(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_open", state=AdminProfileEditFSM.waiting_region)
+async def adm_edit_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await admin_edit_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_admin_edit_region_picker(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_reg_pick:"), state=AdminProfileEditFSM.waiting_region)
+async def adm_edit_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        idx = int(c.data.split(":", 1)[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        return await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+    await state.update_data(admin_region=region)
+    await admin_edit_send_prompt(
+        uid,
+        tr(uid, "REGISTER_REGION_SELECTED", region=h(region)),
+        reply_markup=kb_admin_edit_next(uid, "adm_reg_confirm"),
+    )
+    await AdminProfileEditFSM.region_confirm.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_confirm", state=AdminProfileEditFSM.region_confirm)
+async def adm_edit_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    region = data.get("admin_region")
+    if not target or not region:
+        return await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["region"] = region
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_region, content_types=ContentType.TEXT)
+async def adm_edit_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_admin_edit_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_phone")
+async def adm_edit_phone_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_phone.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHONE"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_photo")
+async def adm_edit_photo_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_photo.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_remove_photo")
+async def adm_edit_remove_photo(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    remove_profile_photo(target)
+    profile["photo"] = {}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await flow_clear_warnings(uid)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHOTO_REMOVED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_last_name, content_types=ContentType.TEXT)
+async def adm_edit_last_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not raw or not NAME_VALID_RE.match(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["last_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile["last_name"], profile.get("first_name", ""), profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_first_name, content_types=ContentType.TEXT)
+async def adm_edit_first_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not raw or not NAME_VALID_RE.match(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["first_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile["first_name"], profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_middle_name, content_types=ContentType.TEXT)
+async def adm_edit_middle_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if raw and raw.lower() in SKIP_KEYWORDS:
+        cleaned = ""
+    elif raw and NAME_VALID_RE.match(raw):
+        cleaned = beautify_name(raw)
+    else:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["middle_name"] = cleaned
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), cleaned)
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_birthdate, content_types=ContentType.TEXT)
+async def adm_edit_birthdate_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    dt = parse_birthdate_text(m.text)
+    await flow_delete_message(uid, m)
+    if not dt:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["birthdate"] = dt.strftime("%Y-%m-%d")
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_phone, content_types=ContentType.TEXT)
+async def adm_edit_phone_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    phone = sanitize_phone_input(m.text)
+    await flow_delete_message(uid, m)
+    if not phone:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["phone"] = phone
+    profile.setdefault("tg", {})
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    runtime = admin_edit_runtime(uid)
+    runtime.pop("reply_keyboard", None)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHONE_SAVED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_phone, content_types=ContentType.CONTACT)
+async def adm_edit_phone_contact(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_photo, content_types=ContentType.PHOTO)
+async def adm_edit_photo_receive(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    photo = m.photo[-1] if m.photo else None
+    if not photo:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    try:
+        meta = await store_profile_photo(target, photo)
+    except Exception:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["photo"] = meta or {"status": "uploaded", "updated_at": datetime.now(timezone.utc).isoformat()}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHOTO_UPDATED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_photo, content_types=ContentType.ANY)
+async def adm_edit_photo_invalid(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    if m.photo:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+    flow_track_warning(uid, warn)
 
 
 @dp.callback_query_handler(lambda c: c.data == "adm_user_finance")
