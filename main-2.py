@@ -5347,7 +5347,17 @@ def flow_track(uid: int, msg: Optional[types.Message], bucket: str = "flow_msgs"
 
 
 def flow_track_warning(uid: int, msg: Optional[types.Message]):
-    flow_track(uid, msg, bucket="flow_warns")
+    if not msg:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    previous = runtime.get("flow_warns", [])
+    for chat_id, message_id in previous:
+        if not chat_id or not message_id:
+            continue
+        if chat_id == msg.chat.id and message_id == msg.message_id:
+            continue
+        asyncio.create_task(_delete_message_safe(chat_id, message_id))
+    runtime["flow_warns"] = [(msg.chat.id, msg.message_id)]
 
 
 async def flow_prepare_prompt(uid: int, reuse: Optional[Tuple[int, int]] = None) -> Optional[Tuple[int, int]]:
