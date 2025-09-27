@@ -771,11 +771,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📬 Закрепить ТТН за пользователем",
     },
     "BTN_PROFILE": {
-        "uk": "➕ Долучитися",
-        "en": "➕ Join workspace",
-        "de": "➕ Beitreten",
-        "pl": "➕ Dołączyć",
-        "ru": "➕ Добавиться",
+        "uk": "👤 Мій профіль",
+        "en": "👤 My profile",
+        "de": "👤 Mein Profil",
+        "pl": "👤 Mój profil",
+        "ru": "👤 Мой профиль",
     },
     "BTN_PROFILE_EDIT": {
         "uk": "✏️ Редагувати профіль",
@@ -1014,6 +1014,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "Sie scheinen bereits registriert zu sein. Nutzen Sie die Schaltfläche, um zum Hauptmenü zu wechseln oder Ihre Daten zu aktualisieren.",
         "pl": "Wygląda na to, że rejestracja została już zakończona. Użyj przycisku, aby przejść do menu głównego lub zaktualizować dane.",
         "ru": "Похоже, вы уже проходили регистрацию. Нажмите кнопку, чтобы открыть главное меню или продолжить обновление данных.",
+    },
+    "ONBOARD_ALREADY_COMPLETED": {
+        "uk": "✅ Реєстрацію вже завершено. Повертаю вас до головного меню.",
+        "en": "✅ Registration is already complete. Returning you to the main menu.",
+        "de": "✅ Die Registrierung ist bereits abgeschlossen. Ich bringe Sie zurück zum Hauptmenü.",
+        "pl": "✅ Rejestracja została już ukończona. Wracam do głównego menu.",
+        "ru": "✅ Регистрация уже завершена. Возвращаю в главное меню.",
     },
     "REGISTER_INTRO_PROMPT": {
         "uk": "Починаємо! Відповідайте на запитання нижче. Всі допоміжні повідомлення будуть прибрані автоматично.",
@@ -5173,18 +5180,34 @@ async def start_cmd(m: types.Message, state: FSMContext):
         "last_seen": datetime.now(timezone.utc).isoformat(),
     }
 
-    ensure_user(uid, runtime["tg"], lang=m.from_user.language_code)
-    profile = load_user(uid) or {}
-    runtime["onboard_registered"] = bool(
+    profile = ensure_user(uid, runtime["tg"], lang=m.from_user.language_code)
+    already_registered = bool(
         profile.get("profile_completed") or (
             profile.get("first_name") and profile.get("last_name") and profile.get("phone")
         )
     )
+    runtime["onboard_registered"] = already_registered
+    lang_confirmed = bool(profile.get("lang_confirmed"))
 
     try:
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
+
+    if already_registered and lang_confirmed:
+        runtime.pop("language_prompt", None)
+        runtime.pop("onboard_intro", None)
+        display_name = (
+            profile.get("first_name")
+            or profile.get("fullname")
+            or runtime["tg"].get("first_name")
+            or runtime["tg"].get("username")
+            or f"ID {uid}"
+        )
+        greet = await bot.send_message(m.chat.id, tr(uid, "START_WELCOME_BACK", name=h(display_name)))
+        schedule_auto_delete(greet.chat.id, greet.message_id, delay=12)
+        await anchor_show_root(uid)
+        return
 
     prompt = await bot.send_message(m.chat.id, tr(uid, "LANGUAGE_PROMPT"), reply_markup=kb_language_picker())
     runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
@@ -5273,6 +5296,13 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
             pass
         runtime.pop("onboard_intro", None)
         await flow_clear(uid)
+        if runtime.get("onboard_registered"):
+            await state.finish()
+            notice = await bot.send_message(chat_id, tr(uid, "ONBOARD_ALREADY_COMPLETED"))
+            schedule_auto_delete(notice.chat.id, notice.message_id, delay=12)
+            await anchor_show_root(uid)
+            await c.answer()
+            return
         intro = await bot.send_message(chat_id, tr(uid, "REGISTER_INTRO_PROMPT"))
         flow_track(uid, intro)
         await onboard_prompt_last_name(uid, chat_id, state)
@@ -5791,6 +5821,9 @@ async def become_admin(m: types.Message):
 @dp.message_handler(content_types=ContentType.ANY, state=None)
 async def fallback_message(m: types.Message, state: FSMContext):
     uid = m.from_user.id
+    current_state = await state.get_state()
+    if current_state:
+        return
     text = m.text or ""
     if text.startswith("/"):
         return
