@@ -2428,6 +2428,11 @@ def load_user(uid: int) -> Optional[dict]:
 
 def save_user(profile: dict):
     ensure_dirs()
+    uid = profile.get("user_id")
+    completed = None
+    if uid is not None:
+        completed = registration_profile_completed(profile)
+        profile["profile_completed"] = completed
     path = user_file(profile["user_id"])
     tmp_path = f"{path}.tmp"
     try:
@@ -2442,6 +2447,8 @@ def save_user(profile: dict):
                 os.remove(tmp_path)
             except Exception:
                 pass
+    if uid is not None:
+        registration_sync_runtime(uid, profile)
 
 
 def load_all_users() -> List[dict]:
@@ -2629,12 +2636,18 @@ def sanitize_phone_input(text: Optional[str]) -> Optional[str]:
 
 
 def registration_profile_completed(profile: dict) -> bool:
-    return bool(
-        profile.get("last_name")
-        and profile.get("first_name")
-        and profile.get("phone")
-        and profile.get("region")
-    )
+    if not isinstance(profile, dict):
+        return False
+    last_name = (profile.get("last_name") or "").strip()
+    first_name = (profile.get("first_name") or "").strip()
+    phone = (profile.get("phone") or "").strip()
+    region = (profile.get("region") or "").strip()
+    birthdate = (profile.get("birthdate") or "").strip()
+    if not (last_name and first_name and phone and region and birthdate):
+        return False
+    if not registration_middle_name_completed(profile):
+        return False
+    return True
 
 
 def registration_photo_completed(profile: dict) -> bool:
@@ -2652,8 +2665,6 @@ def registration_middle_name_completed(snapshot: dict) -> bool:
         return True
     middle = snapshot.get("middle_name") or ""
     if middle.strip():
-        return True
-    if snapshot.get("profile_completed") and status is None:
         return True
     return False
 
@@ -2698,6 +2709,21 @@ def registration_format_field_list(target: Any, fields: List[str]) -> str:
     return f"{', '.join(labels[:-1])}{tr(target, 'REGISTER_LIST_AND')}{labels[-1]}"
 
 
+def registration_sync_runtime(uid: int, profile: Optional[dict]) -> bool:
+    profile = profile or {}
+    completed = registration_profile_completed(profile)
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["onboard_registered"] = completed
+    if not completed and runtime.get("anchor"):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            loop.create_task(anchor_clear(uid))
+    return completed
+
+
 def registration_update(uid: int, **updates) -> dict:
     runtime = users_runtime.setdefault(uid, {})
     profile = ensure_user(uid, runtime.get("tg", {}))
@@ -2733,16 +2759,11 @@ def registration_update(uid: int, **updates) -> dict:
             profile["fullname"] = fullname
             changed = True
 
-    completed = registration_profile_completed(profile)
-    if profile.get("profile_completed") != completed:
-        profile["profile_completed"] = completed
-        changed = True
-
     if changed:
         profile["updated_at"] = datetime.now(timezone.utc).isoformat()
         save_user(profile)
-
-    runtime["onboard_registered"] = profile.get("profile_completed", False)
+    else:
+        registration_sync_runtime(uid, profile)
     return profile
 
 
@@ -2800,6 +2821,7 @@ async def registration_continue(
 
 async def registration_start_sequence(uid: int, chat_id: int, state: FSMContext):
     runtime = users_runtime.setdefault(uid, {})
+    await anchor_clear(uid)
     profile = ensure_user(uid, runtime.get("tg", {}))
     await state.reset_data()
     await registration_seed_state(state, profile)
@@ -5027,6 +5049,17 @@ def inline_kb_signature(kb: Optional[InlineKeyboardMarkup]) -> Any:
 
 
 # ========================== ANCHOR ==========================
+async def anchor_clear(uid: int):
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id")
+    anchor_id = runtime.pop("anchor", None)
+    runtime.pop("last_anchor_text", None)
+    runtime.pop("last_anchor_kb", None)
+    runtime.pop("anchor_mode", None)
+    if anchor_id and chat_id:
+        await _delete_message_safe(chat_id, anchor_id)
+
+
 async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: Optional[InlineKeyboardMarkup] = None):
     if text is None: text = project_status_text(uid)
     if kb is None: kb = kb_root(uid)
@@ -5060,8 +5093,14 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
 
 
 async def anchor_show_root(uid: int):
-    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-    if chat: await anchor_upsert(uid, chat, project_status_text(uid), kb_root(uid))
+    runtime = users_runtime.setdefault(uid, {})
+    profile = load_user(uid) or {}
+    if not registration_sync_runtime(uid, profile):
+        await anchor_clear(uid)
+        return
+    chat = runtime.get("tg", {}).get("chat_id")
+    if chat:
+        await anchor_upsert(uid, chat, project_status_text(uid), kb_root(uid))
 
 
 async def anchor_replace_with_photo(uid: int, photo_path: str, caption: str, kb: InlineKeyboardMarkup):
@@ -5546,12 +5585,11 @@ async def start_cmd(m: types.Message, state: FSMContext):
 
     profile = ensure_user(uid, runtime["tg"], lang=m.from_user.language_code)
     derived_completed = registration_profile_completed(profile)
-    if derived_completed and not profile.get("profile_completed"):
-        profile["profile_completed"] = True
+    if profile.get("profile_completed") != derived_completed:
+        profile["profile_completed"] = derived_completed
         profile["updated_at"] = datetime.now(timezone.utc).isoformat()
         save_user(profile)
-    already_registered = bool(profile.get("profile_completed") or derived_completed)
-    runtime["onboard_registered"] = already_registered
+    already_registered = registration_sync_runtime(uid, profile)
     lang_confirmed = bool(profile.get("lang_confirmed"))
 
     try:
@@ -5574,6 +5612,7 @@ async def start_cmd(m: types.Message, state: FSMContext):
         await anchor_show_root(uid)
         return
 
+    await anchor_clear(uid)
     prompt = await bot.send_message(m.chat.id, tr(uid, "LANGUAGE_PROMPT"), reply_markup=kb_language_picker())
     runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
     await OnboardFSM.language.set()
@@ -5594,9 +5633,7 @@ async def onboard_language_selected(c: types.CallbackQuery, state: FSMContext):
 
     set_user_lang(uid, code, confirmed=True)
     profile = load_user(uid) or {}
-    runtime["onboard_registered"] = bool(
-        profile.get("profile_completed") or registration_profile_completed(profile)
-    )
+    registration_sync_runtime(uid, profile)
 
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
     confirm = await bot.send_message(
@@ -5617,6 +5654,8 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
     chat_id = info.get("chat_id") or c.message.chat.id
     message_id = info.get("message_id") or c.message.message_id
     profile = load_user(uid) or {}
+    already_registered = registration_profile_completed(profile)
+    registration_sync_runtime(uid, profile)
     stage = c.data.split(":", 1)[1]
 
     if stage == "welcome":
@@ -5637,7 +5676,7 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
 
     if stage == "briefing":
         text = tr(uid, "ONBOARD_BRIEFING")
-        if runtime.get("onboard_registered"):
+        if already_registered:
             text = f"{text}\n\n{tr(uid, 'ONBOARD_RETURNING_SHORTCUT')}"
         kb = kb_registration_next(uid, "onboard_stage:instructions")
         try:
@@ -5659,7 +5698,7 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
             pass
         runtime.pop("onboard_intro", None)
         await flow_clear(uid)
-        if runtime.get("onboard_registered"):
+        if already_registered:
             await state.finish()
             notice = await bot.send_message(chat_id, tr(uid, "ONBOARD_ALREADY_COMPLETED"))
             schedule_auto_delete(notice.chat.id, notice.message_id, delay=12)
@@ -5996,6 +6035,7 @@ async def onboard_phone_contact(m: types.Message, state: FSMContext):
     )
     await registration_continue(uid, m.chat.id, state, profile=profile)
     await _delete_message_safe(ack.chat.id, ack.message_id)
+    await flow_delete_message(uid, m)
 
 
 @dp.message_handler(state=OnboardFSM.phone, content_types=ContentType.TEXT)
@@ -6108,7 +6148,7 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo
 
     await state.finish()
     await flow_clear(uid)
-    runtime["onboard_registered"] = True
+    registration_sync_runtime(uid, profile)
     runtime.pop("onboard_intro", None)
 
     confirm = await bot.send_message(chat_id, tr(uid, "REGISTER_FINISH_CONFIRM", code=h(profile.get("bsu", "—"))))
@@ -8987,6 +9027,8 @@ def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[s
     for profile in load_all_users():
         uid = profile.get("user_id")
         if not uid:
+            continue
+        if not registration_profile_completed(profile):
             continue
         regions = alerts_user_regions(uid)
         canonical_regions = {alerts_canonical_region(r) or r for r in regions}
