@@ -81,8 +81,19 @@ USERS_PATH = "data/users"
 BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
 
-REQUIRED_COMMUNITY_CHAT = os.getenv("BSG_REQUIRED_CHAT", "@bsg_workspace")
-REQUIRED_COMMUNITY_TITLE = os.getenv("BSG_REQUIRED_TITLE", "BSG Workspace")
+_required_chat_raw = (os.getenv("BSG_REQUIRED_CHAT") or "-4979028084").strip()
+if _required_chat_raw:
+    if _required_chat_raw.lstrip("-").isdigit():
+        try:
+            REQUIRED_COMMUNITY_CHAT: Optional[Union[int, str]] = int(_required_chat_raw)
+        except Exception:
+            REQUIRED_COMMUNITY_CHAT = _required_chat_raw
+    else:
+        REQUIRED_COMMUNITY_CHAT = _required_chat_raw
+else:
+    REQUIRED_COMMUNITY_CHAT = None
+
+REQUIRED_COMMUNITY_TITLE = os.getenv("BSG_REQUIRED_TITLE", "Test BSG")
 REQUIRED_COMMUNITY_INVITE = os.getenv("BSG_REQUIRED_INVITE", "").strip()
 REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
 REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
@@ -2876,7 +2887,8 @@ def registration_sync_runtime(uid: int, profile: Optional[dict]) -> bool:
 
 
 def registration_gate_render_community() -> str:
-    title = REQUIRED_COMMUNITY_TITLE or REQUIRED_COMMUNITY_CHAT or "BSG workspace"
+    raw_title = REQUIRED_COMMUNITY_TITLE or REQUIRED_COMMUNITY_CHAT or "BSG workspace"
+    title = str(raw_title)
     invite = REQUIRED_COMMUNITY_INVITE
     safe_title = html_escape(title)
     if invite:
