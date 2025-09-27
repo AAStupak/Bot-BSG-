@@ -1029,6 +1029,76 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "Zaczynamy! Odpowiedz na poniższe pytania – pomocnicze wiadomości zostaną usunięte automatycznie.",
         "ru": "Начинаем! Отвечайте на вопросы ниже — служебные сообщения будут удалены автоматически.",
     },
+    "REGISTER_RESUME_PROGRESS": {
+        "uk": "🔄 Продовжуємо. Залишилось заповнити: {fields}.",
+        "en": "🔄 Resuming. Fields left to fill: {fields}.",
+        "de": "🔄 Weiter geht's. Es fehlt noch: {fields}.",
+        "pl": "🔄 Kontynuujemy. Do uzupełnienia pozostało: {fields}.",
+        "ru": "🔄 Продолжаем. Осталось заполнить: {fields}.",
+    },
+    "REGISTER_RESUME_READY": {
+        "uk": "🔄 Дані вже заповнені — завершуємо перевірку.",
+        "en": "🔄 All details are already filled — wrapping up the check.",
+        "de": "🔄 Alle Angaben bereits vorhanden – Abschluss läuft.",
+        "pl": "🔄 Wszystkie dane są już uzupełnione — kończymy sprawdzanie.",
+        "ru": "🔄 Все данные уже заполнены — завершаем проверку.",
+    },
+    "REGISTER_LIST_AND": {
+        "uk": " і ",
+        "en": " and ",
+        "de": " und ",
+        "pl": " i ",
+        "ru": " и ",
+    },
+    "REGISTER_FIELD_LABEL_LAST_NAME": {
+        "uk": "прізвище",
+        "en": "last name",
+        "de": "Nachname",
+        "pl": "nazwisko",
+        "ru": "фамилия",
+    },
+    "REGISTER_FIELD_LABEL_FIRST_NAME": {
+        "uk": "ім'я",
+        "en": "first name",
+        "de": "Vorname",
+        "pl": "imię",
+        "ru": "имя",
+    },
+    "REGISTER_FIELD_LABEL_MIDDLE_NAME": {
+        "uk": "по батькові",
+        "en": "middle name",
+        "de": "Zweitname",
+        "pl": "drugie imię",
+        "ru": "отчество",
+    },
+    "REGISTER_FIELD_LABEL_BIRTHDATE": {
+        "uk": "дату народження",
+        "en": "birth date",
+        "de": "Geburtsdatum",
+        "pl": "datę urodzenia",
+        "ru": "дату рождения",
+    },
+    "REGISTER_FIELD_LABEL_REGION": {
+        "uk": "область",
+        "en": "region",
+        "de": "Region",
+        "pl": "region",
+        "ru": "область",
+    },
+    "REGISTER_FIELD_LABEL_PHONE": {
+        "uk": "номер телефону",
+        "en": "phone number",
+        "de": "Telefonnummer",
+        "pl": "numer telefonu",
+        "ru": "номер телефона",
+    },
+    "REGISTER_FIELD_LABEL_PHOTO": {
+        "uk": "фото",
+        "en": "photo",
+        "de": "Foto",
+        "pl": "zdjęcie",
+        "ru": "фото",
+    },
     "REGISTER_LAST_NAME_PROMPT": {
         "uk": "1. Вкажіть ваше прізвище.",
         "en": "1. Please enter your last name.",
@@ -1042,6 +1112,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "❗ Prüfen Sie den Nachnamen: Es sind nur Buchstaben, Apostroph und Bindestrich erlaubt.",
         "pl": "❗ Sprawdź nazwisko: dozwolone są tylko litery, apostrof i myślnik.",
         "ru": "❗ Проверьте фамилию: допустимы только буквы, апостроф и дефис.",
+    },
+    "REGISTER_LAST_NAME_OK": {
+        "uk": "Прізвище збережено: <b>{value}</b> ✅",
+        "en": "Last name saved: <b>{value}</b> ✅",
+        "de": "Nachname gespeichert: <b>{value}</b> ✅",
+        "pl": "Nazwisko zapisane: <b>{value}</b> ✅",
+        "ru": "Фамилия сохранена: <b>{value}</b> ✅",
     },
     "REGISTER_FIRST_NAME_PROMPT": {
         "uk": "2. Вкажіть ваше ім'я.",
@@ -1057,6 +1134,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "❗ Sprawdź imię: dozwolone są tylko litery, apostrof i myślnik.",
         "ru": "❗ Проверьте имя: допустимы только буквы, апостроф и дефис.",
     },
+    "REGISTER_FIRST_NAME_OK": {
+        "uk": "Ім'я збережено: <b>{value}</b> ✅",
+        "en": "First name saved: <b>{value}</b> ✅",
+        "de": "Vorname gespeichert: <b>{value}</b> ✅",
+        "pl": "Imię zapisane: <b>{value}</b> ✅",
+        "ru": "Имя сохранено: <b>{value}</b> ✅",
+    },
     "REGISTER_MIDDLE_NAME_PROMPT": {
         "uk": "3. Вкажіть по батькові (якщо є). Якщо немає — напишіть «немає».",
         "en": "3. Enter your patronymic or middle name (optional). Type “no” if you wish to skip.",
@@ -1071,6 +1155,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "❗ Sprawdź drugie imię: dozwolone są tylko litery, apostrof i myślnik.",
         "ru": "❗ Проверьте отчество: допустимы только буквы, апостроф и дефис.",
     },
+    "REGISTER_MIDDLE_NAME_OK": {
+        "uk": "По батькові збережено: <b>{value}</b> ✅",
+        "en": "Middle name saved: <b>{value}</b> ✅",
+        "de": "Zweitname gespeichert: <b>{value}</b> ✅",
+        "pl": "Drugie imię zapisane: <b>{value}</b> ✅",
+        "ru": "Отчество сохранено: <b>{value}</b> ✅",
+    },
+    "REGISTER_MIDDLE_NAME_SKIPPED": {
+        "uk": "По батькові пропущено. Його можна додати з профілю пізніше.",
+        "en": "Middle name skipped. You can add it later from your profile.",
+        "de": "Zweitname übersprungen. Sie können ihn später im Profil hinzufügen.",
+        "pl": "Drugie imię pominięto. Możesz dodać je później w profilu.",
+        "ru": "Отчество пропущено. Его можно добавить позже в профиле.",
+    },
     "REGISTER_BIRTHDATE_PROMPT": {
         "uk": "4. Вкажіть дату народження у форматі ДД.ММ.РРРР.",
         "en": "4. Please enter your birth date in DD.MM.YYYY format.",
@@ -1084,6 +1182,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "❗ Datum konnte nicht erkannt werden. Bitte verwenden Sie das Format TT.MM.JJJJ.",
         "pl": "❗ Nie udało się rozpoznać daty. Użyj formatu DD.MM.RRRR.",
         "ru": "❗ Не удалось распознать дату. Используйте формат ДД.ММ.ГГГГ.",
+    },
+    "REGISTER_BIRTHDATE_OK": {
+        "uk": "Дату народження збережено: <b>{value}</b> ✅",
+        "en": "Birth date saved: <b>{value}</b> ✅",
+        "de": "Geburtsdatum gespeichert: <b>{value}</b> ✅",
+        "pl": "Data urodzenia zapisana: <b>{value}</b> ✅",
+        "ru": "Дата рождения сохранена: <b>{value}</b> ✅",
     },
     "REGISTER_REGION_PROMPT": {
         "uk": "5. Оберіть область проживання кнопкою нижче.",
@@ -1120,6 +1225,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "Region <b>{region}</b> zapisano. Naciśnij przycisk, aby kontynuować.",
         "ru": "Область <b>{region}</b> сохранена. Нажмите кнопку, чтобы продолжить.",
     },
+    "REGISTER_REGION_OK": {
+        "uk": "Область підтверджено: <b>{value}</b> ✅",
+        "en": "Region confirmed: <b>{value}</b> ✅",
+        "de": "Region bestätigt: <b>{value}</b> ✅",
+        "pl": "Region potwierdzony: <b>{value}</b> ✅",
+        "ru": "Область подтверждена: <b>{value}</b> ✅",
+    },
     "REGISTER_PHONE_PROMPT_NEW": {
         "uk": "6. Надішліть номер телефону кнопкою «📱 Надіслати номер».",
         "en": "6. Send your phone number using the “📱 Share phone number” button.",
@@ -1135,18 +1247,18 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❗ Не удалось получить контакт. Повторите попытку кнопкой ниже.",
     },
     "REGISTER_PHONE_TEXT_WARN": {
-        "uk": "📞 Скористайтеся кнопкою «📱 Надіслати номер», щоб поділитися телефоном.",
-        "en": "📞 Please use the “📱 Share phone number” button to send your contact.",
-        "de": "📞 Bitte nutzen Sie die Schaltfläche „📱 Nummer senden“, um Ihren Kontakt zu teilen.",
-        "pl": "📞 Skorzystaj z przycisku „📱 Wyślij numer”, aby przesłać kontakt.",
-        "ru": "📞 Пожалуйста, используйте кнопку «📱 Отправить номер», чтобы поделиться телефоном.",
+        "uk": "📞 Надішліть коректний номер або скористайтеся кнопкою «📱 Надіслати номер».",
+        "en": "📞 Please send a valid phone number or use the “📱 Share phone number” button.",
+        "de": "📞 Bitte senden Sie eine gültige Telefonnummer oder nutzen Sie die Schaltfläche „📱 Nummer senden“.",
+        "pl": "📞 Wyślij poprawny numer telefonu lub użyj przycisku „📱 Wyślij numer”.",
+        "ru": "📞 Отправьте корректный номер телефона или воспользуйтесь кнопкой «📱 Отправить номер».",
     },
     "REGISTER_PHONE_OK": {
-        "uk": "Контакт збережено ✅",
-        "en": "Contact saved ✅",
-        "de": "Kontakt gespeichert ✅",
-        "pl": "Kontakt zapisany ✅",
-        "ru": "Контакт сохранён ✅",
+        "uk": "Номер збережено: <b>{value}</b> ✅",
+        "en": "Phone number saved: <b>{value}</b> ✅",
+        "de": "Telefonnummer gespeichert: <b>{value}</b> ✅",
+        "pl": "Numer telefonu zapisany: <b>{value}</b> ✅",
+        "ru": "Номер телефона сохранён: <b>{value}</b> ✅",
     },
     "REGISTER_PHOTO_PROMPT": {
         "uk": "7. Додайте паспортне фото.\n━━━━━━━━━━━━━━━━━━\n• фронтальний ракурс\n• нейтральний фон\n• рівне освітлення\nЯкщо поки що нема фото, натисніть «Пропустити».",
@@ -2506,6 +2618,185 @@ def sanitize_phone_input(text: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def registration_profile_completed(profile: dict) -> bool:
+    return bool(
+        profile.get("last_name")
+        and profile.get("first_name")
+        and profile.get("phone")
+        and profile.get("region")
+    )
+
+
+def registration_photo_completed(profile: dict) -> bool:
+    photo = profile.get("photo") or {}
+    if not isinstance(photo, dict):
+        return False
+    if photo.get("status") == "skipped":
+        return True
+    return bool(photo.get("file_id") or photo.get("file_unique_id") or photo)
+
+
+def registration_middle_name_completed(snapshot: dict) -> bool:
+    status = (snapshot.get("middle_name_status") or "")
+    if status in {"skipped", "provided"}:
+        return True
+    middle = snapshot.get("middle_name") or ""
+    if middle.strip():
+        return True
+    if snapshot.get("profile_completed") and status is None:
+        return True
+    return False
+
+
+def registration_build_snapshot(profile: dict, state_data: Optional[dict] = None) -> dict:
+    snapshot = dict(profile)
+    if state_data:
+        for key in ("last_name", "first_name", "middle_name", "birthdate", "region", "phone"):
+            if key in state_data and state_data[key] is not None:
+                snapshot[key] = state_data[key]
+        if state_data.get("middle_name_status"):
+            snapshot["middle_name_status"] = state_data["middle_name_status"]
+    return snapshot
+
+
+def registration_missing_steps(profile: dict, state_data: Optional[dict] = None) -> List[str]:
+    snapshot = registration_build_snapshot(profile, state_data)
+    missing: List[str] = []
+    if not snapshot.get("last_name"):
+        missing.append("last_name")
+    if not snapshot.get("first_name"):
+        missing.append("first_name")
+    if not registration_middle_name_completed(snapshot):
+        missing.append("middle_name")
+    if not snapshot.get("birthdate"):
+        missing.append("birthdate")
+    if not snapshot.get("region"):
+        missing.append("region")
+    if not snapshot.get("phone"):
+        missing.append("phone")
+    if not registration_photo_completed(snapshot):
+        missing.append("photo")
+    return missing
+
+
+def registration_format_field_list(target: Any, fields: List[str]) -> str:
+    if not fields:
+        return ""
+    labels = [tr(target, f"REGISTER_FIELD_LABEL_{field.upper()}") for field in fields]
+    if len(labels) == 1:
+        return labels[0]
+    return f"{', '.join(labels[:-1])}{tr(target, 'REGISTER_LIST_AND')}{labels[-1]}"
+
+
+def registration_update(uid: int, **updates) -> dict:
+    runtime = users_runtime.setdefault(uid, {})
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    changed = False
+
+    if "middle_name" in updates and "middle_name_status" not in updates:
+        updates["middle_name_status"] = "provided" if updates["middle_name"] else "skipped"
+
+    for key, value in updates.items():
+        if key == "photo":
+            current = profile.get("photo")
+            if value is None and current:
+                profile["photo"] = {}
+                changed = True
+            elif value is not None and current != value:
+                profile["photo"] = value
+                changed = True
+            continue
+        if key == "middle_name_status":
+            if profile.get("middle_name_status") != value:
+                profile["middle_name_status"] = value
+                changed = True
+            continue
+        if value is None:
+            continue
+        if profile.get(key) != value:
+            profile[key] = value
+            changed = True
+
+    if any(field in updates for field in ("last_name", "first_name", "middle_name")):
+        fullname = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), profile.get("middle_name"))
+        if profile.get("fullname") != fullname:
+            profile["fullname"] = fullname
+            changed = True
+
+    completed = registration_profile_completed(profile)
+    if profile.get("profile_completed") != completed:
+        profile["profile_completed"] = completed
+        changed = True
+
+    if changed:
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+
+    runtime["onboard_registered"] = profile.get("profile_completed", False)
+    return profile
+
+
+async def registration_seed_state(state: FSMContext, profile: dict):
+    payload = {}
+    for field in ("last_name", "first_name", "birthdate", "region", "phone"):
+        value = profile.get(field)
+        if value:
+            payload[field] = value
+    if profile.get("middle_name_status"):
+        payload["middle_name_status"] = profile.get("middle_name_status")
+        payload["middle_name"] = profile.get("middle_name", "")
+    elif profile.get("middle_name"):
+        payload["middle_name"] = profile.get("middle_name")
+    if payload:
+        await state.update_data(**payload)
+
+
+async def registration_continue(uid: int, chat_id: int, state: FSMContext, profile: Optional[dict] = None):
+    runtime = users_runtime.setdefault(uid, {})
+    profile = profile or ensure_user(uid, runtime.get("tg", {}))
+    data = await state.get_data()
+    snapshot = registration_build_snapshot(profile, data)
+
+    if not snapshot.get("last_name"):
+        await onboard_prompt_last_name(uid, chat_id, state)
+        return
+    if not snapshot.get("first_name"):
+        await onboard_prompt_first_name(uid, chat_id, state)
+        return
+    if not registration_middle_name_completed(snapshot):
+        await onboard_prompt_middle_name(uid, chat_id, state)
+        return
+    if not snapshot.get("birthdate"):
+        await onboard_prompt_birthdate(uid, chat_id, state)
+        return
+    if not snapshot.get("region"):
+        await onboard_prompt_region(uid, chat_id, state)
+        return
+    if not snapshot.get("phone"):
+        await onboard_prompt_phone(uid, chat_id, state)
+        return
+    if not registration_photo_completed(profile):
+        await onboard_prompt_photo(uid, chat_id, state)
+        return
+
+    await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=False)
+
+
+async def registration_start_sequence(uid: int, chat_id: int, state: FSMContext):
+    runtime = users_runtime.setdefault(uid, {})
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await state.reset_data()
+    await registration_seed_state(state, profile)
+    data = await state.get_data()
+    missing = registration_missing_steps(profile, data)
+    if missing:
+        note = await bot.send_message(chat_id, tr(uid, "REGISTER_RESUME_PROGRESS", fields=registration_format_field_list(uid, missing)))
+    else:
+        note = await bot.send_message(chat_id, tr(uid, "REGISTER_RESUME_READY"))
+    flow_track(uid, note)
+    await registration_continue(uid, chat_id, state, profile=profile)
+
+
 def parse_birthdate_text(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -2663,6 +2954,7 @@ def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str] = None, phon
             "first_name": "",
             "last_name": "",
             "middle_name": "",
+            "middle_name_status": None,
             "fullname": fullname or tg_payload.get("first_name") or f"User{uid}",
             "phone": phone or "",
             "region": "",
@@ -2683,6 +2975,7 @@ def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str] = None, phon
         prof.setdefault("first_name", "")
         prof.setdefault("last_name", "")
         prof.setdefault("middle_name", "")
+        prof.setdefault("middle_name_status", "provided" if prof.get("middle_name") else None)
         prof.setdefault("fullname", fullname or prof.get("fullname") or tg_payload.get("first_name") or f"User{uid}")
         prof.setdefault("phone", "")
         prof.setdefault("region", "")
@@ -5181,11 +5474,12 @@ async def start_cmd(m: types.Message, state: FSMContext):
     }
 
     profile = ensure_user(uid, runtime["tg"], lang=m.from_user.language_code)
-    already_registered = bool(
-        profile.get("profile_completed") or (
-            profile.get("first_name") and profile.get("last_name") and profile.get("phone")
-        )
-    )
+    derived_completed = registration_profile_completed(profile)
+    if derived_completed and not profile.get("profile_completed"):
+        profile["profile_completed"] = True
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    already_registered = bool(profile.get("profile_completed") or derived_completed)
     runtime["onboard_registered"] = already_registered
     lang_confirmed = bool(profile.get("lang_confirmed"))
 
@@ -5230,9 +5524,7 @@ async def onboard_language_selected(c: types.CallbackQuery, state: FSMContext):
     set_user_lang(uid, code, confirmed=True)
     profile = load_user(uid) or {}
     runtime["onboard_registered"] = bool(
-        profile.get("profile_completed") or (
-            profile.get("first_name") and profile.get("last_name") and profile.get("phone")
-        )
+        profile.get("profile_completed") or registration_profile_completed(profile)
     )
 
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
@@ -5305,7 +5597,7 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
             return
         intro = await bot.send_message(chat_id, tr(uid, "REGISTER_INTRO_PROMPT"))
         flow_track(uid, intro)
-        await onboard_prompt_last_name(uid, chat_id, state)
+        await registration_start_sequence(uid, chat_id, state)
         await c.answer()
         return
 
@@ -5371,8 +5663,12 @@ async def onboard_last_name(m: types.Message, state: FSMContext):
         flow_track_warning(uid, warn)
         return
     await flow_clear_warnings(uid)
-    await state.update_data(last_name=beautify_name(raw))
-    await onboard_prompt_first_name(uid, m.chat.id, state)
+    cleaned = beautify_name(raw)
+    await state.update_data(last_name=cleaned)
+    profile = registration_update(uid, last_name=cleaned)
+    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_OK", value=h(cleaned)))
+    flow_track(uid, ack)
+    await registration_continue(uid, m.chat.id, state, profile=profile)
 
 
 @dp.message_handler(state=OnboardFSM.first_name, content_types=ContentType.TEXT)
@@ -5385,8 +5681,12 @@ async def onboard_first_name(m: types.Message, state: FSMContext):
         flow_track_warning(uid, warn)
         return
     await flow_clear_warnings(uid)
-    await state.update_data(first_name=beautify_name(raw))
-    await onboard_prompt_middle_name(uid, m.chat.id, state)
+    cleaned = beautify_name(raw)
+    await state.update_data(first_name=cleaned)
+    profile = registration_update(uid, first_name=cleaned)
+    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_OK", value=h(cleaned)))
+    flow_track(uid, ack)
+    await registration_continue(uid, m.chat.id, state, profile=profile)
 
 
 @dp.message_handler(state=OnboardFSM.middle_name, content_types=ContentType.TEXT)
@@ -5396,16 +5696,23 @@ async def onboard_middle_name(m: types.Message, state: FSMContext):
     await flow_delete_message(uid, m)
     if raw.lower() in SKIP_KEYWORDS:
         await flow_clear_warnings(uid)
-        await state.update_data(middle_name="")
-        await onboard_prompt_birthdate(uid, m.chat.id, state)
+        await state.update_data(middle_name="", middle_name_status="skipped")
+        profile = registration_update(uid, middle_name="", middle_name_status="skipped")
+        note = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_SKIPPED"))
+        flow_track(uid, note)
+        await registration_continue(uid, m.chat.id, state, profile=profile)
         return
     if not validate_name(raw):
         warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
         flow_track_warning(uid, warn)
         return
     await flow_clear_warnings(uid)
-    await state.update_data(middle_name=beautify_name(raw))
-    await onboard_prompt_birthdate(uid, m.chat.id, state)
+    cleaned = beautify_name(raw)
+    await state.update_data(middle_name=cleaned, middle_name_status="provided")
+    profile = registration_update(uid, middle_name=cleaned, middle_name_status="provided")
+    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_OK", value=h(cleaned)))
+    flow_track(uid, ack)
+    await registration_continue(uid, m.chat.id, state, profile=profile)
 
 
 @dp.message_handler(state=OnboardFSM.birthdate, content_types=ContentType.TEXT)
@@ -5418,8 +5725,13 @@ async def onboard_birthdate(m: types.Message, state: FSMContext):
         flow_track_warning(uid, warn)
         return
     await flow_clear_warnings(uid)
-    await state.update_data(birthdate=parsed.strftime("%Y-%m-%d"))
-    await onboard_prompt_region(uid, m.chat.id, state)
+    iso = parsed.strftime("%Y-%m-%d")
+    await state.update_data(birthdate=iso)
+    profile = registration_update(uid, birthdate=iso)
+    display = format_birthdate_display(iso, resolve_lang(uid))
+    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_OK", value=h(display)))
+    flow_track(uid, ack)
+    await registration_continue(uid, m.chat.id, state, profile=profile)
 
 
 @dp.message_handler(state=OnboardFSM.region, content_types=ContentType.ANY)
@@ -5467,32 +5779,65 @@ async def onboard_region_confirm(c: types.CallbackQuery, state: FSMContext):
     await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
     runtime = users_runtime.setdefault(uid, {})
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
-    await onboard_prompt_phone(uid, chat_id, state)
+    data = await state.get_data()
+    region = data.get("region")
+    if region:
+        await state.update_data(region=region)
+        profile = registration_update(uid, region=region)
+        await flow_clear_warnings(uid)
+        ack = await bot.send_message(chat_id, tr(uid, "REGISTER_REGION_OK", value=h(region)))
+        flow_track(uid, ack)
+        await registration_continue(uid, chat_id, state, profile=profile)
+    else:
+        await registration_continue(uid, chat_id, state)
     await c.answer()
 
 
 @dp.message_handler(content_types=ContentType.CONTACT, state=OnboardFSM.phone)
 async def onboard_phone_contact(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    phone = (m.contact.phone_number if m.contact else "").strip()
+    phone_raw = (m.contact.phone_number if m.contact else "").strip()
     await flow_delete_message(uid, m)
-    if not phone:
+    normalized = sanitize_phone_input(phone_raw)
+    if not normalized:
         warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_WARN"), reply_markup=kb_phone_keyboard(uid))
         flow_track_warning(uid, warn)
         return
     await flow_clear_warnings(uid)
-    await state.update_data(phone=phone)
-    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_OK"), reply_markup=ReplyKeyboardRemove())
+    await state.update_data(phone=normalized)
+    profile = registration_update(uid, phone=normalized)
+    if m.contact and m.contact.user_id:
+        profile.setdefault("tg", {})["contact_user_id"] = m.contact.user_id
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    ack = await bot.send_message(
+        m.chat.id,
+        tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
+        reply_markup=ReplyKeyboardRemove(),
+    )
     flow_track(uid, ack)
-    await onboard_prompt_photo(uid, m.chat.id, state)
+    await registration_continue(uid, m.chat.id, state, profile=profile)
 
 
 @dp.message_handler(state=OnboardFSM.phone, content_types=ContentType.TEXT)
 async def onboard_phone_text(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     await flow_delete_message(uid, m)
-    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"), reply_markup=kb_phone_keyboard(uid))
-    flow_track_warning(uid, warn)
+    normalized = sanitize_phone_input(m.text)
+    if not normalized:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"), reply_markup=kb_phone_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    await state.update_data(phone=normalized)
+    profile = registration_update(uid, phone=normalized)
+    ack = await bot.send_message(
+        m.chat.id,
+        tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    flow_track(uid, ack)
+    await registration_continue(uid, m.chat.id, state, profile=profile)
 
 
 @dp.callback_query_handler(lambda c: c.data == "reg_photo_skip", state=OnboardFSM.photo)
@@ -5549,25 +5894,28 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo
     region = data.get("region", "")
     phone = data.get("phone", "")
 
-    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
-    profile["last_name"] = last_name
-    profile["first_name"] = first_name
-    profile["middle_name"] = middle_name
-    profile["fullname"] = compose_fullname(last_name, first_name, middle_name) or profile.get("fullname")
-    profile["birthdate"] = birthdate
-    profile["region"] = region
-    profile["phone"] = phone
+    runtime = users_runtime.setdefault(uid, {})
+    current_profile = ensure_user(uid, runtime.get("tg", {}))
+    updates = {
+        "last_name": last_name,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "birthdate": birthdate,
+        "region": region,
+        "phone": phone,
+    }
+    middle_status = data.get("middle_name_status")
+    if middle_status is not None:
+        updates["middle_name_status"] = middle_status
     if photo_meta is not None:
-        profile["photo"] = photo_meta
-    elif skipped and not profile.get("photo"):
-        profile["photo"] = {"status": "skipped", "updated_at": datetime.now(timezone.utc).isoformat()}
-    profile["profile_completed"] = bool(last_name and first_name and phone and region)
-    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
-    save_user(profile)
+        updates["photo"] = photo_meta
+    elif skipped and not registration_photo_completed(current_profile):
+        updates["photo"] = {"status": "skipped", "updated_at": datetime.now(timezone.utc).isoformat()}
+
+    profile = registration_update(uid, **updates)
 
     await state.finish()
     await flow_clear(uid)
-    runtime = users_runtime.setdefault(uid, {})
     runtime["onboard_registered"] = True
     runtime.pop("onboard_intro", None)
 
