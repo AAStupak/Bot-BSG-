@@ -1045,6 +1045,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🔄 Wszystkie dane są już uzupełnione — kończymy sprawdzanie.",
         "ru": "🔄 Все данные уже заполнены — завершаем проверку.",
     },
+    "REGISTER_BLOCKED_NOTICE": {
+        "uk": "❗ Завершіть реєстрацію, щоб відкрити меню. Натисніть «Далі» та виконайте всі кроки анкети.",
+        "en": "❗ Finish registration to access the menu. Tap “Next” and complete the remaining steps.",
+        "de": "❗ Schließen Sie die Registrierung ab, um das Menü zu öffnen. Tippen Sie auf „Weiter“ und vervollständigen Sie die fehlenden Angaben.",
+        "pl": "❗ Aby uzyskać dostęp do menu, dokończ rejestrację. Kliknij „Dalej” i wypełnij pozostałe kroki.",
+        "ru": "❗ Завершите регистрацию, чтобы открыть меню. Нажмите «Дальше» и выполните оставшиеся шаги.",
+    },
     "REGISTER_LIST_AND": {
         "uk": " і ",
         "en": " and ",
@@ -2810,6 +2817,54 @@ def registration_sync_runtime(uid: int, profile: Optional[dict]) -> bool:
         if loop and loop.is_running():
             loop.create_task(anchor_clear(uid))
     return completed
+
+
+async def registration_guard(
+    uid: int,
+    *,
+    chat_id: Optional[int] = None,
+    state: Optional[FSMContext] = None,
+    remind: bool = True,
+) -> bool:
+    runtime = users_runtime.setdefault(uid, {})
+    profile = load_user(uid)
+    if not profile:
+        profile = ensure_user(uid, runtime.get("tg", {}))
+    registration_sync_runtime(uid, profile)
+    if registration_profile_completed(profile):
+        return True
+
+    chat_id = chat_id or runtime.get("tg", {}).get("chat_id")
+    if not chat_id:
+        return False
+
+    ctx = state or dp.current_state(chat=chat_id, user=uid)
+    current_state = await ctx.get_state() if ctx else None
+    if current_state and current_state.startswith(OnboardFSM.__name__):
+        return False
+
+    if ctx:
+        await ctx.finish()
+        ctx = dp.current_state(chat=chat_id, user=uid)
+
+    await flow_clear(uid)
+
+    if remind:
+        notice = await bot.send_message(chat_id, tr(uid, "REGISTER_BLOCKED_NOTICE"))
+        flow_track(uid, notice)
+
+    await registration_start_sequence(uid, chat_id, ctx)
+    return False
+
+
+def registration_chat_id(uid: int, profile: Optional[dict] = None) -> Optional[int]:
+    profile = profile or load_user(uid) or {}
+    if not registration_profile_completed(profile):
+        return None
+    runtime_chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if runtime_chat:
+        return runtime_chat
+    return (profile.get("tg") or {}).get("chat_id")
 
 
 def registration_update(uid: int, **updates) -> dict:
@@ -6615,6 +6670,9 @@ async def fallback_message(m: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_about")
 async def menu_about(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     prof = load_user(uid) or {}
     about_text = (
         f"🤖 <b>{h(BOT_NAME)}</b>\n"
@@ -6640,6 +6698,9 @@ async def menu_about(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_alerts")
 async def menu_alerts(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     intro = tr(uid, "ALERTS_MENU_INTRO")
     count = alerts_active_oblast_count()
     if count:
@@ -6906,6 +6967,9 @@ async def alerts_push_actions(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "back_root")
 async def back_root(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, project_status_text(uid), kb_root(uid))
     await c.answer()
 
@@ -9776,6 +9840,9 @@ def _np_trim_label(text: str, limit: int = 48) -> str:
 @dp.callback_query_handler(lambda c: c.data == "menu_np")
 async def menu_np(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
     await c.answer()
 
@@ -10139,8 +10206,14 @@ async def np_assigned_received_cb(c: types.CallbackQuery):
         pass
 
     for admin_id in admins:
-        chat_id = users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id") or (load_user(admin_id) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(admin_id) or {}
+        chat_id = (
+            users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if not chat_id:
+            continue
+        if not registration_profile_completed(admin_profile):
             continue
         admin_lang = resolve_lang(admin_id)
         alert = np_render_delivery_receipt(admin_lang, ttn, user_name, delivered_at)
@@ -10505,6 +10578,9 @@ async def np_cancel_flow(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_profile")
 async def menu_profile(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id, state=state):
+        return await c.answer()
     await state.finish()
     await flow_clear(uid)
     profile_set_flags(uid, edit_mode=False, show_photo=False)
@@ -10641,6 +10717,9 @@ async def profile_prompt_photo(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_checks")
 async def menu_checks(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "CHECKS_MENU_INTRO"), kb_checks(uid))
     await c.answer()
 
@@ -10648,6 +10727,9 @@ async def menu_checks(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_settings")
 async def menu_settings(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "SETTINGS_TITLE"), kb_settings(uid))
     await c.answer()
 
@@ -10655,6 +10737,9 @@ async def menu_settings(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "settings_language")
 async def settings_language(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "LANGUAGE_PROMPT"), kb_language_settings(uid))
     await c.answer()
 
@@ -10662,6 +10747,9 @@ async def settings_language(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "settings_back")
 async def settings_back(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "SETTINGS_TITLE"), kb_settings(uid))
     await c.answer()
 
@@ -10669,6 +10757,9 @@ async def settings_back(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data.startswith("settings_lang:"))
 async def settings_lang_change(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     code = c.data.split(":", 1)[1]
     if code not in LANG_CODES:
         await c.answer(tr(uid, "INVALID_COMMAND"), show_alert=True)
@@ -11271,6 +11362,9 @@ async def rcp_preview_actions(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_photos")
 async def menu_photos(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     info = load_project_info(active_project["name"])
@@ -11682,6 +11776,9 @@ async def photo_delete(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_docs")
 async def menu_docs(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
@@ -11720,6 +11817,9 @@ def user_has_approved_not_confirmed(uid: int) -> bool:
 @dp.callback_query_handler(lambda c: c.data == "menu_finance")
 async def finance_menu(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
@@ -11906,7 +12006,13 @@ async def finance_request_payout(c: types.CallbackQuery):
     akb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{req_id}"))
     akb.add(InlineKeyboardButton("❌ Закрыть", callback_data=f"adm_req_close:{req_id}"))
     for ad in list(admins):
-        chat_id = users_runtime.get(ad, {}).get("tg", {}).get("chat_id") or (load_user(ad) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(ad) or {}
+        if not registration_profile_completed(admin_profile):
+            continue
+        chat_id = (
+            users_runtime.get(ad, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=akb)
             except Exception: pass
@@ -12125,7 +12231,13 @@ async def user_confirm_payout(c: types.CallbackQuery):
     )
     admin_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
     for ad in list(admins):
-        chat_id = users_runtime.get(ad, {}).get("tg", {}).get("chat_id") or (load_user(ad) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(ad) or {}
+        if not registration_profile_completed(admin_profile):
+            continue
+        chat_id = (
+            users_runtime.get(ad, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if chat_id:
             try:
                 await bot.send_message(chat_id, admin_note, reply_markup=admin_kb)
@@ -12415,7 +12527,7 @@ async def adm_req_close(c: types.CallbackQuery):
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
     user_id = obj.get("user_id")
     prof = load_user(user_id) or {}
-    chat_id = users_runtime.get(user_id, {}).get("tg", {}).get("chat_id") or prof.get("tg", {}).get("chat_id")
+    chat_id = registration_chat_id(user_id, prof)
     if chat_id:
         note = (
             "ℹ️ <b>Запрос на выплату закрыт</b>\n\n"
@@ -12458,7 +12570,7 @@ async def adm_req_paid(c: types.CallbackQuery):
     if c.message:
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
 
-    chat_id = users_runtime.get(user_id, {}).get("tg", {}).get("chat_id") or prof.get("tg", {}).get("chat_id")
+    chat_id = registration_chat_id(user_id, prof)
     recs = user_project_receipts(user_id, obj["project"])
     by_file = {r["file"]: r for r in recs}
     lines = []
@@ -12499,6 +12611,9 @@ async def adm_req_paid(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_sos")
 async def sos_start(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id, state=state):
+        return await c.answer()
     await state.finish()
     await flow_clear(uid)
     text = ("⚠️ Вы нажали кнопку <b>SOS</b>.\n\n"
@@ -12600,12 +12715,6 @@ async def sos_location(m: types.Message, state: FSMContext):
                 f"❗ Пользователь запросил помощь. Координаты ниже.")
     close_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть сообщение", callback_data="sos_close"))
 
-    def get_chat_id_for_user(u_id: int) -> Optional[int]:
-        ch = users_runtime.get(u_id, {}).get("tg", {}).get("chat_id")
-        if ch: return ch
-        up = load_user(u_id)
-        return (up.get("tg", {}).get("chat_id")) if up else None
-
     for f in os.listdir(USERS_PATH):
         if not f.endswith(".json"): continue
         try:
@@ -12615,7 +12724,7 @@ async def sos_location(m: types.Message, state: FSMContext):
         rec_uid = int(udata.get("user_id", 0))
         if rec_uid == uid:  # отправителю не шлём
             continue
-        chat_id = get_chat_id_for_user(rec_uid)
+        chat_id = registration_chat_id(rec_uid, udata)
         if not chat_id:
             continue
         try:
@@ -12665,6 +12774,9 @@ def paginate(lst: List[str], page: int, per_page: int=10) -> Tuple[List[str], in
 @dp.callback_query_handler(lambda c: c.data == "menu_admin")
 async def menu_admin(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if uid not in admins:
         return await c.answer("⛔ Доступ только для администраторов", show_alert=True)
     await clear_then_anchor(
@@ -13632,7 +13744,7 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
             udata = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
         except:
             continue
-        chat_id = users_runtime.get(udata["user_id"], {}).get("tg", {}).get("chat_id") or udata.get("tg", {}).get("chat_id")
+        chat_id = registration_chat_id(int(udata.get("user_id", 0)), udata)
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
             except Exception: pass
@@ -13698,7 +13810,7 @@ async def proj_finish_do(c: types.CallbackQuery):
             udata = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
         except:
             continue
-        chat_id = users_runtime.get(udata["user_id"], {}).get("tg", {}).get("chat_id") or udata.get("tg", {}).get("chat_id")
+        chat_id = registration_chat_id(int(udata.get("user_id", 0)), udata)
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
             except Exception: pass
