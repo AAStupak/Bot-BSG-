@@ -13446,6 +13446,8 @@ async def adm_hist_open(c: types.CallbackQuery):
     status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто"}
     status_disp = status_map.get(obj.get('status'), obj.get('status'))
     project_disp = h(obj.get('project', '—'))
+    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
+    project_code_txt = h((proj_info or {}).get('code') or '—')
     code_disp = h(code)
     fullname = h(prof.get('fullname', '—'))
     bsu_code = h(prof.get('bsu', '—'))
@@ -13605,6 +13607,8 @@ async def adm_req_close(c: types.CallbackQuery):
     user_id = obj.get("user_id")
     prof = load_user(user_id) or {}
     chat_id = registration_chat_id(user_id, prof)
+    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
+    project_code_txt = h((proj_info or {}).get("code") or "—")
     if chat_id:
         note = (
             "ℹ️ <b>Запрос на выплату закрыт</b>\n\n"
@@ -14159,7 +14163,10 @@ async def adm_points_cancel(c: types.CallbackQuery, state: FSMContext):
         await clear_then_anchor(uid, tr(uid, "POINTS_ADMIN_CANCELLED"), kb_admin_root())
         return await c.answer("Скасовано")
     return await c.answer()
-@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_"))
+@dp.callback_query_handler(
+    lambda c: c.data.startswith("adm_user_")
+    and c.data.split("adm_user_", 1)[1].isdigit()
+)
 async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
