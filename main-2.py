@@ -1298,6 +1298,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "Zdjęcie możesz dodać później w swoim profilu.",
         "ru": "Фото можно загрузить позже в разделе профиля.",
     },
+    "REGISTER_PHOTO_KEEP_CONFIRM": {
+        "uk": "Поточне фото залишилося без змін ✅",
+        "en": "Current photo kept without changes ✅",
+        "de": "Aktuelles Foto bleibt unverändert ✅",
+        "pl": "Aktualne zdjęcie pozostawiono bez zmian ✅",
+        "ru": "Текущее фото оставлено без изменений ✅",
+    },
     "REGISTER_FINISH_CONFIRM": {
         "uk": "Реєстрацію завершено. Ваш артикул BSG — <b>{code}</b>.",
         "en": "Registration completed. Your BSG article is <b>{code}</b>.",
@@ -1971,6 +1978,7 @@ class OnboardFSM(StatesGroup):
     welcome = State()
     briefing = State()
     instructions = State()
+    await_next = State()
     last_name = State()
     first_name = State()
     middle_name = State()
@@ -2677,27 +2685,107 @@ def registration_build_snapshot(profile: dict, state_data: Optional[dict] = None
                 snapshot[key] = state_data[key]
         if state_data.get("middle_name_status"):
             snapshot["middle_name_status"] = state_data["middle_name_status"]
+        photo_meta = state_data.get("photo_meta_override")
+        if photo_meta:
+            snapshot["photo"] = photo_meta
+        if state_data.get("photo_skipped"):
+            snapshot["photo"] = {"status": "skipped"}
     return snapshot
+
+
+REGISTRATION_FLOW_FIELDS: Tuple[str, ...] = (
+    "first_name",
+    "last_name",
+    "middle_name",
+    "birthdate",
+    "region",
+    "phone",
+    "photo",
+)
+
+
+def registration_field_completed(snapshot: dict, field: str) -> bool:
+    if field == "middle_name":
+        return registration_middle_name_completed(snapshot)
+    if field == "photo":
+        return registration_photo_completed(snapshot)
+    return bool(snapshot.get(field))
 
 
 def registration_missing_steps(profile: dict, state_data: Optional[dict] = None) -> List[str]:
     snapshot = registration_build_snapshot(profile, state_data)
     missing: List[str] = []
-    if not snapshot.get("last_name"):
-        missing.append("last_name")
-    if not snapshot.get("first_name"):
-        missing.append("first_name")
-    if not registration_middle_name_completed(snapshot):
-        missing.append("middle_name")
-    if not snapshot.get("birthdate"):
-        missing.append("birthdate")
-    if not snapshot.get("region"):
-        missing.append("region")
-    if not snapshot.get("phone"):
-        missing.append("phone")
-    if not registration_photo_completed(snapshot):
-        missing.append("photo")
+    for field in REGISTRATION_FLOW_FIELDS:
+        if not registration_field_completed(snapshot, field):
+            missing.append(field)
     return missing
+
+
+def registration_next_pending_field(
+    snapshot: dict,
+    current_field: Optional[str] = None,
+) -> Optional[str]:
+    order = list(REGISTRATION_FLOW_FIELDS)
+    start_index = 0
+    if current_field and current_field in order:
+        start_index = order.index(current_field) + 1
+    for field in order[start_index:]:
+        if not registration_field_completed(snapshot, field):
+            return field
+    for field in order[:start_index]:
+        if not registration_field_completed(snapshot, field):
+            return field
+    return None
+
+
+async def registration_clear_ack(uid: int):
+    runtime = users_runtime.setdefault(uid, {})
+    info = runtime.pop("registration_ack", None)
+    if not info:
+        return
+    chat_id = info.get("chat_id") if isinstance(info, dict) else None
+    message_id = info.get("message_id") if isinstance(info, dict) else None
+    await _delete_message_safe(chat_id, message_id)
+
+
+async def registration_send_ack(
+    uid: int,
+    chat_id: int,
+    state: FSMContext,
+    profile: dict,
+    current_field: str,
+    text: str,
+    *,
+    remove_reply_keyboard: bool = False,
+) -> str:
+    await registration_clear_ack(uid)
+    data = await state.get_data()
+    snapshot = registration_build_snapshot(profile, data)
+    next_field = registration_next_pending_field(snapshot, current_field)
+    callback_target = next_field or "final"
+    markup = kb_registration_next(uid, f"reg_next:{callback_target}")
+
+    if remove_reply_keyboard:
+        ack = await bot.send_message(chat_id, text, reply_markup=ReplyKeyboardRemove())
+        try:
+            await bot.edit_message_reply_markup(chat_id, ack.message_id, reply_markup=markup)
+        except Exception:
+            await _delete_message_safe(chat_id, ack.message_id)
+            ack = await bot.send_message(chat_id, text, reply_markup=markup)
+    else:
+        ack = await bot.send_message(chat_id, text, reply_markup=markup)
+
+    flow_track(uid, ack)
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["registration_ack"] = {
+        "chat_id": ack.chat.id,
+        "message_id": ack.message_id,
+        "field": current_field,
+        "next": callback_target,
+    }
+    await state.update_data(await_next=callback_target)
+    await state.set_state(OnboardFSM.await_next.state)
+    return callback_target
 
 
 def registration_format_field_list(target: Any, fields: List[str]) -> str:
@@ -2822,6 +2910,7 @@ async def registration_continue(
 async def registration_start_sequence(uid: int, chat_id: int, state: FSMContext):
     runtime = users_runtime.setdefault(uid, {})
     await anchor_clear(uid)
+    await registration_clear_ack(uid)
     profile = ensure_user(uid, runtime.get("tg", {}))
     await state.reset_data()
     await registration_seed_state(state, profile)
@@ -5840,6 +5929,30 @@ async def onboard_prompt_photo(uid: int, chat_id: int, state: FSMContext, profil
     await state.set_state(OnboardFSM.photo.state)
 
 
+@dp.callback_query_handler(lambda c: c.data.startswith("reg_next:"), state=OnboardFSM.await_next)
+async def onboard_ack_next(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    await registration_clear_ack(uid)
+    next_field = c.data.split(":", 1)[1]
+    await state.update_data(await_next=None)
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    if next_field == "final":
+        data = await state.get_data()
+        photo_meta = data.get("photo_meta_override")
+        skipped = bool(data.get("photo_skipped"))
+        await finalize_registration(uid, chat_id, state, photo_meta=photo_meta, skipped=skipped)
+    else:
+        await registration_continue(uid, chat_id, state)
+    await c.answer()
+
+
+@dp.message_handler(state=OnboardFSM.await_next, content_types=ContentType.ANY)
+async def onboard_waiting_next_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+
+
 @dp.message_handler(state=OnboardFSM.last_name, content_types=ContentType.TEXT)
 async def onboard_last_name(m: types.Message, state: FSMContext):
     uid = m.from_user.id
@@ -5854,9 +5967,14 @@ async def onboard_last_name(m: types.Message, state: FSMContext):
     await state.update_data(last_name=cleaned)
     profile = registration_update(uid, last_name=cleaned)
     await flow_prepare_prompt(uid)
-    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_OK", value=h(cleaned)))
-    await registration_continue(uid, m.chat.id, state, profile=profile)
-    await _delete_message_safe(ack.chat.id, ack.message_id)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "last_name",
+        tr(uid, "REGISTER_LAST_NAME_OK", value=h(cleaned)),
+    )
 
 
 @dp.message_handler(state=OnboardFSM.first_name, content_types=ContentType.TEXT)
@@ -5873,9 +5991,14 @@ async def onboard_first_name(m: types.Message, state: FSMContext):
     await state.update_data(first_name=cleaned)
     profile = registration_update(uid, first_name=cleaned)
     await flow_prepare_prompt(uid)
-    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_OK", value=h(cleaned)))
-    await registration_continue(uid, m.chat.id, state, profile=profile)
-    await _delete_message_safe(ack.chat.id, ack.message_id)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "first_name",
+        tr(uid, "REGISTER_FIRST_NAME_OK", value=h(cleaned)),
+    )
 
 
 @dp.message_handler(state=OnboardFSM.middle_name, content_types=ContentType.TEXT)
@@ -5888,9 +6011,14 @@ async def onboard_middle_name(m: types.Message, state: FSMContext):
         await state.update_data(middle_name="", middle_name_status="skipped")
         profile = registration_update(uid, middle_name="", middle_name_status="skipped")
         await flow_prepare_prompt(uid)
-        note = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_SKIPPED"))
-        await registration_continue(uid, m.chat.id, state, profile=profile)
-        await _delete_message_safe(note.chat.id, note.message_id)
+        await registration_send_ack(
+            uid,
+            m.chat.id,
+            state,
+            profile,
+            "middle_name",
+            tr(uid, "REGISTER_MIDDLE_NAME_SKIPPED"),
+        )
         return
     if not validate_name(raw):
         warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
@@ -5901,9 +6029,14 @@ async def onboard_middle_name(m: types.Message, state: FSMContext):
     await state.update_data(middle_name=cleaned, middle_name_status="provided")
     profile = registration_update(uid, middle_name=cleaned, middle_name_status="provided")
     await flow_prepare_prompt(uid)
-    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_OK", value=h(cleaned)))
-    await registration_continue(uid, m.chat.id, state, profile=profile)
-    await _delete_message_safe(ack.chat.id, ack.message_id)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "middle_name",
+        tr(uid, "REGISTER_MIDDLE_NAME_OK", value=h(cleaned)),
+    )
 
 
 @dp.message_handler(state=OnboardFSM.birthdate, content_types=ContentType.TEXT)
@@ -5921,9 +6054,14 @@ async def onboard_birthdate(m: types.Message, state: FSMContext):
     profile = registration_update(uid, birthdate=iso)
     display = format_birthdate_display(iso, resolve_lang(uid))
     await flow_prepare_prompt(uid)
-    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_OK", value=h(display)))
-    await registration_continue(uid, m.chat.id, state, profile=profile)
-    await _delete_message_safe(ack.chat.id, ack.message_id)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "birthdate",
+        tr(uid, "REGISTER_BIRTHDATE_OK", value=h(display)),
+    )
 
 
 @dp.message_handler(state=OnboardFSM.region, content_types=ContentType.ANY)
@@ -6003,10 +6141,24 @@ async def onboard_region_confirm(c: types.CallbackQuery, state: FSMContext):
         profile = registration_update(uid, region=region)
         await flow_clear_warnings(uid)
         await flow_prepare_prompt(uid)
-        await registration_continue(uid, chat_id, state, profile=profile)
+        await registration_send_ack(
+            uid,
+            chat_id,
+            state,
+            profile,
+            "region",
+            tr(uid, "REGISTER_REGION_OK", value=h(region)),
+        )
     else:
         await flow_prepare_prompt(uid)
-        await registration_continue(uid, chat_id, state)
+        await registration_send_ack(
+            uid,
+            chat_id,
+            state,
+            ensure_user(uid, runtime.get("tg", {})),
+            "region",
+            tr(uid, "REGISTER_REGION_OK", value="—"),
+        )
     await c.answer()
 
 
@@ -6028,13 +6180,15 @@ async def onboard_phone_contact(m: types.Message, state: FSMContext):
         profile["updated_at"] = datetime.now(timezone.utc).isoformat()
         save_user(profile)
     await flow_prepare_prompt(uid)
-    ack = await bot.send_message(
+    await registration_send_ack(
+        uid,
         m.chat.id,
+        state,
+        profile,
+        "phone",
         tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
-        reply_markup=ReplyKeyboardRemove(),
+        remove_reply_keyboard=True,
     )
-    await registration_continue(uid, m.chat.id, state, profile=profile)
-    await _delete_message_safe(ack.chat.id, ack.message_id)
     await flow_delete_message(uid, m)
 
 
@@ -6051,13 +6205,15 @@ async def onboard_phone_text(m: types.Message, state: FSMContext):
     await state.update_data(phone=normalized)
     profile = registration_update(uid, phone=normalized)
     await flow_prepare_prompt(uid)
-    ack = await bot.send_message(
+    await registration_send_ack(
+        uid,
         m.chat.id,
+        state,
+        profile,
+        "phone",
         tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
-        reply_markup=ReplyKeyboardRemove(),
+        remove_reply_keyboard=True,
     )
-    await registration_continue(uid, m.chat.id, state, profile=profile)
-    await _delete_message_safe(ack.chat.id, ack.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data == "reg_photo_skip", state=OnboardFSM.photo)
@@ -6066,9 +6222,16 @@ async def onboard_photo_skip(c: types.CallbackQuery, state: FSMContext):
     runtime = users_runtime.setdefault(uid, {})
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
     await flow_prepare_prompt(uid)
-    note = await bot.send_message(chat_id, tr(uid, "REGISTER_PHOTO_SKIP_CONFIRM"))
-    await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=True)
-    await _delete_message_safe(note.chat.id, note.message_id)
+    await state.update_data(photo_meta_override=None, photo_skipped=True)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await registration_send_ack(
+        uid,
+        chat_id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_SKIP_CONFIRM"),
+    )
     await c.answer()
 
 
@@ -6078,7 +6241,16 @@ async def onboard_photo_keep(c: types.CallbackQuery, state: FSMContext):
     runtime = users_runtime.setdefault(uid, {})
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
     await flow_prepare_prompt(uid)
-    await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=False)
+    await state.update_data(photo_meta_override=None, photo_skipped=False)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await registration_send_ack(
+        uid,
+        chat_id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_KEEP_CONFIRM"),
+    )
     await c.answer()
 
 
@@ -6099,12 +6271,17 @@ async def onboard_photo_received(m: types.Message, state: FSMContext):
         flow_track_warning(uid, warn)
         return
     await flow_clear_warnings(uid)
+    await state.update_data(photo_meta_override=meta, photo_skipped=False)
+    profile = registration_update(uid, photo=meta)
     await flow_prepare_prompt(uid)
-    ack = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_RECEIVED"))
-    runtime = users_runtime.setdefault(uid, {})
-    chat_id = runtime.get("tg", {}).get("chat_id") or m.chat.id
-    await finalize_registration(uid, chat_id, state, photo_meta=meta, skipped=False)
-    await _delete_message_safe(ack.chat.id, ack.message_id)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_RECEIVED"),
+    )
 
 
 @dp.message_handler(state=OnboardFSM.photo, content_types=ContentType.ANY)
@@ -6146,6 +6323,7 @@ async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo
 
     profile = registration_update(uid, **updates)
 
+    await registration_clear_ack(uid)
     await state.finish()
     await flow_clear(uid)
     registration_sync_runtime(uid, profile)
