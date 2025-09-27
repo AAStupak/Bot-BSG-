@@ -193,12 +193,27 @@ def required_community_settings(force_reload: bool = False) -> Tuple[Optional[Un
     return COMMUNITY_GATE_CACHE
 
 
+def registration_gate_contact_display_name() -> str:
+    if REGISTRATION_GATE_CONTACT_DISPLAY:
+        return REGISTRATION_GATE_CONTACT_DISPLAY
+    raw = REGISTRATION_GATE_CONTACT_NAME.strip()
+    if not raw:
+        return "Алексей"
+    parts = [segment for segment in raw.replace("\u00a0", " ").split(" ") if segment]
+    if not parts:
+        return "Алексей"
+    if len(parts) == 1:
+        return parts[0]
+    return parts[-1]
+
+
 # Ensure the community gate file exists at startup and cache the defaults.
 required_community_settings()
 REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
 REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
-REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Алексей")
+REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Алексей").strip() or "Алексей"
 REGISTRATION_GATE_CONTACT_ROLE = os.getenv("BSG_REQUIRED_CONTACT_ROLE", "директор компании BSG")
+REGISTRATION_GATE_CONTACT_DISPLAY = (os.getenv("BSG_REQUIRED_CONTACT_DISPLAY") or "").strip()
 _registration_notify_raw = (os.getenv("BSG_REG_NOTIFY_CHAT") or "").strip()
 if _registration_notify_raw:
     if _registration_notify_raw.lstrip("-").isdigit():
@@ -3081,7 +3096,12 @@ async def registration_notify_new_user(uid: int, profile: dict, runtime: dict) -
         f"Час: {timestamp}"
     )
     try:
-        await bot.send_message(REGISTRATION_NOTIFY_CHAT, text)
+        await bot.send_message(
+            REGISTRATION_NOTIFY_CHAT,
+            text,
+            parse_mode=types.ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
     except Exception:
         pass
 
@@ -6208,7 +6228,7 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
                 uid,
                 "REGISTER_GATE_DENIED",
                 community=community,
-                contact_name=h(REGISTRATION_GATE_CONTACT_NAME),
+                contact_name=h(registration_gate_contact_display_name()),
                 contact_role=h(REGISTRATION_GATE_CONTACT_ROLE),
                 name=h(display_name),
             )
