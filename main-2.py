@@ -3146,14 +3146,34 @@ async def registration_guard(
     return False
 
 
+def _resolve_private_chat_id(raw: Any) -> Optional[int]:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        chat_id = raw
+    elif isinstance(raw, str):
+        text = raw.strip()
+        if not text or not text.lstrip("-").isdigit():
+            return None
+        chat_id = int(text)
+    else:
+        return None
+    if chat_id <= 0:
+        return None
+    return chat_id
+
+
 def registration_chat_id(uid: int, profile: Optional[dict] = None) -> Optional[int]:
     profile = profile or load_user(uid) or {}
     if not registration_profile_completed(profile):
         return None
-    runtime_chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    runtime_chat = _resolve_private_chat_id(users_runtime.get(uid, {}).get("tg", {}).get("chat_id"))
     if runtime_chat:
         return runtime_chat
-    return (profile.get("tg") or {}).get("chat_id")
+    stored_chat = _resolve_private_chat_id((profile.get("tg") or {}).get("chat_id"))
+    if stored_chat:
+        return stored_chat
+    return None
 
 
 def registration_update(uid: int, **updates) -> dict:
@@ -9857,9 +9877,7 @@ async def alerts_broadcast(event_id: str, kind: str) -> None:
         _alerts_mark_notified(event_id, kind)
         return
     for uid, profile in recipients:
-        chat_id = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-        if not chat_id:
-            chat_id = (profile.get("tg") or {}).get("chat_id")
+        chat_id = registration_chat_id(uid, profile)
         if not chat_id:
             continue
         try:
