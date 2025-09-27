@@ -3881,10 +3881,7 @@ def user_project_stats(uid: int, project: str) -> Dict[str, float]:
     pending_sum = 0.0
     unspecified_sum = 0.0
     for r in recs:
-        try:
-            amount = float(r.get("sum", 0.0))
-        except (TypeError, ValueError):
-            amount = 0.0
+        amount = receipt_amount(r)
         total += amount
         paid_flag = r.get("paid")
         payout_status = (r.get("payout") or {}).get("status") if isinstance(r.get("payout"), dict) else None
@@ -4084,10 +4081,7 @@ def finance_new_request(
         project_hint = rec.get("project") or storage_key
         if file_name:
             files.append(file_name)
-        try:
-            amount = float(rec.get("sum", 0.0))
-        except (TypeError, ValueError):
-            amount = 0.0
+        amount = receipt_amount(rec)
         total_receipts += amount
         items.append({
             "file": file_name,
@@ -4355,10 +4349,7 @@ def update_receipts_for_request(uid: int, project: Optional[str], files: List[st
             if not isinstance(history, list):
                 history = []
                 entry["payout_history"] = history
-            try:
-                amount_value = float(entry.get("sum", 0.0))
-            except (TypeError, ValueError):
-                amount_value = 0.0
+            amount_value = receipt_amount(entry)
             history.append({
                 "status": status,
                 "timestamp": now_iso,
@@ -4471,6 +4462,58 @@ def save_receipt(project: str, uid: int, amount: float, tmp_img: str, desc: str,
 
 # ========================== HELPERS & MENУС ==========================
 def fmt_money(x: float) -> str: return f"{x:.2f}"
+
+
+AMOUNT_SANITIZE_RE = re.compile(r"[^0-9\-\.,]")
+
+
+def parse_amount(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    text = text.replace("\u202f", "").replace("\u00a0", "").replace(" ", "")
+    text = text.replace(",", ".")
+    text = AMOUNT_SANITIZE_RE.sub("", text)
+    if not text or text in {".", "-", "-."}:
+        return 0.0
+    sign = ""
+    if text.startswith("-"):
+        sign = "-"
+        text = text[1:]
+    if text.count(".") > 1:
+        parts = text.split(".")
+        integer = "".join(parts[:-1])
+        fraction = parts[-1]
+        text = f"{integer}.{fraction}" if fraction else integer
+    text = f"{sign}{text}" if text else sign
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def receipt_amount(entry: Any) -> float:
+    if isinstance(entry, dict):
+        for key in ("sum", "amount", "calc_sum", "value"):
+            if key in entry and entry[key] not in (None, ""):
+                amount_value = parse_amount(entry[key])
+                return amount_value if math.isfinite(amount_value) else 0.0
+        return 0.0
+    value = parse_amount(entry)
+    return value if math.isfinite(value) else 0.0
+
+
+def parse_amount_chain(*candidates: Any) -> float:
+    for candidate in candidates:
+        if candidate not in (None, ""):
+            return parse_amount(candidate)
+    return 0.0
 
 
 def fmt_points_value(value: float) -> float:
@@ -5145,10 +5188,7 @@ def format_receipt_caption(receipt: dict, project: Optional[str] = None) -> str:
     date_part = h(receipt.get("date", "—")) or "—"
     time_raw = receipt.get("time")
     date_line = f"📅 {date_part} {h(time_raw)}".strip() if time_raw else f"📅 {date_part}"
-    try:
-        amount = float(receipt.get("sum", 0.0))
-    except (TypeError, ValueError):
-        amount = 0.0
+    amount = receipt_amount(receipt)
     desc = receipt.get("desc")
     desc_text = h(desc) if desc else "—"
     file_name = receipt.get("file")
@@ -5259,10 +5299,7 @@ def format_receipt_stat_entry(index: int, receipt: dict) -> str:
     time_raw = receipt.get("time")
     if time_raw:
         date_text = f"{date_text} {h(time_raw)}"
-    try:
-        amount = float(receipt.get("sum", 0.0))
-    except (TypeError, ValueError):
-        amount = 0.0
+    amount = receipt_amount(receipt)
     desc = receipt.get("desc")
     desc_text = h(desc) if desc else "—"
     file_name = receipt.get("file")
@@ -5921,10 +5958,7 @@ def admin_finance_eligible_receipts(uid: int, project: str) -> List[dict]:
 
 
 def _receipt_amount_cents(entry: dict) -> int:
-    try:
-        value = float(entry.get("sum") or 0.0)
-    except (TypeError, ValueError):
-        value = 0.0
+    value = receipt_amount(entry)
     return int(round(value * 100))
 
 
@@ -6527,7 +6561,7 @@ async def admin_send_receipt_photos(admin_uid: int, chat_id: int, target_uid: in
         if r:
             caption_parts.append(f"🆔 Номер: <b>{h(r.get('receipt_no','—'))}</b>")
             caption_parts.append(f"📅 {h(r.get('date','—'))} {h(r.get('time',''))}")
-            amount = float(r.get('sum') or 0.0)
+            amount = receipt_amount(r)
             caption_parts.append(f"💰 {fmt_money(amount)} грн")
             caption_parts.append(f"📝 {h(desc) if desc else '—'}")
             caption_parts.append(f"🔖 {status_txt}")
@@ -11865,13 +11899,13 @@ async def check_stats(c: types.CallbackQuery):
     proj = active_project["name"]
     recs = user_project_receipts(uid, proj)
     cnt = len(recs)
-    total = round(sum(float(r.get("sum") or 0.0) for r in recs), 2)
+    total = round(sum(receipt_amount(r) for r in recs), 2)
     paid_recs = [r for r in recs if r.get("paid") is True]
     unpaid_recs = [r for r in recs if r.get("paid") is False]
     pending_recs = [r for r in recs if r.get("paid") is None]
-    paid_sum = round(sum(float(r.get("sum") or 0.0) for r in paid_recs), 2)
-    unpaid_sum = round(sum(float(r.get("sum") or 0.0) for r in unpaid_recs), 2)
-    pending_sum = round(sum(float(r.get("sum") or 0.0) for r in pending_recs), 2)
+    paid_sum = round(sum(receipt_amount(r) for r in paid_recs), 2)
+    unpaid_sum = round(sum(receipt_amount(r) for r in unpaid_recs), 2)
+    pending_sum = round(sum(receipt_amount(r) for r in pending_recs), 2)
     summary_lines = [
         "📊 <b>Личная статистика по чекам</b>",
         "━━━━━━━━━━━━━━━━━━",
@@ -11962,7 +11996,7 @@ async def check_list(c: types.CallbackQuery):
             fallback = (
                 f"{prefix}\n"
                 f"🆔 Номер: <b>{h(r.get('receipt_no', '—'))}</b>\n"
-                f"💰 {fmt_money(float(r.get('sum') or 0.0))} грн\n"
+            f"💰 {fmt_money(receipt_amount(r))} грн\n"
                 f"🔖 {receipt_status_text(r.get('paid'))}"
             )
             msg = await bot.send_message(chat_id, fallback, reply_markup=kb)
@@ -12003,10 +12037,7 @@ async def check_history(c: types.CallbackQuery):
         "",
     ]
     for r in display_recs:
-        try:
-            amount = float(r.get("sum", 0.0))
-        except (TypeError, ValueError):
-            amount = 0.0
+        amount = receipt_amount(r)
         base = f"• {h(r.get('receipt_no', '—'))} — {fmt_money(amount)} грн — {receipt_status_text(r.get('paid'))}"
         extra = ""
         payout = r.get("payout") if isinstance(r.get("payout"), dict) else None
@@ -12076,7 +12107,7 @@ async def userpaid_set(c: types.CallbackQuery):
                 "status": "manual_paid" if new_value else "manual_unpaid",
                 "timestamp": now_iso,
                 "project": proj,
-                "amount": float(r.get("sum") or 0.0)
+                "amount": receipt_amount(r)
             })
         r["payout"] = None if r.get("payout") else None
         changed = True
@@ -13209,10 +13240,7 @@ async def finance_unpaid_list(c: types.CallbackQuery):
         lines.append(f"❌ Готовы к запросу ({len(unpaid)} шт.):")
         total_unpaid = 0.0
         for r in unpaid:
-            try:
-                amount = float(r.get("sum") or 0.0)
-            except (TypeError, ValueError):
-                amount = 0.0
+            amount = receipt_amount(r)
             total_unpaid += amount
             moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
             desc = r.get('desc')
@@ -13225,10 +13253,7 @@ async def finance_unpaid_list(c: types.CallbackQuery):
         lines.append(f"⏳ Уже в запросах ({len(pending)} шт.):")
         total_pending = 0.0
         for r in pending:
-            try:
-                amount = float(r.get("sum") or 0.0)
-            except (TypeError, ValueError):
-                amount = 0.0
+            amount = receipt_amount(r)
             total_pending += amount
             moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
             code = ((r.get("payout") or {}).get("code") or (r.get("payout") or {}).get("request_id")) if isinstance(r.get("payout"), dict) else None
@@ -13255,22 +13280,14 @@ def finance_collect_outstanding(uid: int) -> Tuple[List[dict], List[dict]]:
                 continue
             payout_status = (entry.get("payout") or {}).get("status") if isinstance(entry.get("payout"), dict) else None
             if payout_status in ("pending", "approved"):
-                try:
-                    locked_total += float(entry.get("sum") or 0.0)
-                except (TypeError, ValueError):
-                    pass
+                locked_total += receipt_amount(entry)
                 continue
             clone = dict(entry)
             clone["project"] = project
             eligible.append(clone)
         if not eligible:
             continue
-        total = 0.0
-        for item in eligible:
-            try:
-                total += float(item.get("sum") or 0.0)
-            except (TypeError, ValueError):
-                continue
+        total = sum(receipt_amount(item) for item in eligible)
         entry_payload = {
             "project": project,
             "receipts": eligible,
@@ -13292,10 +13309,7 @@ def finance_collect_outstanding(uid: int) -> Tuple[List[dict], List[dict]]:
 def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tuple[List[dict], float]:
     cleaned: List[Tuple[float, dict]] = []
     for rec in receipts:
-        try:
-            amount = float(rec.get("sum") or 0.0)
-        except (TypeError, ValueError):
-            amount = 0.0
+        amount = receipt_amount(rec)
         cleaned.append((amount, rec))
     cleaned.sort(key=lambda x: x[0])
     selected: List[dict] = []
@@ -13317,15 +13331,7 @@ def finance_group_receipts(receipts: List[dict]) -> Dict[str, List[dict]]:
 
 
 def finance_receipts_total(receipts: List[dict]) -> float:
-    total = 0.0
-    for rec in receipts:
-        raw_amount = rec.get("sum")
-        if raw_amount is None:
-            raw_amount = rec.get("amount")
-        try:
-            total += float(raw_amount or 0.0)
-        except (TypeError, ValueError):
-            continue
+    total = sum(receipt_amount(rec) for rec in receipts if isinstance(rec, dict))
     return round(total, 2)
 
 
@@ -13423,10 +13429,7 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
     preview: List[str] = []
     for rec in selected[:8]:
         rid = h(rec.get("receipt_no", "—"))
-        try:
-            amt = fmt_money(float(rec.get("sum") or 0.0))
-        except (TypeError, ValueError):
-            amt = fmt_money(0.0)
+        amt = fmt_money(receipt_amount(rec))
         preview.append(f"#{rid} — {amt} грн")
     if preview:
         lines.append("")
@@ -13728,7 +13731,7 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     username_raw = (prof.get("tg", {}) or {}).get("username")
     username_display = format_username_link(username_raw)
     request_id = request.get("id")
-    requested_sum = float(request.get("sum") or amount)
+    requested_sum = parse_amount_chain(request.get("sum"), amount)
     calc_sum = float(request.get("calc_sum") or amount)
     summary_snapshot = scope_snapshot.get("__summary__", {})
     outstanding_before = summary_snapshot.get("outstanding_before")
@@ -13847,7 +13850,7 @@ async def fin_history(c: types.CallbackQuery):
         code = req.get("code", req["id"])
         status_key = req.get("status")
         status_txt = status_map.get(status_key, req.get("status", "—"))
-        amount = fmt_money(float(req.get("sum") or 0.0))
+        amount = fmt_money(parse_amount(req.get("sum")))
         scope_text = finance_scope_brief_text(finance_request_scope(req))
         icon = status_icons.get(status_key, "•")
         lines.append(f"{icon} {h(code)} — {amount} грн — {h(status_txt)} — {scope_text}")
@@ -13874,14 +13877,14 @@ async def fin_hist_open(c: types.CallbackQuery):
     outstanding_after = summary_snapshot.get("outstanding_after")
     status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
     status_disp = status_map.get(obj.get("status"), obj.get("status", "—"))
-    calc_sum = float(obj.get("calc_sum") or obj.get("sum") or 0.0)
+    calc_sum = parse_amount_chain(obj.get("calc_sum"), obj.get("sum"), 0.0)
     lines = [
         f"💵 <b>Выплата {h(code)}</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"Статус: <b>{h(status_disp)}</b>",
         f"Сума виплати: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>"
     ]
-    if abs(calc_sum - float(obj.get("sum") or 0.0)) > 0.01:
+    if abs(calc_sum - parse_amount_chain(obj.get("sum"), 0.0)) > 0.01:
         lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
     if outstanding_before is not None:
         lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(outstanding_before))} грн</b>")
@@ -13951,7 +13954,7 @@ async def fin_hist_view(c: types.CallbackQuery):
         for fname in files:
             r = by_file.get(fname)
             if r:
-                amount = fmt_money(float(r.get("sum") or 0.0))
+                amount = fmt_money(receipt_amount(r))
                 desc = h(r.get("desc")) if r.get("desc") else "—"
                 rid = h(r.get("receipt_no", "—"))
                 lines.append(f"• #{rid} — {amount} грн — {desc}")
@@ -14082,7 +14085,7 @@ async def user_confirm_payout(c: types.CallbackQuery):
         ]
         for o in remaining[:20]:
             oc = o.get("code", o["id"])
-            amt = float(o.get("sum") or 0.0)
+            amt = parse_amount(o.get("sum"))
             scope = finance_request_scope(o)
             scope_text = finance_scope_brief_text(scope)
             text_lines.append(f"• {h(oc)} — {fmt_money(amt)} грн — {scope_text}")
@@ -14150,7 +14153,7 @@ async def adm_requests(c: types.CallbackQuery):
     kb = InlineKeyboardMarkup()
     for r in lst[:20]:
         code = r.get("code", r['id'])
-        amount = float(r.get('sum') or 0.0)
+        amount = parse_amount(r.get('sum'))
         scope_text = finance_scope_brief_text(finance_request_scope(r))
         kb.add(InlineKeyboardButton(f"{code} • {fmt_money(amount)} грн • {scope_text}", callback_data=f"adm_req_open:{r['id']}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_finance"))
@@ -14292,7 +14295,7 @@ async def adm_hist_view_checks(c: types.CallbackQuery):
         for fname in file_list:
             r = by_file.get(fname)
             if r:
-                amount = float(r.get('sum') or 0.0)
+                amount = receipt_amount(r)
                 desc_text = h(r.get('desc')) if r.get('desc') else "—"
                 lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн — {desc_text}")
             else:
@@ -14341,7 +14344,7 @@ async def adm_req_open(c: types.CallbackQuery):
     else:
         project_block.append("📂 Об'єкти у виплаті:")
         project_block.append("• —")
-    requested_sum = float(obj.get("sum") or 0.0)
+    requested_sum = parse_amount_chain(obj.get("sum"), 0.0)
     calc_sum = float(obj.get("calc_sum") or requested_sum)
     text_lines = [
         "📢 <b>Запрос на выплату</b>",
@@ -14438,7 +14441,7 @@ async def adm_req_view_checks(c: types.CallbackQuery):
         for fname in file_list:
             r = by_file.get(fname)
             if r:
-                amount = float(r.get('sum') or 0.0)
+                amount = receipt_amount(r)
                 desc_text = h(r.get('desc')) if r.get('desc') else "—"
                 moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
                 lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн — {desc_text} — {moment}")
@@ -15843,7 +15846,7 @@ async def adm_user_finance_view(c: types.CallbackQuery, state: FSMContext):
         lines.append(f"📬 Запитів у роботі: <b>{len(pending_requests)}</b>")
         for req in pending_requests[:6]:
             code = req.get("code") or req.get("id")
-            amount = fmt_money(float(req.get("sum") or 0.0))
+            amount = fmt_money(parse_amount(req.get("sum")))
             project = h(req.get("project", "—"))
             lines.append(f"• {h(code)} — {amount} грн — {project}")
     if history_requests:
@@ -15851,7 +15854,7 @@ async def adm_user_finance_view(c: types.CallbackQuery, state: FSMContext):
         lines.append(f"📗 Підтверджено/закрито: <b>{len(history_requests)}</b>")
         for req in history_requests[-5:]:
             code = req.get("code") or req.get("id")
-            amount = fmt_money(float(req.get("sum") or 0.0))
+            amount = fmt_money(parse_amount(req.get("sum")))
             project = h(req.get("project", "—"))
             lines.append(f"• {h(code)} — {amount} грн — {project}")
 
@@ -15930,7 +15933,7 @@ async def finance_admin_notify_approval(obj: dict) -> None:
     scope = finance_request_scope(obj)
     scope_text = finance_scope_brief_text(scope)
     code_disp = h(code)
-    amount_text = fmt_money(float(obj.get("sum") or 0.0))
+    amount_text = fmt_money(parse_amount_chain(obj.get("sum"), 0.0))
     scope_snapshot = obj.get("scope_snapshot") or {}
     summary_snapshot = scope_snapshot.get("__summary__", {})
     outstanding_before = summary_snapshot.get("outstanding_before")
@@ -15955,7 +15958,7 @@ async def finance_admin_notify_approval(obj: dict) -> None:
         for fname in files:
             receipt = by_file.get(fname)
             if receipt:
-                amount = float(receipt.get("sum") or 0.0)
+                amount = receipt_amount(receipt)
                 lines.append(f"• {h(receipt.get('receipt_no','—'))} — {fmt_money(amount)} грн")
             else:
                 lines.append(f"• {h(fname)}")
@@ -16017,7 +16020,7 @@ async def adm_user_finance_requests(c: types.CallbackQuery, state: FSMContext):
         for req in sorted(all_requests, key=lambda r: r.get("created_at") or "")[-20:]:
             code = h(req.get("code") or req.get("id") or "—")
             status = status_labels.get(req.get("status"), req.get("status", "—"))
-            amount = fmt_money(float(req.get("sum") or 0.0))
+            amount = fmt_money(parse_amount(req.get("sum")))
             scope_text = finance_scope_brief_text(finance_request_scope(req))
             lines.append(f"• {code} — {amount} грн — {status} — {scope_text}")
     kb = InlineKeyboardMarkup()
@@ -16319,9 +16322,9 @@ async def adm_stat_show(c: types.CallbackQuery, state: FSMContext):
     proj = c.data.split("adm_stat_",1)[1]
     target = (await state.get_data()).get("target_uid")
     recs = user_project_receipts(target, proj)
-    cnt = len(recs); total = round(sum(float(r.get("sum", 0.0)) for r in recs), 2)
-    paid_sum = round(sum(float(r.get("sum", 0.0)) for r in recs if r.get("paid") is True), 2)
-    unpaid_sum = round(sum(float(r.get("sum", 0.0)) for r in recs if r.get("paid") is False), 2)
+    cnt = len(recs); total = round(sum(receipt_amount(r) for r in recs), 2)
+    paid_sum = round(sum(receipt_amount(r) for r in recs if r.get("paid") is True), 2)
+    unpaid_sum = round(sum(receipt_amount(r) for r in recs if r.get("paid") is False), 2)
     text = (f"📊 Статистика пользователя <b>{target}</b>\n"
             f"📂 Проект: <b>{h(proj)}</b>\n"
             f"• Чеков: <b>{cnt}</b>\n• Всего: <b>{fmt_money(total)} грн</b>\n"
@@ -16356,7 +16359,7 @@ async def adm_recs_show(c: types.CallbackQuery, state: FSMContext):
     lines = [f"📁 Чеки пользователя <b>{target}</b>", f"📂 Проект: <b>{h(proj)}</b>", ""]
     for r in recs[-30:]:
         status = "✅" if r.get("paid") is True else ("❌" if r.get("paid") is False else "⏳")
-        amount = float(r.get('sum') or 0.0)
+        amount = receipt_amount(r)
         desc_text = h(r.get('desc')) if r.get('desc') else "—"
         lines.append(
             f"• #{h(r.get('receipt_no',''))} — {h(r.get('date','—'))} {h(r.get('time',''))} — {fmt_money(amount)} грн {status} — {desc_text}"
