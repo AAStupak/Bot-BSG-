@@ -51,7 +51,7 @@ from openpyxl.utils import get_column_letter
 from PIL import Image, ExifTags, ImageOps
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
-from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited
+from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited, BadRequest
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     InputFile, ContentType, ReplyKeyboardRemove,
@@ -80,6 +80,14 @@ BASE_PATH = "data/projects"
 USERS_PATH = "data/users"
 BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
+
+REQUIRED_COMMUNITY_CHAT = os.getenv("BSG_REQUIRED_CHAT", "@bsg_workspace")
+REQUIRED_COMMUNITY_TITLE = os.getenv("BSG_REQUIRED_TITLE", "BSG Workspace")
+REQUIRED_COMMUNITY_INVITE = os.getenv("BSG_REQUIRED_INVITE", "").strip()
+REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
+REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
+REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Панченко Алексей")
+REGISTRATION_GATE_CONTACT_ROLE = os.getenv("BSG_REQUIRED_CONTACT_ROLE", "директор компании BSG")
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
 
@@ -993,6 +1001,41 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "Sprache auf {language} umgestellt.",
         "pl": "Język zmieniono na {language}.",
         "ru": "Язык переключен на {language}.",
+    },
+    "REGISTER_GATE_CHECKING": {
+        "uk": "⏳ Перевіряємо участь у спільноті <b>{community}</b>…",
+        "en": "⏳ Checking your membership in <b>{community}</b>…",
+        "de": "⏳ Prüfen der Mitgliedschaft in <b>{community}</b> …",
+        "pl": "⏳ Sprawdzamy Twoje uczestnictwo w <b>{community}</b>…",
+        "ru": "⏳ Проверяем участие в группе <b>{community}</b>…",
+    },
+    "REGISTER_GATE_ALLOWED": {
+        "uk": "✅ Доступ підтверджено! Ви вже в групі <b>{community}</b>. Натисніть «Далі», щоб продовжити реєстрацію.",
+        "en": "✅ Access confirmed! You are a member of <b>{community}</b>. Tap “Next” to continue registration.",
+        "de": "✅ Zugriff bestätigt! Sie sind Mitglied der Gruppe <b>{community}</b>. Tippen Sie auf „Weiter“, um mit der Registrierung fortzufahren.",
+        "pl": "✅ Dostęp potwierdzony! Należysz do grupy <b>{community}</b>. Kliknij „Dalej”, aby kontynuować rejestrację.",
+        "ru": "✅ Доступ подтверждён! Вы состоите в группе <b>{community}</b>. Нажмите «Дальше», чтобы продолжить регистрацию.",
+    },
+    "REGISTER_GATE_DENIED": {
+        "uk": "🚫 Реєстрація поки недоступна.\n\nВи ще не приєдналися до групи <b>{community}</b>. Напишіть, будь ласка, <b>{contact_name}</b> ({contact_role}), щоб вас додали. Після підтвердження натисніть «Продовжити», щоб перевірити ще раз, або «Закрити», щоб прибрати повідомлення.",
+        "en": "🚫 Registration is currently unavailable.\n\nYou are not a member of <b>{community}</b> yet. Please message <b>{contact_name}</b> ({contact_role}) so they can add you. After joining, press “Continue” to check again or “Close” to hide this message.",
+        "de": "🚫 Registrierung momentan nicht möglich.\n\nSie sind noch kein Mitglied von <b>{community}</b>. Bitte kontaktieren Sie <b>{contact_name}</b> ({contact_role}), damit Sie hinzugefügt werden. Nachdem Sie beigetreten sind, tippen Sie auf „Fortfahren“, um erneut zu prüfen, oder auf „Schließen“, um diese Nachricht auszublenden.",
+        "pl": "🚫 Rejestracja jest chwilowo zablokowana.\n\nNie należysz jeszcze do grupy <b>{community}</b>. Skontaktuj się z <b>{contact_name}</b> ({contact_role}), aby dodał Cię do społeczności. Po dołączeniu kliknij „Kontynuować”, aby sprawdzić ponownie, albo „Zamknąć”, aby ukryć tę wiadomość.",
+        "ru": "🚫 Регистрация пока недоступна.\n\nВы ещё не вступили в группу <b>{community}</b>. Напишите, пожалуйста, <b>{contact_name}</b> ({contact_role}), чтобы он добавил вас. После вступления нажмите «Продолжить», чтобы проверить снова, или «Закрыть», чтобы скрыть сообщение.",
+    },
+    "REGISTER_GATE_RETRY": {
+        "uk": "🔄 Продовжити",
+        "en": "🔄 Continue",
+        "de": "🔄 Fortfahren",
+        "pl": "🔄 Kontynuować",
+        "ru": "🔄 Продолжить",
+    },
+    "REGISTER_GATE_CLOSE": {
+        "uk": "✖️ Закрити",
+        "en": "✖️ Close",
+        "de": "✖️ Schließen",
+        "pl": "✖️ Zamknąć",
+        "ru": "✖️ Закрыть",
     },
     "ONBOARD_WELCOME": {
         "uk": "👋 Привіт, {name}!\nЛаскаво просимо до робочого простору <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nТут зібрано все, що допомагає працювати швидко та тримати під контролем важливі справи.\n\n> <b>{bot}</b> — ваш особистий інструмент порядку, швидкості та впевненості в роботі.\n\nℹ️ Хочете приєднатися й дізнатися, як пройти реєстрацію?\nПросто натисніть <b>«Далі»</b> і отримайте покрокову інструкцію (підпис автоматично локалізовано).",
@@ -1982,6 +2025,7 @@ alerts_history_cache: Dict[str, Dict[str, Any]] = {}
 # ========================== FSM ==========================
 class OnboardFSM(StatesGroup):
     language = State()
+    membership = State()
     welcome = State()
     briefing = State()
     instructions = State()
@@ -2058,6 +2102,7 @@ def ensure_dirs():
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
     os.makedirs(ALERTS_STORAGE_BASE, exist_ok=True)
+    os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -2817,6 +2862,77 @@ def registration_sync_runtime(uid: int, profile: Optional[dict]) -> bool:
         if loop and loop.is_running():
             loop.create_task(anchor_clear(uid))
     return completed
+
+
+def registration_gate_render_community() -> str:
+    title = REQUIRED_COMMUNITY_TITLE or REQUIRED_COMMUNITY_CHAT or "BSG workspace"
+    invite = REQUIRED_COMMUNITY_INVITE
+    safe_title = html_escape(title)
+    if invite:
+        safe_invite = html_escape(invite, quote=True)
+        return f"<a href=\"{safe_invite}\">{safe_title}</a>"
+    return safe_title
+
+
+def registration_gate_log_attempt(uid: int, runtime: dict, allowed: bool, status: str, *, lang: Optional[str] = None):
+    ensure_dirs()
+    os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
+    record = {
+        "user_id": uid,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "allowed": bool(allowed),
+        "status": status,
+        "lang": lang,
+        "username": runtime.get("tg", {}).get("username"),
+        "first_name": runtime.get("tg", {}).get("first_name"),
+        "last_name": runtime.get("tg", {}).get("last_name"),
+        "chat_id": runtime.get("tg", {}).get("chat_id"),
+    }
+    existing: List[dict] = []
+    if os.path.exists(REGISTRATION_GATE_FILE):
+        try:
+            with open(REGISTRATION_GATE_FILE, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+                if isinstance(data, list):
+                    existing = data
+        except Exception:
+            existing = []
+    existing.append(record)
+    tmp_path = f"{REGISTRATION_GATE_FILE}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(existing, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, REGISTRATION_GATE_FILE)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+async def registration_check_membership(uid: int) -> Tuple[bool, str]:
+    chat = REQUIRED_COMMUNITY_CHAT
+    if not chat:
+        return True, "disabled"
+    try:
+        member = await bot.get_chat_member(chat, uid)
+    except BadRequest as exc:
+        detail = getattr(exc, "message", None) or getattr(exc, "text", None) or str(exc) or "bad_request"
+        return False, detail
+    except Exception as exc:
+        return False, exc.__class__.__name__
+
+    status = getattr(member, "status", None) or "unknown"
+    allowed_statuses = {"creator", "administrator", "member"}
+    allowed = False
+    if status in allowed_statuses:
+        allowed = True
+    elif status == "restricted":
+        allowed = bool(getattr(member, "is_member", False))
+    return allowed, status
 
 
 async def registration_guard(
@@ -5649,6 +5765,13 @@ def kb_registration_next(target: Any, callback_data: str) -> InlineKeyboardMarku
     return kb
 
 
+def kb_registration_gate_blocked(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_GATE_RETRY"), callback_data="onboard_stage:membership"))
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_GATE_CLOSE"), callback_data="reg_gate_close"))
+    return kb
+
+
 def kb_region_prompt(target: Any) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(target, "REGISTER_REGION_BUTTON"), callback_data="reg_region_open"))
@@ -5793,14 +5916,17 @@ async def onboard_language_selected(c: types.CallbackQuery, state: FSMContext):
     confirm = await bot.send_message(
         chat_id,
         tr(uid, "ONBOARD_LANGUAGE_CONFIRMED", language=LANG_LABELS.get(code, code)),
-        reply_markup=kb_registration_next(uid, "onboard_stage:welcome"),
+        reply_markup=kb_registration_next(uid, "onboard_stage:membership"),
     )
     runtime["onboard_intro"] = {"chat_id": confirm.chat.id, "message_id": confirm.message_id}
-    await state.set_state(OnboardFSM.welcome.state)
+    await state.set_state(OnboardFSM.membership.state)
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("onboard_stage:"), state=[OnboardFSM.welcome, OnboardFSM.briefing, OnboardFSM.instructions])
+@dp.callback_query_handler(
+    lambda c: c.data.startswith("onboard_stage:"),
+    state=[OnboardFSM.membership, OnboardFSM.welcome, OnboardFSM.briefing, OnboardFSM.instructions],
+)
 async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     runtime = users_runtime.setdefault(uid, {})
@@ -5811,6 +5937,47 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
     already_registered = registration_profile_completed(profile)
     registration_sync_runtime(uid, profile)
     stage = c.data.split(":", 1)[1]
+
+    if stage == "membership":
+        await state.set_state(OnboardFSM.membership.state)
+        community = registration_gate_render_community()
+        checking_text = tr(uid, "REGISTER_GATE_CHECKING", community=community)
+        try:
+            await bot.edit_message_text(checking_text, chat_id, message_id)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, checking_text)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+            chat_id = msg.chat.id
+            message_id = msg.message_id
+
+        allowed, status = await registration_check_membership(uid)
+        registration_gate_log_attempt(uid, runtime, allowed, status, lang=resolve_lang(uid))
+        runtime["membership_allowed"] = allowed
+        if allowed:
+            text = tr(uid, "REGISTER_GATE_ALLOWED", community=community)
+            markup = kb_registration_next(uid, "onboard_stage:welcome")
+        else:
+            text = tr(
+                uid,
+                "REGISTER_GATE_DENIED",
+                community=community,
+                contact_name=h(REGISTRATION_GATE_CONTACT_NAME),
+                contact_role=h(REGISTRATION_GATE_CONTACT_ROLE),
+            )
+            markup = kb_registration_gate_blocked(uid)
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+        await c.answer()
+        return
 
     if stage == "welcome":
         display_name = profile.get("first_name") or runtime.get("tg", {}).get("first_name") or profile.get("fullname") or runtime.get("tg", {}).get("username") or f"ID {uid}"
@@ -5865,6 +6032,19 @@ async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
         await c.answer()
         return
 
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_gate_close", state=OnboardFSM.membership)
+async def onboard_gate_close(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    info = runtime.pop("onboard_intro", None)
+    if info:
+        await _delete_message_safe(info.get("chat_id"), info.get("message_id"))
+    runtime.pop("membership_allowed", None)
+    await flow_clear(uid)
+    await state.finish()
     await c.answer()
 
 
