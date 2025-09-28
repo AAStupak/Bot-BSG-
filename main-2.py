@@ -2860,10 +2860,10 @@ def load_all_users() -> List[dict]:
 
 def list_completed_user_ids() -> List[int]:
     ensure_dirs()
-    ids: List[int] = []
+    ordered: List[Tuple[str, str, int]] = []
     if not os.path.exists(USERS_PATH):
-        return ids
-    for name in sorted(os.listdir(USERS_PATH)):
+        return []
+    for name in os.listdir(USERS_PATH):
         if not name.endswith(".json"):
             continue
         try:
@@ -2874,12 +2874,21 @@ def list_completed_user_ids() -> List[int]:
         if not registration_profile_completed(profile):
             continue
         if not profile.get("registration_completed_at"):
-            profile["registration_completed_at"] = profile.get("updated_at") or datetime.now(timezone.utc).isoformat()
+            profile["registration_completed_at"] = (
+                profile.get("updated_at") or datetime.now(timezone.utc).isoformat()
+            )
             save_user(profile)
             if not profile.get("registration_completed_at"):
                 continue
-        ids.append(uid)
-    return ids
+        display_name = str(profile.get("fullname") or "").strip()
+        if not display_name:
+            tg_info = profile.get("tg") or {}
+            display_name = str(tg_info.get("first_name") or tg_info.get("username") or "").strip()
+        name_key = display_name.casefold() if display_name else ""
+        completed_at = str(profile.get("registration_completed_at") or "")
+        ordered.append((name_key, completed_at, uid))
+    ordered.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[2] for item in ordered]
 
 
 def user_points_file(uid: int) -> str:
