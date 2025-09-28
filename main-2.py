@@ -4030,8 +4030,10 @@ def finance_generate_code() -> str:
             code = payload.get("code")
             if code:
                 existing.add(code)
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     while True:
-        code = f"ID-BRD-{random.randint(0, 9999):04d}"
+        suffix = "".join(random.choice(alphabet) for _ in range(5))
+        code = f"FIN-{suffix}"
         if code not in existing:
             return code
 
@@ -13366,6 +13368,20 @@ def finance_scope_snapshot(uid: int, scope: List[str], grouped: Dict[str, List[d
     return snapshot
 
 
+def finance_should_show_remainder(mode: Optional[str], snapshot: Optional[dict]) -> bool:
+    if mode == "auto":
+        return False
+    if not isinstance(snapshot, dict):
+        return False
+    before_raw = snapshot.get("outstanding_before")
+    after_raw = snapshot.get("outstanding_after")
+    if before_raw in (None, "") or after_raw in (None, ""):
+        return False
+    before_val = parse_amount(before_raw)
+    after_val = parse_amount(after_raw)
+    return abs(before_val - after_val) > 0.01
+
+
 def finance_scope_lines(scope: List[str]) -> List[str]:
     lines: List[str] = []
     for name in scope:
@@ -13391,6 +13407,7 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
     selected = draft.get("selected_receipts", [])
     total = draft.get("amount", 0.0)
     requested = draft.get("requested_amount")
+    mode = draft.get("mode")
     lines = ["📨 <b>Підтвердження запиту</b>", "━━━━━━━━━━━━━━━━━━"]
     if scope:
         if len(scope) == 1:
@@ -13407,22 +13424,25 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
     grouped = finance_group_receipts(selected)
     snapshot = finance_scope_snapshot(uid, scope, grouped)
     summary_snapshot = snapshot.get("__summary__", {})
+    show_remainder = finance_should_show_remainder(mode, summary_snapshot)
     if summary_snapshot:
         before = summary_snapshot.get("outstanding_before")
         after = summary_snapshot.get("outstanding_after")
-        if before is not None:
-            lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(before))} грн</b>")
-        if after is not None:
-            lines.append(f"📉 Залишок після: <b>{fmt_money(float(after))} грн</b>")
+        if before is not None and before != "":
+            lines.append(f"🏦 Борг до запиту: <b>{fmt_money(parse_amount(before))} грн</b>")
+        if show_remainder and after is not None and after != "":
+            lines.append(f"📉 Залишок після: <b>{fmt_money(parse_amount(after))} грн</b>")
     for proj, recs in grouped.items():
         subtotal = finance_receipts_total(recs)
         proj_line = f"• {h(proj)} — {fmt_money(subtotal)} грн ({len(recs)} шт.)"
         info_snapshot = snapshot.get(proj) or {}
         extras: List[str] = []
-        if info_snapshot.get("outstanding_before") is not None:
-            extras.append(f"до: {fmt_money(float(info_snapshot['outstanding_before']))} грн")
-        if info_snapshot.get("outstanding_after") is not None:
-            extras.append(f"після: {fmt_money(float(info_snapshot['outstanding_after']))} грн")
+        before_val = info_snapshot.get("outstanding_before")
+        if before_val not in (None, ""):
+            extras.append(f"до: {fmt_money(parse_amount(before_val))} грн")
+        after_val = info_snapshot.get("outstanding_after") if finance_should_show_remainder(mode, info_snapshot) else None
+        if after_val not in (None, ""):
+            extras.append(f"після: {fmt_money(parse_amount(after_val))} грн")
         if extras:
             proj_line += f" ({'; '.join(extras)})"
         lines.append(proj_line)
@@ -13673,6 +13693,8 @@ def finance_admin_scope_summary(
     scope: List[str],
     grouped: Dict[str, List[dict]],
     snapshot: Optional[Dict[str, dict]] = None,
+    *,
+    mode: Optional[str] = None,
 ) -> Tuple[str, str]:
     detail_lines: List[str] = []
     brief_parts: List[str] = []
@@ -13686,14 +13708,13 @@ def finance_admin_scope_summary(
         info_snapshot = snapshot.get(name) or {}
         before = info_snapshot.get("outstanding_before")
         after = info_snapshot.get("outstanding_after")
-        if before is not None or after is not None:
-            extras: List[str] = []
-            if before is not None:
-                extras.append(f"📊 Борг до запиту: {fmt_money(float(before))} грн")
-            if after is not None:
-                extras.append(f"📉 Залишок після: {fmt_money(float(after))} грн")
-            if extras:
-                base_line = "\n".join([base_line, "   " + "\n   ".join(extras)])
+        extras: List[str] = []
+        if before is not None and before != "":
+            extras.append(f"📊 Борг до запиту: {fmt_money(parse_amount(before))} грн")
+        if finance_should_show_remainder(mode, info_snapshot) and after not in (None, ""):
+            extras.append(f"📉 Залишок після: {fmt_money(parse_amount(after))} грн")
+        if extras:
+            base_line = "\n".join([base_line, "   " + "\n   ".join(extras)])
         detail_lines.append(base_line)
         brief_parts.append(f"{h(name)} (код {code_txt})")
     return "\n".join(detail_lines), ", ".join(brief_parts)
@@ -13722,8 +13743,9 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
         mode=mode,
         scope_snapshot=scope_snapshot,
     )
+    mode_value = request.get("mode") or mode
     code = request.get("code", request.get("id"))
-    scope_lines, scope_brief = finance_admin_scope_summary(scope, grouped, scope_snapshot)
+    scope_lines, scope_brief = finance_admin_scope_summary(scope, grouped, scope_snapshot, mode=mode_value)
     prof = load_user(uid) or {}
     fullname = h(prof.get("fullname", "—"))
     bsu_code = h(prof.get("bsu", "—"))
@@ -13734,6 +13756,7 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     requested_sum = parse_amount_chain(request.get("sum"), amount)
     calc_sum = float(request.get("calc_sum") or amount)
     summary_snapshot = scope_snapshot.get("__summary__", {})
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
     outstanding_before = summary_snapshot.get("outstanding_before")
     outstanding_after = summary_snapshot.get("outstanding_after")
     user_lines = [
@@ -13750,7 +13773,7 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
         user_lines.append(f"💰 Сума до виплати: <b>{fmt_money(calc_sum)} грн</b>")
     if outstanding_before is not None:
         user_lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(outstanding_before))} грн</b>")
-    if outstanding_after is not None:
+    if show_remainder and outstanding_after is not None:
         user_lines.append(f"📉 Залишок після виплати: <b>{fmt_money(float(outstanding_after))} грн</b>")
     user_lines.append("")
     user_lines.append("Очікуйте рішення адміністратора.")
@@ -13772,7 +13795,7 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     admin_lines.append(f"• Кількість чеків: {len(receipts)}")
     if outstanding_before is not None:
         admin_lines.append(f"• Борг до запиту: {fmt_money(float(outstanding_before))} грн")
-    if outstanding_after is not None:
+    if show_remainder and outstanding_after is not None:
         admin_lines.append(f"• Залишок після виплати: {fmt_money(float(outstanding_after))} грн")
     if scope_lines:
         admin_lines.append("")
@@ -13871,10 +13894,12 @@ async def fin_hist_open(c: types.CallbackQuery):
     scope = finance_request_scope(obj)
     grouped_items = finance_group_receipts(obj.get("items", []))
     scope_snapshot = obj.get("scope_snapshot") or {}
-    scope_lines_text, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot)
+    mode_value = obj.get("mode")
+    scope_lines_text, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot, mode=mode_value)
     summary_snapshot = scope_snapshot.get("__summary__", {})
     outstanding_before = summary_snapshot.get("outstanding_before")
     outstanding_after = summary_snapshot.get("outstanding_after")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
     status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
     status_disp = status_map.get(obj.get("status"), obj.get("status", "—"))
     calc_sum = parse_amount_chain(obj.get("calc_sum"), obj.get("sum"), 0.0)
@@ -13888,7 +13913,7 @@ async def fin_hist_open(c: types.CallbackQuery):
         lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
     if outstanding_before is not None:
         lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(outstanding_before))} грн</b>")
-    if outstanding_after is not None:
+    if show_remainder and outstanding_after is not None:
         lines.append(f"📉 Залишок після: <b>{fmt_money(float(outstanding_after))} грн</b>")
     if scope_lines_text:
         lines.append("")
@@ -14033,6 +14058,8 @@ async def user_confirm_payout(c: types.CallbackQuery):
     scope_text = finance_scope_brief_text(scope)
     scope_snapshot = obj.get("scope_snapshot") or {}
     summary_snapshot = scope_snapshot.get("__summary__", {})
+    mode_value = obj.get("mode")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
     outstanding_before = summary_snapshot.get("outstanding_before")
     outstanding_after = summary_snapshot.get("outstanding_after")
     fullname = h(prof.get('fullname', '—'))
@@ -14047,7 +14074,7 @@ async def user_confirm_payout(c: types.CallbackQuery):
     ]
     if outstanding_before is not None:
         admin_lines.append(f"Борг до: {fmt_money(float(outstanding_before))} грн")
-    if outstanding_after is not None:
+    if show_remainder and outstanding_after is not None:
         admin_lines.append(f"Залишок після: {fmt_money(float(outstanding_after))} грн")
     admin_lines.extend([
         f"Получатель: {fullname} (ID {uid}, {bsu_code})",
@@ -14321,10 +14348,12 @@ async def adm_req_open(c: types.CallbackQuery):
     scope = finance_request_scope(obj)
     grouped_items = finance_group_receipts(obj.get("items", []))
     scope_snapshot = obj.get("scope_snapshot") or {}
-    scope_detail, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot)
+    mode_value = obj.get("mode")
+    scope_detail, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot, mode=mode_value)
     summary_snapshot = scope_snapshot.get("__summary__", {})
     outstanding_before = summary_snapshot.get("outstanding_before")
     outstanding_after = summary_snapshot.get("outstanding_after")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
     fullname = h(prof.get('fullname', '—'))
     bsu_code = h(prof.get('bsu', '—'))
     phone = h(prof.get('phone', '—'))
@@ -14364,7 +14393,7 @@ async def adm_req_open(c: types.CallbackQuery):
         text_lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
     if outstanding_before is not None:
         text_lines.append(f"🏦 Борг до запиту: {fmt_money(float(outstanding_before))} грн")
-    if outstanding_after is not None:
+    if show_remainder and outstanding_after is not None:
         text_lines.append(f"📉 Залишок після: {fmt_money(float(outstanding_after))} грн")
     text_lines.append("")
     text_lines.append("Просмотрите прикреплённые чеки перед одобрением выплаты.")
@@ -14388,6 +14417,7 @@ async def adm_req_view_checks(c: types.CallbackQuery):
     code = obj.get("code", req_id)
     grouped_files: Dict[str, List[str]] = {}
     scope_snapshot = obj.get("scope_snapshot") or {}
+    mode_value = obj.get("mode")
     for item in obj.get("items", []):
         if not isinstance(item, dict):
             continue
@@ -14404,6 +14434,7 @@ async def adm_req_view_checks(c: types.CallbackQuery):
         ""
     ]
     summary_snapshot = scope_snapshot.get("__summary__", {})
+    show_summary_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
     summary_parts: List[str] = []
     before_total = summary_snapshot.get("outstanding_before")
     selected_total = summary_snapshot.get("selected_total")
@@ -14412,7 +14443,7 @@ async def adm_req_view_checks(c: types.CallbackQuery):
         summary_parts.append(f"📊 Борг до запиту: {fmt_money(float(before_total))} грн")
     if selected_total is not None:
         summary_parts.append(f"💰 У запиті: {fmt_money(float(selected_total))} грн")
-    if after_total is not None:
+    if show_summary_remainder and after_total is not None:
         summary_parts.append(f"📉 Залишок після: {fmt_money(float(after_total))} грн")
     if summary_parts:
         lines.extend(summary_parts)
@@ -14428,12 +14459,15 @@ async def adm_req_view_checks(c: types.CallbackQuery):
         lines.append(f"{h(display_name)} (код {project_code_txt}) — {len(file_list)} файлів")
         proj_snapshot = scope_snapshot.get(proj_name) or {}
         proj_parts: List[str] = []
-        if proj_snapshot.get("outstanding_before") is not None:
-            proj_parts.append(f"до: {fmt_money(float(proj_snapshot['outstanding_before']))} грн")
-        if proj_snapshot.get("selected_total") is not None:
-            proj_parts.append(f"у запиті: {fmt_money(float(proj_snapshot['selected_total']))} грн")
-        if proj_snapshot.get("outstanding_after") is not None:
-            proj_parts.append(f"після: {fmt_money(float(proj_snapshot['outstanding_after']))} грн")
+        before_val = proj_snapshot.get("outstanding_before")
+        if before_val not in (None, ""):
+            proj_parts.append(f"до: {fmt_money(parse_amount(before_val))} грн")
+        selected_val = proj_snapshot.get("selected_total")
+        if selected_val not in (None, ""):
+            proj_parts.append(f"у запиті: {fmt_money(parse_amount(selected_val))} грн")
+        after_val = proj_snapshot.get("outstanding_after")
+        if finance_should_show_remainder(mode_value, proj_snapshot) and after_val not in (None, ""):
+            proj_parts.append(f"після: {fmt_money(parse_amount(after_val))} грн")
         if proj_parts:
             lines.append("   " + " | ".join(proj_parts))
         recs = user_project_receipts(obj.get("user_id"), proj_name) if proj_name else []
@@ -15936,6 +15970,8 @@ async def finance_admin_notify_approval(obj: dict) -> None:
     amount_text = fmt_money(parse_amount_chain(obj.get("sum"), 0.0))
     scope_snapshot = obj.get("scope_snapshot") or {}
     summary_snapshot = scope_snapshot.get("__summary__", {})
+    mode_value = obj.get("mode")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
     outstanding_before = summary_snapshot.get("outstanding_before")
     outstanding_after = summary_snapshot.get("outstanding_after")
     grouped_files: Dict[str, List[str]] = {}
@@ -15972,7 +16008,7 @@ async def finance_admin_notify_approval(obj: dict) -> None:
     ]
     if outstanding_before is not None:
         user_lines.append(f"🏦 Борг до виплати: <b>{fmt_money(float(outstanding_before))} грн</b>")
-    if outstanding_after is not None:
+    if show_remainder and outstanding_after is not None:
         user_lines.append(f"📉 Залишок після: <b>{fmt_money(float(outstanding_after))} грн</b>")
     user_lines.extend([
         "",
