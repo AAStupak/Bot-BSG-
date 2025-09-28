@@ -40,7 +40,7 @@ BSG › botSYSTEM — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, sys, json, random, re, base64, hashlib, secrets, asyncio, math
+import os, sys, json, random, re, base64, hashlib, secrets, asyncio, math, shutil
 from decimal import Decimal, ROUND_HALF_UP
 import unicodedata
 from html import escape as html_escape
@@ -83,6 +83,7 @@ USERS_PATH = "data/users"
 BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
 POINTS_PATH = os.path.join("data", "points")
+REQUESTS_PATH = os.path.join("data", "requests")
 GLOBAL_FINANCE_FILE = os.path.join(FIN_PATH, "global.json")
 
 FINANCE_COMPANY_TITLE = os.getenv("BSG_FINANCE_COMPANY_TITLE", "компанія BSG")
@@ -90,6 +91,7 @@ FINANCE_COMPANY_TITLE = os.getenv("BSG_FINANCE_COMPANY_TITLE", "компанія
 POINTS_RECEIPT_AWARD = 0.3
 POINTS_PHOTO_AWARD = 0.5
 POINTS_PARCEL_AWARD = 1.0
+WORK_REQUEST_POINTS_REWARD = 5.0
 
 def _normalize_chat_identifier(raw: Any) -> Optional[Union[int, str]]:
     if raw is None:
@@ -396,6 +398,34 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "📑 Dokumente",
         "pl": "📑 Dokumenty",
         "ru": "📑 Документы",
+    },
+    "BTN_TASKS": {
+        "uk": "🛠 Заявки",
+        "en": "🛠 Jobs",
+        "de": "🛠 Aufträge",
+        "pl": "🛠 Zlecenia",
+        "ru": "🛠 Заявки",
+    },
+    "BTN_TASKS_ACTIVE": {
+        "uk": "📌 Актуальні заявки",
+        "en": "📌 Active jobs",
+        "de": "📌 Aktive Aufträge",
+        "pl": "📌 Aktualne zlecenia",
+        "ru": "📌 Актуальные заявки",
+    },
+    "BTN_TASKS_HISTORY": {
+        "uk": "📜 Історія заявок",
+        "en": "📜 Job history",
+        "de": "📜 Auftragsverlauf",
+        "pl": "📜 Historia zleceń",
+        "ru": "📜 История заявок",
+    },
+    "BTN_TASKS_BACK": {
+        "uk": "⬅️ Назад",
+        "en": "⬅️ Back",
+        "de": "⬅️ Zurück",
+        "pl": "⬅️ Wróć",
+        "ru": "⬅️ Назад",
     },
     "BTN_FINANCE": {
         "uk": "💵 Фінанси",
@@ -2269,6 +2299,279 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "📥 <b>Odebrane przesyłki BSG</b>\n━━━━━━━━━━━━━━━━━━\nSprawdź statusy, komentarze i historię potwierdzonych dostaw.",
         "ru": "📥 <b>Полученные посылки BSG</b>\n━━━━━━━━━━━━━━━━━━\nПросмотрите статусы, комментарии и историю подтверждённых доставок.",
     },
+    "TASKS_MENU_INTRO": {
+        "uk": "🛠 <b>Заявки по роботі</b>\n━━━━━━━━━━━━━━━━━━\n📌 Актуально: <b>{active}</b>\n✅ Виконано: <b>{completed}</b>\n\nОберіть дію нижче, щоб переглянути активні або завершені заявки.",
+        "en": "🛠 <b>Job requests</b>\n━━━━━━━━━━━━━━━━━━\n📌 Active: <b>{active}</b>\n✅ Completed: <b>{completed}</b>\n\nChoose what to open below to review active or finished jobs.",
+        "de": "🛠 <b>Arbeitsaufträge</b>\n━━━━━━━━━━━━━━━━━━\n📌 Aktiv: <b>{active}</b>\n✅ Erledigt: <b>{completed}</b>\n\nWählen Sie unten, ob Sie aktuelle oder abgeschlossene Aufträge sehen möchten.",
+        "pl": "🛠 <b>Zlecenia</b>\n━━━━━━━━━━━━━━━━━━\n📌 Aktywne: <b>{active}</b>\n✅ Zakończone: <b>{completed}</b>\n\nWybierz poniżej, aby zobaczyć aktualne lub ukończone zadania.",
+        "ru": "🛠 <b>Заявки по работе</b>\n━━━━━━━━━━━━━━━━━━\n📌 Актуально: <b>{active}</b>\n✅ Выполнено: <b>{completed}</b>\n\nВыберите действие ниже, чтобы открыть актуальные или завершённые заявки.",
+    },
+    "TASKS_ACTIVE_HEADER": {
+        "uk": "📌 <b>Актуальні заявки</b>\nВиберіть заявку, щоб переглянути деталі.",
+        "en": "📌 <b>Active jobs</b>\nPick a request to view the details.",
+        "de": "📌 <b>Aktive Aufträge</b>\nWählen Sie einen Auftrag aus, um Details zu sehen.",
+        "pl": "📌 <b>Aktualne zlecenia</b>\nWybierz zlecenie, aby zobaczyć szczegóły.",
+        "ru": "📌 <b>Актуальные заявки</b>\nВыберите заявку, чтобы посмотреть детали.",
+    },
+    "TASKS_HISTORY_HEADER": {
+        "uk": "📜 <b>Історія заявок</b>\nВідкрийте будь-яку заявку для подробиць.",
+        "en": "📜 <b>Job history</b>\nOpen any request to review the details.",
+        "de": "📜 <b>Auftragsverlauf</b>\nÖffnen Sie einen Auftrag, um Details anzusehen.",
+        "pl": "📜 <b>Historia zleceń</b>\nOtwórz zlecenie, aby zobaczyć szczegóły.",
+        "ru": "📜 <b>История заявок</b>\nОткройте любую заявку, чтобы увидеть подробности.",
+    },
+    "TASKS_EMPTY_ACTIVE": {
+        "uk": "✅ Наразі немає активних заявок.",
+        "en": "✅ There are no active jobs right now.",
+        "de": "✅ Zurzeit gibt es keine aktiven Aufträge.",
+        "pl": "✅ Obecnie brak aktywnych zleceń.",
+        "ru": "✅ Сейчас нет активных заявок.",
+    },
+    "TASKS_EMPTY_HISTORY": {
+        "uk": "ℹ️ Історія порожня. Виконані заявки з'являться тут.",
+        "en": "ℹ️ History is empty. Completed jobs will appear here.",
+        "de": "ℹ️ Der Verlauf ist leer. Abgeschlossene Aufträge erscheinen hier.",
+        "pl": "ℹ️ Historia jest pusta. Ukończone zlecenia pojawią się tutaj.",
+        "ru": "ℹ️ История пуста. Завершённые заявки появятся здесь.",
+    },
+    "TASKS_CARD_HEADER": {
+        "uk": "🛠 <b>Заявка {code}</b>\n━━━━━━━━━━━━━━━━━━",
+        "en": "🛠 <b>Job {code}</b>\n━━━━━━━━━━━━━━━━━━",
+        "de": "🛠 <b>Auftrag {code}</b>\n━━━━━━━━━━━━━━━━━━",
+        "pl": "🛠 <b>Zlecenie {code}</b>\n━━━━━━━━━━━━━━━━━━",
+        "ru": "🛠 <b>Заявка {code}</b>\n━━━━━━━━━━━━━━━━━━",
+    },
+    "TASKS_CARD_STATUS_ACTIVE": {
+        "uk": "📌 Статус: <b>Актуальна</b>",
+        "en": "📌 Status: <b>Active</b>",
+        "de": "📌 Status: <b>Aktiv</b>",
+        "pl": "📌 Status: <b>Aktywne</b>",
+        "ru": "📌 Статус: <b>Актуальная</b>",
+    },
+    "TASKS_CARD_STATUS_COMPLETED": {
+        "uk": "✅ Статус: <b>Завершена</b>",
+        "en": "✅ Status: <b>Completed</b>",
+        "de": "✅ Status: <b>Abgeschlossen</b>",
+        "pl": "✅ Status: <b>Zakończone</b>",
+        "ru": "✅ Статус: <b>Завершена</b>",
+    },
+    "TASKS_CARD_DEADLINE": {
+        "uk": "⏰ Виконати до: <b>{deadline}</b>",
+        "en": "⏰ Due by: <b>{deadline}</b>",
+        "de": "⏰ Fällig bis: <b>{deadline}</b>",
+        "pl": "⏰ Termin: <b>{deadline}</b>",
+        "ru": "⏰ Выполнить до: <b>{deadline}</b>",
+    },
+    "TASKS_CARD_ADDRESS": {
+        "uk": "📍 Адреса: <b>{address}</b>",
+        "en": "📍 Address: <b>{address}</b>",
+        "de": "📍 Adresse: <b>{address}</b>",
+        "pl": "📍 Adres: <b>{address}</b>",
+        "ru": "📍 Адрес: <b>{address}</b>",
+    },
+    "TASKS_CARD_DESCRIPTION": {
+        "uk": "📝 Опис:\n{description}",
+        "en": "📝 Description:\n{description}",
+        "de": "📝 Beschreibung:\n{description}",
+        "pl": "📝 Opis:\n{description}",
+        "ru": "📝 Описание:\n{description}",
+    },
+    "TASKS_CARD_ASSIGN": {
+        "uk": "👤 Виконавець: <b>{user}</b>",
+        "en": "👤 Assignee: <b>{user}</b>",
+        "de": "👤 Zuständig: <b>{user}</b>",
+        "pl": "👤 Wykonawca: <b>{user}</b>",
+        "ru": "👤 Исполнитель: <b>{user}</b>",
+    },
+    "TASKS_CARD_CREATED_BY": {
+        "uk": "🧑‍💼 Призначив: <b>{admin}</b>",
+        "en": "🧑‍💼 Assigned by: <b>{admin}</b>",
+        "de": "🧑‍💼 Angelegt von: <b>{admin}</b>",
+        "pl": "🧑‍💼 Przydzielił: <b>{admin}</b>",
+        "ru": "🧑‍💼 Назначил: <b>{admin}</b>",
+    },
+    "TASKS_CARD_FILES_ADMIN": {
+        "uk": "📎 Документація: <b>{count}</b>",
+        "en": "📎 Documentation: <b>{count}</b>",
+        "de": "📎 Unterlagen: <b>{count}</b>",
+        "pl": "📎 Dokumentacja: <b>{count}</b>",
+        "ru": "📎 Документация: <b>{count}</b>",
+    },
+    "TASKS_CARD_FILES_USER": {
+        "uk": "📤 Звітні файли: <b>{count}</b>",
+        "en": "📤 Report files: <b>{count}</b>",
+        "de": "📤 Abschlussdateien: <b>{count}</b>",
+        "pl": "📤 Pliki raportu: <b>{count}</b>",
+        "ru": "📤 Отправленные файлы: <b>{count}</b>",
+    },
+    "TASKS_CARD_COMPLETED_AT": {
+        "uk": "🗓 Завершено: <b>{date}</b>",
+        "en": "🗓 Completed: <b>{date}</b>",
+        "de": "🗓 Abgeschlossen: <b>{date}</b>",
+        "pl": "🗓 Zakończono: <b>{date}</b>",
+        "ru": "🗓 Завершено: <b>{date}</b>",
+    },
+    "TASKS_ACTION_VIEW_DOCS": {
+        "uk": "📎 Документація",
+        "en": "📎 Documentation",
+        "de": "📎 Unterlagen",
+        "pl": "📎 Dokumentacja",
+        "ru": "📎 Документация",
+    },
+    "TASKS_ACTION_VIEW_REPORT": {
+        "uk": "📤 Звіт",
+        "en": "📤 Report",
+        "de": "📤 Bericht",
+        "pl": "📤 Raport",
+        "ru": "📤 Отчёт",
+    },
+    "TASKS_ACTION_COMPLETE": {
+        "uk": "✅ Завершити",
+        "en": "✅ Complete",
+        "de": "✅ Abschließen",
+        "pl": "✅ Zakończ",
+        "ru": "✅ Завершить",
+    },
+    "TASKS_ACTION_CLOSE": {
+        "uk": "❌ Закрити",
+        "en": "❌ Close",
+        "de": "❌ Schließen",
+        "pl": "❌ Zamknij",
+        "ru": "❌ Закрыть",
+    },
+    "TASKS_COMPLETE_PROMPT": {
+        "uk": "📤 <b>Завершення заявки {code}</b>\nНадішліть фотографії чи файли як підтвердження виконання. Коли будете готові, натисніть «✅ Відправити звіт» або «⏭ Пропустити файли».",
+        "en": "📤 <b>Finishing job {code}</b>\nSend photos or documents as proof. When ready, press “✅ Send report” or “⏭ Skip files”.",
+        "de": "📤 <b>Auftrag {code} abschließen</b>\nSenden Sie Fotos oder Dokumente als Nachweis. Drücken Sie anschließend „✅ Bericht senden“ oder „⏭ Ohne Dateien“.",
+        "pl": "📤 <b>Zakończenie zlecenia {code}</b>\nWyślij zdjęcia lub pliki jako potwierdzenie. Gdy będziesz gotowy, kliknij „✅ Wyślij raport” lub „⏭ Pomiń pliki”.",
+        "ru": "📤 <b>Завершение заявки {code}</b>\nОтправьте фотографии или файлы для подтверждения. Когда будете готовы, нажмите «✅ Отправить отчёт» или «⏭ Пропустить файлы».",
+    },
+    "TASKS_ACTION_SKIP_FILES": {
+        "uk": "⏭ Пропустити файли",
+        "en": "⏭ Skip files",
+        "de": "⏭ Ohne Dateien",
+        "pl": "⏭ Pomiń pliki",
+        "ru": "⏭ Пропустить файлы",
+    },
+    "TASKS_ACTION_SEND_REPORT": {
+        "uk": "✅ Відправити звіт",
+        "en": "✅ Send report",
+        "de": "✅ Bericht senden",
+        "pl": "✅ Wyślij raport",
+        "ru": "✅ Отправить отчёт",
+    },
+    "TASKS_ACTION_CANCEL": {
+        "uk": "❌ Скасувати",
+        "en": "❌ Cancel",
+        "de": "❌ Abbrechen",
+        "pl": "❌ Anuluj",
+        "ru": "❌ Отмена",
+    },
+    "TASKS_ATTACHMENT_SAVED": {
+        "uk": "📎 Файл збережено.",
+        "en": "📎 File saved.",
+        "de": "📎 Datei gespeichert.",
+        "pl": "📎 Plik zapisany.",
+        "ru": "📎 Файл сохранён.",
+    },
+    "TASKS_ATTACHMENT_FAILED": {
+        "uk": "⚠️ Не вдалося зберегти файл. Спробуйте ще раз.",
+        "en": "⚠️ Could not save the file. Please try again.",
+        "de": "⚠️ Datei konnte nicht gespeichert werden. Bitte erneut versuchen.",
+        "pl": "⚠️ Nie udało się zapisać pliku. Spróbuj ponownie.",
+        "ru": "⚠️ Не удалось сохранить файл. Попробуйте ещё раз.",
+    },
+    "TASKS_COMPLETE_DONE_USER": {
+        "uk": "✅ Дякуємо! Заявку {code} передано на перевірку адміністраторам, +5 балів нараховано.",
+        "en": "✅ Thank you! Job {code} was sent to admins for review, +5 points awarded.",
+        "de": "✅ Danke! Auftrag {code} wurde zur Prüfung weitergeleitet, +5 Punkte gutgeschrieben.",
+        "pl": "✅ Dziękujemy! Zlecenie {code} wysłano do administratorów, przyznano +5 punktów.",
+        "ru": "✅ Спасибо! Заявка {code} отправлена администраторам, +5 баллов начислено.",
+    },
+    "TASKS_COMPLETE_DONE_ADMIN": {
+        "uk": "✅ Виконавець {user} завершив заявку {code}.",
+        "en": "✅ {user} completed job {code}.",
+        "de": "✅ {user} hat Auftrag {code} abgeschlossen.",
+        "pl": "✅ {user} zakończył zlecenie {code}.",
+        "ru": "✅ {user} завершил заявку {code}.",
+    },
+    "TASKS_COMPLETE_CANCELLED": {
+        "uk": "❌ Завершення скасовано.",
+        "en": "❌ Completion cancelled.",
+        "de": "❌ Abschluss abgebrochen.",
+        "pl": "❌ Zakończenie anulowane.",
+        "ru": "❌ Завершение отменено.",
+    },
+    "TASKS_ADMIN_MENU": {
+        "uk": "🛠 <b>Заявки (адмін)</b>\nОберіть дію: створити нову, переглянути активні або історію.",
+        "en": "🛠 <b>Job requests (admin)</b>\nChoose an action: create, view active, or history.",
+        "de": "🛠 <b>Aufträge (Admin)</b>\nAktion wählen: neu anlegen, aktiv oder Historie ansehen.",
+        "pl": "🛠 <b>Zlecenia (admin)</b>\nWybierz działanie: utwórz, zobacz aktywne lub historię.",
+        "ru": "🛠 <b>Заявки (админ)</b>\nВыберите действие: создать новую, открыть актуальные или историю.",
+    },
+    "TASKS_ADMIN_CREATE_TITLE": {
+        "uk": "✍️ Введіть назву або короткий принцип роботи для заявки.",
+        "en": "✍️ Enter a title or short principle for the job.",
+        "de": "✍️ Geben Sie einen Titel oder Arbeitsprinzip an.",
+        "pl": "✍️ Podaj tytuł lub krótki opis zasady pracy.",
+        "ru": "✍️ Введите название или принцип работы для заявки.",
+    },
+    "TASKS_ADMIN_CREATE_DESCRIPTION": {
+        "uk": "📝 Опишіть детально, що потрібно зробити.",
+        "en": "📝 Describe in detail what needs to be done.",
+        "de": "📝 Beschreiben Sie detailliert, was erledigt werden soll.",
+        "pl": "📝 Opisz szczegółowo, co należy zrobić.",
+        "ru": "📝 Опишите подробно, что нужно сделать.",
+    },
+    "TASKS_ADMIN_CREATE_DEADLINE": {
+        "uk": "⏰ Вкажіть крайній термін (формат 31.12.2025 18:00).",
+        "en": "⏰ Provide the deadline (format 31.12.2025 18:00).",
+        "de": "⏰ Geben Sie die Frist an (Format 31.12.2025 18:00).",
+        "pl": "⏰ Podaj termin (format 31.12.2025 18:00).",
+        "ru": "⏰ Укажите срок выполнения (формат 31.12.2025 18:00).",
+    },
+    "TASKS_ADMIN_CREATE_ADDRESS": {
+        "uk": "📍 Вкажіть адресу виконання роботи.",
+        "en": "📍 Provide the job address.",
+        "de": "📍 Geben Sie die Einsatzadresse an.",
+        "pl": "📍 Podaj adres wykonania pracy.",
+        "ru": "📍 Укажите адрес выполнения работы.",
+    },
+    "TASKS_ADMIN_CREATE_FILES": {
+        "uk": "📎 Надішліть документацію (фото/PDF/файли) або натисніть «✅ Далі».",
+        "en": "📎 Send documentation (photos/PDF/files) or press “✅ Next”.",
+        "de": "📎 Senden Sie Unterlagen (Fotos/PDF/Dateien) oder drücken Sie „✅ Weiter“.",
+        "pl": "📎 Wyślij dokumentację (zdjęcia/PDF/pliki) lub kliknij „✅ Dalej”.",
+        "ru": "📎 Прикрепите документацию (фото/PDF/файлы) или нажмите «✅ Далее».",
+    },
+    "TASKS_ADMIN_CREATE_ASSIGN": {
+        "uk": "👤 Оберіть користувача для заявки {code}.",
+        "en": "👤 Choose a user to assign job {code}.",
+        "de": "👤 Wählen Sie einen Nutzer für Auftrag {code}.",
+        "pl": "👤 Wybierz użytkownika do zlecenia {code}.",
+        "ru": "👤 Выберите пользователя для заявки {code}.",
+    },
+    "TASKS_ADMIN_CREATE_CANCELLED": {
+        "uk": "❌ Створення заявки скасовано.",
+        "en": "❌ Job creation cancelled.",
+        "de": "❌ Auftragserstellung abgebrochen.",
+        "pl": "❌ Tworzenie zlecenia anulowano.",
+        "ru": "❌ Создание заявки отменено.",
+    },
+    "TASKS_ADMIN_CREATE_DONE": {
+        "uk": "🛠 Заявку {code} призначено користувачу {user}.",
+        "en": "🛠 Job {code} assigned to {user}.",
+        "de": "🛠 Auftrag {code} wurde {user} zugewiesen.",
+        "pl": "🛠 Zlecenie {code} przydzielono użytkownikowi {user}.",
+        "ru": "🛠 Заявка {code} назначена пользователю {user}.",
+    },
+    "TASKS_ANCHOR_SUMMARY": {
+        "uk": "🛠 Заявки: активних <b>{active}</b>, виконано <b>{completed}</b>.",
+        "en": "🛠 Jobs: active <b>{active}</b>, completed <b>{completed}</b>.",
+        "de": "🛠 Aufträge: aktiv <b>{active}</b>, erledigt <b>{completed}</b>.",
+        "pl": "🛠 Zlecenia: aktywne <b>{active}</b>, zakończone <b>{completed}</b>.",
+        "ru": "🛠 Заявки: активных <b>{active}</b>, выполнено <b>{completed}</b>.",
+    },
 }
 
 LANG_CODES = {code for code, _ in LANG_ORDER}
@@ -2412,6 +2715,20 @@ class NovaPoshtaFSM(StatesGroup):
     waiting_assign_note = State()
 
 
+class WorkRequestCreateFSM(StatesGroup):
+    waiting_title = State()
+    waiting_description = State()
+    waiting_due = State()
+    waiting_address = State()
+    waiting_files = State()
+    waiting_user = State()
+
+
+class WorkRequestCompleteFSM(StatesGroup):
+    collecting = State()
+    confirming = State()
+
+
 # ========================== FS HELPERS ==========================
 def ensure_dirs():
     os.makedirs("data", exist_ok=True)
@@ -2419,6 +2736,7 @@ def ensure_dirs():
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
     os.makedirs(POINTS_PATH, exist_ok=True)
+    os.makedirs(REQUESTS_PATH, exist_ok=True)
     os.makedirs(ALERTS_STORAGE_BASE, exist_ok=True)
     os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
 
@@ -2431,6 +2749,269 @@ def proj_receipts_dir(name: str, uid: int) -> str: return os.path.join(proj_path
 def proj_photos_dir(name: str) -> str: return os.path.join(proj_path(name), "photos")
 def proj_photos_meta(name: str) -> str: return os.path.join(proj_photos_dir(name), "photos.json")
 def user_file(uid: int) -> str: return os.path.join(USERS_PATH, f"{uid}.json")
+
+
+def work_request_dir(request_id: str) -> str:
+    return os.path.join(REQUESTS_PATH, request_id)
+
+
+def work_request_file(request_id: str) -> str:
+    return os.path.join(work_request_dir(request_id), "request.json")
+
+
+def work_request_admin_dir(request_id: str) -> str:
+    return os.path.join(work_request_dir(request_id), "admin")
+
+
+def work_request_user_dir(request_id: str) -> str:
+    return os.path.join(work_request_dir(request_id), "user")
+
+
+def work_request_exists(request_id: str) -> bool:
+    return os.path.exists(work_request_file(request_id))
+
+
+def work_request_cleanup_draft(request_id: str) -> None:
+    path = work_request_dir(request_id)
+    if not os.path.exists(path):
+        return
+    if work_request_exists(request_id):
+        return
+    try:
+        shutil.rmtree(path)
+    except Exception:
+        pass
+
+
+def generate_work_request_id() -> str:
+    ensure_dirs()
+    for _ in range(10000):
+        candidate = f"BESK-ZA-{random.randint(0, 9999):04d}"
+        if not work_request_exists(candidate):
+            return candidate
+    return f"BESK-ZA-{secrets.token_hex(2).upper()}"
+
+
+def save_work_request(payload: dict) -> None:
+    request_id = payload.get("id")
+    if not request_id:
+        raise ValueError("work request must include id")
+    ensure_dirs()
+    directory = work_request_dir(request_id)
+    os.makedirs(directory, exist_ok=True)
+    atomic_write_json(work_request_file(request_id), payload)
+
+
+def load_work_request(request_id: str) -> Optional[dict]:
+    path = work_request_file(request_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return None
+    return None
+
+
+def list_work_requests(status: Optional[str] = None, assigned_to: Optional[int] = None) -> List[dict]:
+    ensure_dirs()
+    results: List[dict] = []
+    if not os.path.exists(REQUESTS_PATH):
+        return results
+    for name in os.listdir(REQUESTS_PATH):
+        file_path = work_request_file(name)
+        if not os.path.exists(file_path):
+            continue
+        try:
+            with open(file_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if status and data.get("status") != status:
+            continue
+        if assigned_to is not None and data.get("assigned_to") != assigned_to:
+            continue
+        results.append(data)
+
+    def _sort_key(item: dict) -> tuple:
+        created = item.get("created_at") or ""
+        due = item.get("due_at") or ""
+        return (due or "", created or "", item.get("id") or "")
+
+    results.sort(key=_sort_key)
+    return results
+
+
+def work_request_user_stats(uid: int) -> dict:
+    active = 0
+    completed = 0
+    for req in list_work_requests(assigned_to=uid):
+        if req.get("status") == "completed":
+            completed += 1
+        else:
+            active += 1
+    return {"active": active, "completed": completed}
+
+
+def work_request_attachment_path(request_id: str, entry: dict) -> Optional[str]:
+    if not isinstance(entry, dict):
+        return None
+    rel = entry.get("file")
+    if not rel:
+        return None
+    return os.path.join(work_request_dir(request_id), rel)
+
+
+async def work_request_store_media(message: types.Message, request_id: str, role: str) -> Optional[dict]:
+    if role not in {"admin", "user"}:
+        return None
+    dest_dir = work_request_admin_dir(request_id) if role == "admin" else work_request_user_dir(request_id)
+    os.makedirs(dest_dir, exist_ok=True)
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
+
+    if message.content_type == ContentType.PHOTO:
+        file_obj = message.photo[-1]
+        original_name = f"photo_{timestamp}.jpg"
+        ext = ".jpg"
+        media_type = "photo"
+        file_size = None
+        mime = "image/jpeg"
+    elif message.content_type == ContentType.DOCUMENT:
+        doc = message.document
+        if not doc:
+            return None
+        file_obj = doc
+        original_name = doc.file_name or f"file_{timestamp}"
+        ext = (os.path.splitext(original_name)[1] or "").lower()
+        if not ext:
+            ext = ".bin"
+        media_type = "document"
+        file_size = getattr(doc, "file_size", None)
+        mime = getattr(doc, "mime_type", None)
+    else:
+        return None
+
+    base_name = os.path.splitext(original_name)[0]
+    safe_name = _sanitize_filename(base_name) or f"file_{timestamp}"
+    filename = f"{role}_{timestamp}_{safe_name}{ext}"
+    counter = 1
+    while os.path.exists(os.path.join(dest_dir, filename)):
+        filename = f"{role}_{timestamp}_{safe_name}_{counter}{ext}"
+        counter += 1
+
+    dst_path = os.path.join(dest_dir, filename)
+    try:
+        await file_obj.download(destination_file=dst_path)
+    except Exception:
+        if os.path.exists(dst_path):
+            try:
+                os.remove(dst_path)
+            except Exception:
+                pass
+        return None
+
+    rel_path = os.path.join(os.path.basename(dest_dir), filename).replace(os.sep, "/")
+    entry = {
+        "id": f"WRF-{secrets.token_hex(4).upper()}",
+        "role": role,
+        "type": media_type,
+        "file": rel_path,
+        "original": original_name,
+        "uploaded_at": now.isoformat(),
+        "size": file_size,
+        "mime": mime,
+    }
+    return entry
+
+
+def work_request_profile_display(uid: Optional[int]) -> str:
+    if not uid:
+        return "—"
+    profile = load_user(uid) or {}
+    fullname = profile.get("fullname") or (profile.get("tg") or {}).get("first_name")
+    if not fullname:
+        fullname = f"ID {uid}"
+    code = profile.get("bsu") or ""
+    if code:
+        return f"{fullname} ({code})"
+    return fullname
+
+
+def work_request_format_datetime(value: Optional[str]) -> str:
+    if not value:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(value)
+        return dt.strftime("%d.%m.%Y %H:%M")
+    except Exception:
+        return str(value)
+
+
+def work_request_short_label(request: dict) -> str:
+    code = request.get("id") or "—"
+    title = request.get("title") or request.get("principle") or request.get("description") or "Без названия"
+    title = str(title).strip()
+    if len(title) > 40:
+        title = title[:37] + "…"
+    deadline = format_work_request_deadline(request.get("due_at"))
+    return f"{code} • {title} ({deadline})"
+
+
+def work_request_card_text(viewer: Any, request: dict) -> str:
+    code = request.get("id") or "—"
+    status_key = "TASKS_CARD_STATUS_COMPLETED" if request.get("status") == "completed" else "TASKS_CARD_STATUS_ACTIVE"
+    description = request.get("description") or "—"
+    deadline = format_work_request_deadline(request.get("due_at"))
+    address = request.get("address") or "—"
+    assignee = work_request_profile_display(request.get("assigned_to"))
+    creator = work_request_profile_display(request.get("created_by"))
+    admin_files = request.get("admin_files") or []
+    user_files = request.get("user_files") or []
+    lines = [
+        tr(viewer, "TASKS_CARD_HEADER", code=h(code)),
+        tr(viewer, status_key),
+        tr(viewer, "TASKS_CARD_DEADLINE", deadline=h(deadline or "—")),
+        tr(viewer, "TASKS_CARD_ADDRESS", address=h(address)),
+        "",
+        tr(viewer, "TASKS_CARD_DESCRIPTION", description=h(description).replace("\n", "\n")),
+        "",
+        tr(viewer, "TASKS_CARD_ASSIGN", user=h(assignee)),
+        tr(viewer, "TASKS_CARD_CREATED_BY", admin=h(creator)),
+        tr(viewer, "TASKS_CARD_FILES_ADMIN", count=len(admin_files)),
+        tr(viewer, "TASKS_CARD_FILES_USER", count=len(user_files)),
+    ]
+    if request.get("status") == "completed":
+        lines.append(tr(viewer, "TASKS_CARD_COMPLETED_AT", date=h(work_request_format_datetime(request.get("completed_at")))))
+    return "\n".join(lines)
+
+
+async def work_request_send_entries(uid: int, chat_id: int, request_id: str, entries: List[dict]) -> None:
+    if not entries:
+        msg = await bot.send_message(chat_id, "📭 Файлы отсутствуют.")
+        flow_track(uid, msg)
+        return
+    for entry in entries:
+        path = work_request_attachment_path(request_id, entry)
+        if not path or not os.path.exists(path):
+            warn = await bot.send_message(chat_id, tr(uid, "TASKS_ATTACHMENT_FAILED"))
+            flow_track(uid, warn)
+            continue
+        caption = entry.get("original") or os.path.basename(path)
+        try:
+            if entry.get("type") == "photo":
+                msg = await bot.send_photo(chat_id, InputFile(path), caption=caption)
+            else:
+                msg = await bot.send_document(chat_id, InputFile(path), caption=caption)
+            flow_track(uid, msg)
+        except Exception:
+            warn = await bot.send_message(chat_id, tr(uid, "TASKS_ATTACHMENT_FAILED"))
+            flow_track(uid, warn)
 
 
 def generate_photo_id() -> str:
@@ -2490,6 +3071,43 @@ def generate_project_code(name: str, existing: Optional[Set[str]] = None) -> str
                 return candidate
     # Fallback: timestamp-based unique code
     return f"{prefix}{int(datetime.now().timestamp())}"
+
+
+def parse_work_request_deadline(text: str) -> Optional[datetime]:
+    if not text:
+        return None
+    raw = text.strip()
+    if not raw:
+        return None
+    patterns = [
+        "%d.%m.%Y %H:%M",
+        "%d.%m.%Y %H.%M",
+        "%d.%m.%Y",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+    ]
+    for pattern in patterns:
+        try:
+            parsed = datetime.strptime(raw, pattern)
+            if pattern.endswith("%Y"):
+                parsed = parsed.replace(hour=23, minute=59)
+            return parsed
+        except Exception:
+            continue
+    return None
+
+
+def format_work_request_deadline(value: Optional[Union[str, datetime]]) -> str:
+    if not value:
+        return "—"
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value)
+        except Exception:
+            return value
+    else:
+        dt = value
+    return dt.strftime("%d.%m.%Y %H:%M")
 
 
 def _decode_exif_text(value: Any) -> Optional[str]:
@@ -5494,6 +6112,16 @@ def project_status_text(uid: int) -> str:
                 lines.append(
                     f"✅ Ожидают подтверждения: <b>{len(approved)}</b> — {fmt_money(approved_total)} грн"
                 )
+    task_stats = work_request_user_stats(uid)
+    lines.append("")
+    lines.append(
+        tr(
+            uid,
+            "TASKS_ANCHOR_SUMMARY",
+            active=task_stats.get("active", 0),
+            completed=task_stats.get("completed", 0),
+        )
+    )
     return "\n".join(lines)
 
 
@@ -5505,7 +6133,10 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(tr(uid, "BTN_CHECKS"), callback_data="menu_checks"),
         InlineKeyboardButton(tr(uid, "BTN_DOCUMENTS"), callback_data="menu_docs"),
     )
-    kb.add(InlineKeyboardButton(tr(uid, "BTN_PHOTO_TIMELINE"), callback_data="menu_photos"))
+    kb.row(
+        InlineKeyboardButton(tr(uid, "BTN_TASKS"), callback_data="menu_tasks"),
+        InlineKeyboardButton(tr(uid, "BTN_PHOTO_TIMELINE"), callback_data="menu_photos"),
+    )
     kb.row(
         InlineKeyboardButton(tr(uid, "BTN_FINANCE"), callback_data="menu_finance"),
         InlineKeyboardButton(tr(uid, "BTN_ALERTS"), callback_data="menu_alerts"),
@@ -5531,6 +6162,48 @@ def kb_profile_cancel(uid: int) -> InlineKeyboardMarkup:
 def kb_admin_edit_cancel(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def kb_tasks_menu(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_TASKS_ACTIVE"), callback_data="tasks_active"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_TASKS_HISTORY"), callback_data="tasks_history"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_TASKS_BACK"), callback_data="back_root"))
+    return kb
+
+
+def kb_tasks_list(uid: int, requests: List[dict], prefix: str, back_callback: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if requests:
+        for req in requests:
+            req_id = req.get("id")
+            if not req_id:
+                continue
+            kb.add(InlineKeyboardButton(work_request_short_label(req), callback_data=f"{prefix}:{req_id}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_TASKS_BACK"), callback_data=back_callback))
+    return kb
+
+
+def kb_user_task_card(uid: int, request: dict) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    req_id = request.get("id")
+    if request.get("admin_files"):
+        kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_VIEW_DOCS"), callback_data=f"task_docs:{req_id}"))
+    if request.get("user_files"):
+        kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_VIEW_REPORT"), callback_data=f"task_report:{req_id}"))
+    if request.get("status") != "completed" and request.get("assigned_to") == uid:
+        kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_COMPLETE"), callback_data=f"task_complete:{req_id}"))
+    kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_CLOSE"), callback_data="task_close"))
+    return kb
+
+
+def kb_task_complete(uid: int, request_id: str, allow_skip: bool = True) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_SEND_REPORT"), callback_data=f"task_complete_send:{request_id}"))
+    if allow_skip:
+        kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_SKIP_FILES"), callback_data=f"task_complete_skip:{request_id}"))
+    kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_CANCEL"), callback_data=f"task_complete_cancel:{request_id}"))
     return kb
 
 
@@ -5884,8 +6557,42 @@ def kb_admin_root() -> InlineKeyboardMarkup:
     kb.add(InlineKeyboardButton("👥 Пользователи", callback_data="adm_users"))
     kb.add(InlineKeyboardButton("📂 Проекты", callback_data="adm_projects"))
     kb.add(InlineKeyboardButton("💵 Финансы", callback_data="adm_finance"))
+    kb.add(InlineKeyboardButton("🛠 Заявки", callback_data="adm_tasks"))
     kb.add(InlineKeyboardButton("🏅 Баллы", callback_data="adm_points"))
     kb.add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
+    return kb
+
+
+def kb_admin_tasks() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("🆕 Создать заявку", callback_data="adm_task_create"))
+    kb.add(InlineKeyboardButton("📌 Актуальные", callback_data="adm_task_list_active"))
+    kb.add(InlineKeyboardButton("📜 История", callback_data="adm_task_list_history"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+    return kb
+
+
+def kb_admin_task_card(request: dict) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    req_id = request.get("id")
+    if request.get("admin_files"):
+        kb.add(InlineKeyboardButton("📎 Документация", callback_data=f"adm_task_docs:{req_id}"))
+    if request.get("user_files"):
+        kb.add(InlineKeyboardButton("📤 Отчёт", callback_data=f"adm_task_report:{req_id}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_tasks"))
+    return kb
+
+
+def kb_admin_task_cancel() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="adm_task_cancel"))
+    return kb
+
+
+def kb_admin_task_files() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("✅ Далее", callback_data="adm_task_files_done"))
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="adm_task_cancel"))
     return kb
 
 
@@ -11856,6 +12563,279 @@ async def menu_checks(c: types.CallbackQuery):
     await c.answer()
 
 
+@dp.callback_query_handler(lambda c: c.data == "menu_tasks")
+async def menu_tasks(c: types.CallbackQuery):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
+    stats = work_request_user_stats(uid)
+    text = tr(uid, "TASKS_MENU_INTRO", active=stats.get("active", 0), completed=stats.get("completed", 0))
+    await clear_then_anchor(uid, text, kb_tasks_menu(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "tasks_active")
+async def tasks_active(c: types.CallbackQuery):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
+    requests = list_work_requests(status="active", assigned_to=uid)
+    text = tr(uid, "TASKS_ACTIVE_HEADER")
+    if not requests:
+        text += "\n\n" + tr(uid, "TASKS_EMPTY_ACTIVE")
+    kb = kb_tasks_list(uid, requests, "task_view", "menu_tasks")
+    await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "tasks_history")
+async def tasks_history(c: types.CallbackQuery):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
+    requests = list_work_requests(status="completed", assigned_to=uid)
+    text = tr(uid, "TASKS_HISTORY_HEADER")
+    if not requests:
+        text += "\n\n" + tr(uid, "TASKS_EMPTY_HISTORY")
+    kb = kb_tasks_list(uid, requests, "task_view", "menu_tasks")
+    await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("task_view:"))
+async def task_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    req_id = c.data.split(":", 1)[1]
+    request = load_work_request(req_id)
+    if not request or request.get("assigned_to") != uid:
+        return await c.answer("Заявка недоступна", show_alert=True)
+    text = work_request_card_text(uid, request)
+    kb = kb_user_task_card(uid, request)
+    await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "task_close")
+async def task_close(c: types.CallbackQuery):
+    uid = c.from_user.id
+    stats = work_request_user_stats(uid)
+    text = tr(uid, "TASKS_MENU_INTRO", active=stats.get("active", 0), completed=stats.get("completed", 0))
+    await clear_then_anchor(uid, text, kb_tasks_menu(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("task_docs:"))
+async def task_docs(c: types.CallbackQuery):
+    uid = c.from_user.id
+    req_id = c.data.split(":", 1)[1]
+    request = load_work_request(req_id)
+    if not request or request.get("assigned_to") != uid:
+        return await c.answer("Недоступно", show_alert=True)
+    chat_id = c.message.chat.id if c.message else None
+    if not chat_id:
+        return await c.answer()
+    await work_request_send_entries(uid, chat_id, req_id, request.get("admin_files") or [])
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("task_report:"))
+async def task_report(c: types.CallbackQuery):
+    uid = c.from_user.id
+    req_id = c.data.split(":", 1)[1]
+    request = load_work_request(req_id)
+    if not request or request.get("assigned_to") != uid:
+        return await c.answer("Недоступно", show_alert=True)
+    chat_id = c.message.chat.id if c.message else None
+    if not chat_id:
+        return await c.answer()
+    await work_request_send_entries(uid, chat_id, req_id, request.get("user_files") or [])
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("task_complete:"))
+async def task_complete_start(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    req_id = c.data.split(":", 1)[1]
+    request = load_work_request(req_id)
+    if not request or request.get("assigned_to") != uid:
+        return await c.answer("Недоступно", show_alert=True)
+    if request.get("status") == "completed":
+        return await c.answer("Уже завершено", show_alert=True)
+    await state.finish()
+    await WorkRequestCompleteFSM.collecting.set()
+    await state.update_data(request_id=req_id, uploaded=[])
+    await flow_clear(uid)
+    chat_id = c.message.chat.id if c.message else None
+    if not chat_id:
+        return await c.answer()
+    prompt = await bot.send_message(
+        chat_id,
+        tr(uid, "TASKS_COMPLETE_PROMPT", code=h(req_id)),
+        reply_markup=kb_task_complete(uid, req_id, allow_skip=True),
+    )
+    flow_track(uid, prompt)
+    await c.answer()
+
+
+@dp.message_handler(state=WorkRequestCompleteFSM.collecting, content_types=[ContentType.PHOTO, ContentType.DOCUMENT])
+async def task_complete_collect_media(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    data = await state.get_data()
+    req_id = data.get("request_id")
+    if not req_id:
+        await state.finish()
+        return
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    request = load_work_request(req_id)
+    if not request or request.get("assigned_to") != uid:
+        await state.finish()
+        await flow_clear(uid)
+        return
+    entry = await work_request_store_media(m, req_id, "user")
+    if entry:
+        uploaded = list(data.get("uploaded") or [])
+        uploaded.append(entry)
+        await state.update_data(uploaded=uploaded)
+        notice = await bot.send_message(
+            m.chat.id,
+            tr(uid, "TASKS_ATTACHMENT_SAVED"),
+            reply_markup=kb_task_complete(uid, req_id, allow_skip=True),
+        )
+        flow_track(uid, notice)
+    else:
+        warn = await bot.send_message(
+            m.chat.id,
+            tr(uid, "TASKS_ATTACHMENT_FAILED"),
+            reply_markup=kb_task_complete(uid, req_id, allow_skip=True),
+        )
+        flow_track(uid, warn)
+
+
+@dp.message_handler(state=WorkRequestCompleteFSM.collecting, content_types=ContentType.TEXT)
+async def task_complete_collect_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    data = await state.get_data()
+    req_id = data.get("request_id")
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    if not req_id:
+        await state.finish()
+        return
+    remind = await bot.send_message(
+        m.chat.id,
+        tr(uid, "TASKS_COMPLETE_PROMPT", code=h(req_id)),
+        reply_markup=kb_task_complete(uid, req_id, allow_skip=True),
+    )
+    flow_track(uid, remind)
+
+
+async def _task_complete_finalize(uid: int, request: dict, uploaded: List[dict]) -> None:
+    req_id = request.get("id") or "—"
+    existing_user_files = list(request.get("user_files") or [])
+    existing_user_files.extend(uploaded)
+    request["user_files"] = existing_user_files
+    request["status"] = "completed"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    request["completed_at"] = now_iso
+    request["completed_by"] = uid
+    request["points_awarded"] = True
+    save_work_request(request)
+    reason = f"Выполнение заявки {req_id}"
+    await points_auto_grant(
+        uid,
+        WORK_REQUEST_POINTS_REWARD,
+        reason,
+        source="work_request",
+        meta={"request": req_id},
+    )
+    await anchor_show_root(uid)
+    user_name = work_request_profile_display(uid)
+    for admin_id in list(admins):
+        profile = load_user(admin_id) or {}
+        chat_id = registration_chat_id(admin_id, profile)
+        if not chat_id:
+            continue
+        try:
+            await bot.send_message(
+                chat_id,
+                tr(admin_id, "TASKS_COMPLETE_DONE_ADMIN", user=h(user_name), code=h(req_id)),
+                reply_markup=kb_admin_task_card(request),
+            )
+        except Exception:
+            continue
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("task_complete_send:"), state=WorkRequestCompleteFSM.collecting)
+async def task_complete_send(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    req_id = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    if data.get("request_id") != req_id:
+        return await c.answer("Недоступно", show_alert=True)
+    request = load_work_request(req_id)
+    if not request or request.get("assigned_to") != uid:
+        await state.finish()
+        await flow_clear(uid)
+        return await c.answer("Недоступно", show_alert=True)
+    uploaded = list(data.get("uploaded") or [])
+    await state.finish()
+    await flow_clear(uid)
+    await _task_complete_finalize(uid, request, uploaded)
+    text = tr(uid, "TASKS_COMPLETE_DONE_USER", code=h(req_id))
+    await clear_then_anchor(uid, text, kb_tasks_menu(uid))
+    await c.answer("Готово")
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("task_complete_skip:"), state=WorkRequestCompleteFSM.collecting)
+async def task_complete_skip(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    req_id = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    if data.get("request_id") != req_id:
+        return await c.answer("Недоступно", show_alert=True)
+    request = load_work_request(req_id)
+    if not request or request.get("assigned_to") != uid:
+        await state.finish()
+        await flow_clear(uid)
+        return await c.answer("Недоступно", show_alert=True)
+    uploaded = list(data.get("uploaded") or [])
+    await state.finish()
+    await flow_clear(uid)
+    await _task_complete_finalize(uid, request, uploaded)
+    text = tr(uid, "TASKS_COMPLETE_DONE_USER", code=h(req_id))
+    await clear_then_anchor(uid, text, kb_tasks_menu(uid))
+    await c.answer("Готово")
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("task_complete_cancel:"), state=WorkRequestCompleteFSM.collecting)
+async def task_complete_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    req_id = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    uploaded = list(data.get("uploaded") or [])
+    for entry in uploaded:
+        path = work_request_attachment_path(req_id, entry)
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+    await state.finish()
+    await flow_clear(uid)
+    stats = work_request_user_stats(uid)
+    text = tr(uid, "TASKS_COMPLETE_CANCELLED") + "\n\n" + tr(uid, "TASKS_MENU_INTRO", active=stats.get("active", 0), completed=stats.get("completed", 0))
+    await clear_then_anchor(uid, text, kb_tasks_menu(uid))
+    await c.answer("Отменено")
+
+
 @dp.callback_query_handler(lambda c: c.data == "menu_settings")
 async def menu_settings(c: types.CallbackQuery):
     uid = c.from_user.id
@@ -14829,6 +15809,328 @@ async def menu_admin(c: types.CallbackQuery):
         kb_admin_root()
     )
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_tasks")
+async def adm_tasks_menu(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    await flow_clear(uid)
+    await clear_then_anchor(uid, tr(uid, "TASKS_ADMIN_MENU"), kb_admin_tasks())
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_task_list_active")
+async def adm_task_list_active(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    requests = list_work_requests(status="active")
+    text = tr(uid, "TASKS_ACTIVE_HEADER")
+    if not requests:
+        text += "\n\n" + tr(uid, "TASKS_EMPTY_ACTIVE")
+    kb = kb_tasks_list(uid, requests, "adm_task_view", "adm_tasks")
+    await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_task_list_history")
+async def adm_task_list_history(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    requests = list_work_requests(status="completed")
+    text = tr(uid, "TASKS_HISTORY_HEADER")
+    if not requests:
+        text += "\n\n" + tr(uid, "TASKS_EMPTY_HISTORY")
+    kb = kb_tasks_list(uid, requests, "adm_task_view", "adm_tasks")
+    await clear_then_anchor(uid, text, kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_task_view:"))
+async def adm_task_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    req_id = c.data.split(":", 1)[1]
+    request = load_work_request(req_id)
+    if not request:
+        return await c.answer("Заявка не найдена", show_alert=True)
+    text = work_request_card_text(uid, request)
+    await clear_then_anchor(uid, text, kb_admin_task_card(request))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_task_docs:"))
+async def adm_task_docs(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    req_id = c.data.split(":", 1)[1]
+    request = load_work_request(req_id)
+    if not request:
+        return await c.answer("Заявка не найдена", show_alert=True)
+    chat_id = c.message.chat.id if c.message else None
+    if not chat_id:
+        return await c.answer()
+    await work_request_send_entries(uid, chat_id, req_id, request.get("admin_files") or [])
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_task_report:"))
+async def adm_task_report(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    req_id = c.data.split(":", 1)[1]
+    request = load_work_request(req_id)
+    if not request:
+        return await c.answer("Заявка не найдена", show_alert=True)
+    chat_id = c.message.chat.id if c.message else None
+    if not chat_id:
+        return await c.answer()
+    await work_request_send_entries(uid, chat_id, req_id, request.get("user_files") or [])
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_task_create")
+async def adm_task_create(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    request_id = generate_work_request_id()
+    os.makedirs(work_request_dir(request_id), exist_ok=True)
+    await WorkRequestCreateFSM.waiting_title.set()
+    await state.update_data(task_id=request_id, task_admin_files=[], task_title="", task_description="")
+    await flow_clear(uid)
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        tr(uid, "TASKS_ADMIN_CREATE_TITLE"),
+        reply_markup=kb_admin_task_cancel(),
+    )
+    flow_track(uid, prompt)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_task_cancel", state="*")
+async def adm_task_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    request_id = data.get("task_id")
+    await state.finish()
+    await flow_clear(uid)
+    if request_id:
+        work_request_cleanup_draft(request_id)
+    await clear_then_anchor(uid, tr(uid, "TASKS_ADMIN_CREATE_CANCELLED"), kb_admin_tasks())
+    await c.answer("Отменено")
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_title, content_types=ContentType.TEXT)
+async def adm_task_collect_title(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    title = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    if not title:
+        warn = await bot.send_message(m.chat.id, "❗ Введите название заявки.", reply_markup=kb_admin_task_cancel())
+        flow_track(uid, warn)
+        return
+    await state.update_data(task_title=title)
+    await WorkRequestCreateFSM.waiting_description.set()
+    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DESCRIPTION"), reply_markup=kb_admin_task_cancel())
+    flow_track(uid, prompt)
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_description, content_types=ContentType.TEXT)
+async def adm_task_collect_description(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    description = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    await state.update_data(task_description=description)
+    await WorkRequestCreateFSM.waiting_due.set()
+    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DEADLINE"), reply_markup=kb_admin_task_cancel())
+    flow_track(uid, prompt)
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_due, content_types=ContentType.TEXT)
+async def adm_task_collect_deadline(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    parsed = parse_work_request_deadline(raw)
+    if not parsed:
+        warn = await bot.send_message(m.chat.id, "❗ Неверный формат даты. Пример: 31.12.2025 18:00", reply_markup=kb_admin_task_cancel())
+        flow_track(uid, warn)
+        return
+    await state.update_data(task_deadline=parsed.isoformat())
+    await WorkRequestCreateFSM.waiting_address.set()
+    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_ADDRESS"), reply_markup=kb_admin_task_cancel())
+    flow_track(uid, prompt)
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_address, content_types=ContentType.TEXT)
+async def adm_task_collect_address(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    address = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    if not address:
+        warn = await bot.send_message(m.chat.id, "❗ Укажите адрес выполнения.", reply_markup=kb_admin_task_cancel())
+        flow_track(uid, warn)
+        return
+    await state.update_data(task_address=address)
+    await WorkRequestCreateFSM.waiting_files.set()
+    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_FILES"), reply_markup=kb_admin_task_files())
+    flow_track(uid, prompt)
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_files, content_types=[ContentType.PHOTO, ContentType.DOCUMENT])
+async def adm_task_collect_files(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    data = await state.get_data()
+    request_id = data.get("task_id")
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    if not request_id:
+        await state.finish()
+        await flow_clear(uid)
+        return
+    entry = await work_request_store_media(m, request_id, "admin")
+    if entry:
+        files = list(data.get("task_admin_files") or [])
+        files.append(entry)
+        await state.update_data(task_admin_files=files)
+        note = await bot.send_message(m.chat.id, tr(uid, "TASKS_ATTACHMENT_SAVED"), reply_markup=kb_admin_task_files())
+        flow_track(uid, note)
+    else:
+        warn = await bot.send_message(m.chat.id, tr(uid, "TASKS_ATTACHMENT_FAILED"), reply_markup=kb_admin_task_files())
+        flow_track(uid, warn)
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_files, content_types=ContentType.TEXT)
+async def adm_task_files_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_FILES"), reply_markup=kb_admin_task_files())
+    flow_track(uid, prompt)
+
+
+async def _adm_task_show_users(uid: int, state: FSMContext, page: int = 1) -> bool:
+    ids = list_completed_user_ids()
+    data = await state.get_data()
+    request_id = data.get("task_id")
+    if not ids:
+        await clear_then_anchor(uid, "👥 Нет пользователей с завершённой регистрацией.", kb_admin_tasks())
+        return False
+    per_page = 8
+    slice_, total = paginate(ids, page, per_page=per_page)
+    kb = InlineKeyboardMarkup()
+    for target_uid in slice_:
+        kb.add(InlineKeyboardButton(work_request_profile_display(target_uid), callback_data=f"adm_task_assign:{target_uid}"))
+    if total > 1:
+        prev_page = max(1, page - 1)
+        next_page = min(total, page + 1)
+        kb.row(
+            InlineKeyboardButton("⏮", callback_data="adm_task_assign_page_1"),
+            InlineKeyboardButton(f"◀ {prev_page}", callback_data=f"adm_task_assign_page_{prev_page}"),
+            InlineKeyboardButton(f"{page}/{total}", callback_data="noop"),
+            InlineKeyboardButton(f"{next_page} ▶", callback_data=f"adm_task_assign_page_{next_page}"),
+            InlineKeyboardButton("⏭", callback_data=f"adm_task_assign_page_{total}"),
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_tasks"))
+    await state.update_data(task_assign_page=page)
+    await clear_then_anchor(uid, tr(uid, "TASKS_ADMIN_CREATE_ASSIGN", code=h(request_id or "—")), kb)
+    return True
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_task_files_done", state=WorkRequestCreateFSM.waiting_files)
+async def adm_task_files_done(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await WorkRequestCreateFSM.waiting_user.set()
+    success = await _adm_task_show_users(uid, state, page=1)
+    if not success:
+        await state.finish()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_task_assign_page_"), state=WorkRequestCreateFSM.waiting_user)
+async def adm_task_assign_page(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        page = int(c.data.split("_")[-1])
+    except Exception:
+        page = 1
+    await _adm_task_show_users(uid, state, page=page)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_task_assign:"), state=WorkRequestCreateFSM.waiting_user)
+async def adm_task_assign(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    target_uid = int(c.data.split(":", 1)[1])
+    data = await state.get_data()
+    request_id = data.get("task_id")
+    title = data.get("task_title") or ""
+    description = data.get("task_description") or ""
+    deadline_iso = data.get("task_deadline")
+    address = data.get("task_address") or ""
+    admin_files = list(data.get("task_admin_files") or [])
+    if not request_id:
+        await state.finish()
+        await flow_clear(uid)
+        return await c.answer("Ошибка", show_alert=True)
+    payload = {
+        "id": request_id,
+        "title": title,
+        "description": description,
+        "address": address,
+        "due_at": deadline_iso,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": uid,
+        "assigned_to": target_uid,
+        "status": "active",
+        "admin_files": admin_files,
+        "user_files": [],
+    }
+    save_work_request(payload)
+    await state.finish()
+    await flow_clear(uid)
+    target_profile = load_user(target_uid) or {"user_id": target_uid}
+    chat_id = registration_chat_id(target_uid, target_profile)
+    if chat_id:
+        try:
+            await bot.send_message(chat_id, work_request_card_text(target_uid, payload), reply_markup=kb_user_task_card(target_uid, payload))
+        except Exception:
+            pass
+    await anchor_show_root(target_uid)
+    admin_text = tr(uid, "TASKS_ADMIN_CREATE_DONE", code=h(request_id), user=h(work_request_profile_display(target_uid)))
+    await clear_then_anchor(uid, admin_text, kb_admin_tasks())
+    await c.answer("Создано")
 
 
 @dp.callback_query_handler(lambda c: c.data == "adm_users")
