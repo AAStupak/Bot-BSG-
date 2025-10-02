@@ -2419,11 +2419,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📎 Документация",
     },
     "TASKS_ACTION_VIEW_REPORT": {
-        "uk": "📤 Звіт",
-        "en": "📤 Report",
-        "de": "📤 Bericht",
-        "pl": "📤 Raport",
-        "ru": "📤 Отчёт",
+        "uk": "📤 Файловий звіт",
+        "en": "📤 File report",
+        "de": "📤 Dateibericht",
+        "pl": "📤 Raport plikowy",
+        "ru": "📤 Файловый отчёт",
     },
     "TASKS_ACTION_COMPLETE": {
         "uk": "✅ Завершити",
@@ -2467,6 +2467,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "❌ Anuluj",
         "ru": "❌ Отмена",
     },
+    "TASKS_COMPLETE_PROGRESS": {
+        "uk": "📎 Додано файлів: <b>{count}</b>.",
+        "en": "📎 Files attached: <b>{count}</b>.",
+        "de": "📎 Anhänge hinzugefügt: <b>{count}</b>.",
+        "pl": "📎 Dodanych plików: <b>{count}</b>.",
+        "ru": "📎 Прикреплено файлов: <b>{count}</b>.",
+    },
     "TASKS_ATTACHMENT_SAVED": {
         "uk": "📎 Файл збережено.",
         "en": "📎 File saved.",
@@ -2501,6 +2508,41 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "❌ Abschluss abgebrochen.",
         "pl": "❌ Zakończenie anulowane.",
         "ru": "❌ Завершение отменено.",
+    },
+    "TASKS_COMPLETE_SIGN_HINT": {
+        "uk": "📎 Файловий звіт має бути підписаний.",
+        "en": "📎 The file report must be signed.",
+        "de": "📎 Der Dateibericht muss unterschrieben sein.",
+        "pl": "📎 Raport plikowy musi być podpisany.",
+        "ru": "📎 Файловый отчёт должен быть подписан.",
+    },
+    "TASKS_FILES_EMPTY": {
+        "uk": "📭 Файлів не знайдено для заявки {code}. Використайте кнопки нижче, щоб повернутися або закрити повідомлення.",
+        "en": "📭 No files found for job {code}. Use the buttons below to return or close the messages.",
+        "de": "📭 Keine Dateien für Auftrag {code} gefunden. Nutzen Sie die Tasten unten zum Zurückkehren oder Schließen.",
+        "pl": "📭 Brak plików dla zlecenia {code}. Użyj przycisków poniżej, aby wrócić lub zamknąć wiadomości.",
+        "ru": "📭 Нет файлов по заявке {code}. Используйте кнопки ниже, чтобы вернуться или закрыть сообщения.",
+    },
+    "TASKS_FILES_SUMMARY": {
+        "uk": "📁 Матеріали заявки {code}. Всього файлів: <b>{count}</b>. Скористайтеся кнопками нижче, щоб повернутися або закрити повідомлення.",
+        "en": "📁 Job {code} files. Total attachments: <b>{count}</b>. Use the buttons below to return or close the messages.",
+        "de": "📁 Dateien zum Auftrag {code}. Anhänge insgesamt: <b>{count}</b>. Nutzen Sie die Tasten unten zum Zurückkehren oder Schließen der Nachrichten.",
+        "pl": "📁 Pliki zlecenia {code}. Łącznie załączników: <b>{count}</b>. Użyj przycisków poniżej, aby wrócić lub zamknąć wiadomości.",
+        "ru": "📁 Файлы по заявке {code}. Всего вложений: <b>{count}</b>. Используйте кнопки ниже, чтобы вернуться или закрыть сообщения.",
+    },
+    "TASKS_FILES_BACK_TO_CARD": {
+        "uk": "🔙 Повернутися до заявки",
+        "en": "🔙 Back to job",
+        "de": "🔙 Zurück zum Auftrag",
+        "pl": "🔙 Wróć do zlecenia",
+        "ru": "🔙 Вернуться к заявке",
+    },
+    "TASKS_FILES_BACK_TO_HOME": {
+        "uk": "🏠 На головну",
+        "en": "🏠 Main menu",
+        "de": "🏠 Zum Hauptmenü",
+        "pl": "🏠 Do menu głównego",
+        "ru": "🏠 Главное меню",
     },
     "TASKS_ADMIN_MENU": {
         "uk": "🛠 <b>Заявки (адмін)</b>\nОберіть дію: створити нову, переглянути активні або історію.",
@@ -2991,27 +3033,68 @@ def work_request_card_text(viewer: Any, request: dict) -> str:
     return "\n".join(lines)
 
 
-async def work_request_send_entries(uid: int, chat_id: int, request_id: str, entries: List[dict]) -> None:
+async def work_request_send_entries(
+    uid: int,
+    chat_id: int,
+    request_id: str,
+    entries: List[dict],
+    *,
+    back_to_card: Optional[str] = None,
+    home_callback: Optional[str] = None,
+) -> None:
+    summary_kb = kb_task_files_summary(uid, back_to_card=back_to_card, home_callback=home_callback)
     if not entries:
-        msg = await bot.send_message(chat_id, "📭 Файлы отсутствуют.")
+        msg = await bot.send_message(
+            chat_id,
+            tr(uid, "TASKS_FILES_EMPTY", code=h(request_id)),
+            reply_markup=summary_kb,
+        )
         flow_track(uid, msg)
         return
+    delivered = 0
     for entry in entries:
         path = work_request_attachment_path(request_id, entry)
         if not path or not os.path.exists(path):
-            warn = await bot.send_message(chat_id, tr(uid, "TASKS_ATTACHMENT_FAILED"))
+            warn = await bot.send_message(
+                chat_id,
+                tr(uid, "TASKS_ATTACHMENT_FAILED"),
+                reply_markup=kb_task_file_close(uid),
+            )
             flow_track(uid, warn)
             continue
         caption = entry.get("original") or os.path.basename(path)
         try:
             if entry.get("type") == "photo":
-                msg = await bot.send_photo(chat_id, InputFile(path), caption=caption)
+                msg = await bot.send_photo(
+                    chat_id,
+                    InputFile(path),
+                    caption=caption,
+                    reply_markup=kb_task_file_close(uid),
+                )
             else:
-                msg = await bot.send_document(chat_id, InputFile(path), caption=caption)
+                msg = await bot.send_document(
+                    chat_id,
+                    InputFile(path),
+                    caption=caption,
+                    reply_markup=kb_task_file_close(uid),
+                )
             flow_track(uid, msg)
+            delivered += 1
         except Exception:
-            warn = await bot.send_message(chat_id, tr(uid, "TASKS_ATTACHMENT_FAILED"))
+            warn = await bot.send_message(
+                chat_id,
+                tr(uid, "TASKS_ATTACHMENT_FAILED"),
+                reply_markup=kb_task_file_close(uid),
+            )
             flow_track(uid, warn)
+    summary_text = tr(
+        uid,
+        "TASKS_FILES_SUMMARY",
+        code=h(request_id),
+        count=delivered,
+    )
+    msg = await bot.send_message(chat_id, summary_text, reply_markup=summary_kb)
+    flow_track(uid, msg)
 
 
 def generate_photo_id() -> str:
@@ -6207,6 +6290,27 @@ def kb_task_complete(uid: int, request_id: str, allow_skip: bool = True) -> Inli
     return kb
 
 
+def kb_task_file_close(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_CLOSE"), callback_data="task_file_close"))
+    return kb
+
+
+def kb_task_files_summary(
+    uid: int,
+    *,
+    back_to_card: Optional[str] = None,
+    home_callback: Optional[str] = None,
+) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "TASKS_ACTION_CLOSE"), callback_data="task_file_close"))
+    if back_to_card:
+        kb.add(InlineKeyboardButton(tr(uid, "TASKS_FILES_BACK_TO_CARD"), callback_data=back_to_card))
+    if home_callback:
+        kb.add(InlineKeyboardButton(tr(uid, "TASKS_FILES_BACK_TO_HOME"), callback_data=home_callback))
+    return kb
+
+
 def profile_has_photo(profile: dict) -> bool:
     photo = profile.get("photo") or {}
     if not isinstance(photo, dict):
@@ -6572,13 +6676,23 @@ def kb_admin_tasks() -> InlineKeyboardMarkup:
     return kb
 
 
-def kb_admin_task_card(request: dict) -> InlineKeyboardMarkup:
+def kb_admin_task_card(request: dict, viewer: Optional[int] = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     req_id = request.get("id")
     if request.get("admin_files"):
-        kb.add(InlineKeyboardButton("📎 Документация", callback_data=f"adm_task_docs:{req_id}"))
+        kb.add(
+            InlineKeyboardButton(
+                tr(viewer or DEFAULT_LANG, "TASKS_ACTION_VIEW_DOCS"),
+                callback_data=f"adm_task_docs:{req_id}",
+            )
+        )
     if request.get("user_files"):
-        kb.add(InlineKeyboardButton("📤 Отчёт", callback_data=f"adm_task_report:{req_id}"))
+        kb.add(
+            InlineKeyboardButton(
+                tr(viewer or DEFAULT_LANG, "TASKS_ACTION_VIEW_REPORT"),
+                callback_data=f"adm_task_report:{req_id}",
+            )
+        )
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_tasks"))
     if req_id:
         kb.add(InlineKeyboardButton("❌ Закрыть", callback_data=f"adm_task_close:{req_id}"))
@@ -12641,7 +12755,14 @@ async def task_docs(c: types.CallbackQuery):
     chat_id = c.message.chat.id if c.message else None
     if not chat_id:
         return await c.answer()
-    await work_request_send_entries(uid, chat_id, req_id, request.get("admin_files") or [])
+    await work_request_send_entries(
+        uid,
+        chat_id,
+        req_id,
+        request.get("admin_files") or [],
+        back_to_card=f"task_view:{req_id}",
+        home_callback="back_root",
+    )
     await c.answer()
 
 
@@ -12655,8 +12776,56 @@ async def task_report(c: types.CallbackQuery):
     chat_id = c.message.chat.id if c.message else None
     if not chat_id:
         return await c.answer()
-    await work_request_send_entries(uid, chat_id, req_id, request.get("user_files") or [])
+    await work_request_send_entries(
+        uid,
+        chat_id,
+        req_id,
+        request.get("user_files") or [],
+        back_to_card=f"task_view:{req_id}",
+        home_callback="back_root",
+    )
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "task_file_close")
+async def task_file_close_cb(c: types.CallbackQuery):
+    if c.message:
+        await _delete_message_safe(c.message.chat.id, c.message.message_id)
+    await c.answer("Закрыто")
+
+
+def _task_complete_prompt_text(uid: int, req_id: str, count: int) -> str:
+    base = tr(uid, "TASKS_COMPLETE_PROMPT", code=h(req_id))
+    progress = tr(uid, "TASKS_COMPLETE_PROGRESS", count=count)
+    return f"{base}\n\n{progress}"
+
+
+async def _task_complete_refresh_prompt(
+    uid: int,
+    chat_id: int,
+    state: FSMContext,
+    req_id: str,
+    count: int,
+) -> None:
+    kb = kb_task_complete(uid, req_id, allow_skip=True)
+    data = await state.get_data()
+    stored_chat_id = data.get("prompt_chat_id") or chat_id
+    message_id = data.get("prompt_message_id")
+    text = _task_complete_prompt_text(uid, req_id, count)
+    if stored_chat_id and message_id:
+        try:
+            await bot.edit_message_text(
+                text,
+                stored_chat_id,
+                message_id,
+                reply_markup=kb,
+            )
+            return
+        except (MessageNotModified, MessageCantBeEdited, BadRequest):
+            pass
+    prompt = await bot.send_message(stored_chat_id or chat_id, text, reply_markup=kb)
+    flow_track(uid, prompt)
+    await state.update_data(prompt_chat_id=prompt.chat.id, prompt_message_id=prompt.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("task_complete:"))
@@ -12677,10 +12846,11 @@ async def task_complete_start(c: types.CallbackQuery, state: FSMContext):
         return await c.answer()
     prompt = await bot.send_message(
         chat_id,
-        tr(uid, "TASKS_COMPLETE_PROMPT", code=h(req_id)),
+        _task_complete_prompt_text(uid, req_id, 0),
         reply_markup=kb_task_complete(uid, req_id, allow_skip=True),
     )
     flow_track(uid, prompt)
+    await state.update_data(prompt_message_id=prompt.message_id, prompt_chat_id=chat_id)
     await c.answer()
 
 
@@ -12706,12 +12876,7 @@ async def task_complete_collect_media(m: types.Message, state: FSMContext):
         uploaded = list(data.get("uploaded") or [])
         uploaded.append(entry)
         await state.update_data(uploaded=uploaded)
-        notice = await bot.send_message(
-            m.chat.id,
-            tr(uid, "TASKS_ATTACHMENT_SAVED"),
-            reply_markup=kb_task_complete(uid, req_id, allow_skip=True),
-        )
-        flow_track(uid, notice)
+        await _task_complete_refresh_prompt(uid, m.chat.id, state, req_id, len(uploaded))
     else:
         warn = await bot.send_message(
             m.chat.id,
@@ -12733,12 +12898,8 @@ async def task_complete_collect_text(m: types.Message, state: FSMContext):
     if not req_id:
         await state.finish()
         return
-    remind = await bot.send_message(
-        m.chat.id,
-        tr(uid, "TASKS_COMPLETE_PROMPT", code=h(req_id)),
-        reply_markup=kb_task_complete(uid, req_id, allow_skip=True),
-    )
-    flow_track(uid, remind)
+    uploaded = list(data.get("uploaded") or [])
+    await _task_complete_refresh_prompt(uid, m.chat.id, state, req_id, len(uploaded))
 
 
 async def _task_complete_finalize(uid: int, request: dict, uploaded: List[dict]) -> None:
@@ -12772,8 +12933,8 @@ async def _task_complete_finalize(uid: int, request: dict, uploaded: List[dict])
             body = work_request_card_text(admin_id, request)
             await bot.send_message(
                 chat_id,
-                f"{header}\n\n{body}",
-                reply_markup=kb_admin_task_card(request),
+                f"{header}\n\n{body}\n\n{tr(admin_id, "TASKS_COMPLETE_SIGN_HINT")}",
+                reply_markup=kb_admin_task_card(request, viewer=admin_id),
             )
         except Exception:
             continue
@@ -15866,7 +16027,7 @@ async def adm_task_view(c: types.CallbackQuery):
     if not request:
         return await c.answer("Заявка не найдена", show_alert=True)
     text = work_request_card_text(uid, request)
-    await clear_then_anchor(uid, text, kb_admin_task_card(request))
+    await clear_then_anchor(uid, text, kb_admin_task_card(request, viewer=uid))
     await c.answer()
 
 
@@ -15882,7 +16043,14 @@ async def adm_task_docs(c: types.CallbackQuery):
     chat_id = c.message.chat.id if c.message else None
     if not chat_id:
         return await c.answer()
-    await work_request_send_entries(uid, chat_id, req_id, request.get("admin_files") or [])
+    await work_request_send_entries(
+        uid,
+        chat_id,
+        req_id,
+        request.get("admin_files") or [],
+        back_to_card=f"adm_task_view:{req_id}",
+        home_callback="back_root",
+    )
     await c.answer()
 
 
@@ -15898,7 +16066,14 @@ async def adm_task_report(c: types.CallbackQuery):
     chat_id = c.message.chat.id if c.message else None
     if not chat_id:
         return await c.answer()
-    await work_request_send_entries(uid, chat_id, req_id, request.get("user_files") or [])
+    await work_request_send_entries(
+        uid,
+        chat_id,
+        req_id,
+        request.get("user_files") or [],
+        back_to_card=f"adm_task_view:{req_id}",
+        home_callback="back_root",
+    )
     await c.answer()
 
 
