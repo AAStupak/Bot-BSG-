@@ -8,6 +8,10 @@
 #include <time.h>
 #include <sys/time.h>
 
+// Прошивка восстановлена до версии веб-пульта, существовавшей до загрузки
+// образца с OLED-экраном. Логика панели, уведомлений и Wi-Fi сохранена
+// без изменений относительно рабочей конфигурации бота.
+
 // ================= Hardware configuration =================
 static const uint8_t RELAY_PIN = 23;            // GPIO that drives the contactor
 static const bool RELAY_ACTIVE_HIGH = true;     // set to false if the relay is active low
