@@ -958,7 +958,7 @@ static void handleSave() {
   savedPASS = pass;
   delay(50);
   bool success = tryConnect(ssid, pass, 15000);
-  String payload = String("{\"ok\":") + (success ? "true" : "false") + ",\"status\":\"");
+  String payload = String("{\"ok\":") + (success ? "true" : "false") + ",\"status\":\"";
   payload += jsonEscape(success ? String("connected") : wifiStatusDetail);
   payload += "\"}";
   server.send(200, "application/json", payload);
