@@ -85,6 +85,12 @@ FIN_PATH = "data/finances"  # запросы/история выплат (фай
 POINTS_PATH = os.path.join("data", "points")
 REQUESTS_PATH = os.path.join("data", "requests")
 GLOBAL_FINANCE_FILE = os.path.join(FIN_PATH, "global.json")
+OBJECT_CONTROL_PATH = os.path.join("data", "object_control")
+OBJECT_CONTROL_STATE_FILE = os.path.join(OBJECT_CONTROL_PATH, "state.json")
+OBJECT_CONTROL_CONFIG_FILE = os.path.join(OBJECT_CONTROL_PATH, "device.json")
+OBJECT_CONTROL_HISTORY_LIMIT = 200
+
+OBJECT_CONTROL_LOCK = asyncio.Lock()
 
 FINANCE_COMPANY_TITLE = os.getenv("BSG_FINANCE_COMPANY_TITLE", "компанія BSG")
 
@@ -420,6 +426,13 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "🗂 Historia zleceń",
         "ru": "🗂 История заявок",
     },
+    "BTN_OBJECT_CONTROL": {
+        "uk": "🔌 Пульт об'єкта",
+        "en": "🔌 Object control",
+        "de": "🔌 Objektsteuerung",
+        "pl": "🔌 Sterowanie obiektem",
+        "ru": "🔌 Пульт объекта",
+    },
     "BTN_TASKS_BACK": {
         "uk": "⬅️ Назад",
         "en": "⬅️ Back",
@@ -517,6 +530,132 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "📍 Aktive Alarme: {count}",
         "pl": "📍 Aktywne alarmy: {count}",
         "ru": "📍 Активные тревоги: {count}",
+    },
+    "OBJECT_CONTROL_HEADER": {
+        "uk": "🔌 <b>Пульт об'єкта</b>",
+        "en": "🔌 <b>Object control</b>",
+        "de": "🔌 <b>Objektsteuerung</b>",
+        "pl": "🔌 <b>Pult obiektu</b>",
+        "ru": "🔌 <b>Пульт объекта</b>",
+    },
+    "OBJECT_CONTROL_DIVIDER": {
+        "uk": "━━━━━━━━━━━━━━━━━━",
+        "en": "━━━━━━━━━━━━━━━━━━",
+        "de": "━━━━━━━━━━━━━━━━━━",
+        "pl": "━━━━━━━━━━━━━━━━━━",
+        "ru": "━━━━━━━━━━━━━━━━━━",
+    },
+    "OBJECT_CONTROL_STATUS_ON": {
+        "uk": "Увімкнено",
+        "en": "On",
+        "de": "Eingeschaltet",
+        "pl": "Włączone",
+        "ru": "Включено",
+    },
+    "OBJECT_CONTROL_STATUS_OFF": {
+        "uk": "Вимкнено",
+        "en": "Off",
+        "de": "Ausgeschaltet",
+        "pl": "Wyłączone",
+        "ru": "Выключено",
+    },
+    "OBJECT_CONTROL_STATUS_LINE": {
+        "uk": "⚙️ Стан: <b>{status}</b>",
+        "en": "⚙️ Status: <b>{status}</b>",
+        "de": "⚙️ Status: <b>{status}</b>",
+        "pl": "⚙️ Stan: <b>{status}</b>",
+        "ru": "⚙️ Состояние: <b>{status}</b>",
+    },
+    "OBJECT_CONTROL_BY_LINE": {
+        "uk": "👤 Остання дія: {user}",
+        "en": "👤 Last action: {user}",
+        "de": "👤 Letzte Aktion: {user}",
+        "pl": "👤 Ostatnia akcja: {user}",
+        "ru": "👤 Последнее действие: {user}",
+    },
+    "OBJECT_CONTROL_UPDATED_LINE": {
+        "uk": "🕒 Оновлено: {time}",
+        "en": "🕒 Updated: {time}",
+        "de": "🕒 Aktualisiert: {time}",
+        "pl": "🕒 Zaktualizowano: {time}",
+        "ru": "🕒 Обновлено: {time}",
+    },
+    "OBJECT_CONTROL_HINT": {
+        "uk": "Натисніть кнопку нижче, щоб перемкнути живлення. Повідомлення оновиться без створення нових записів у чаті.",
+        "en": "Use the button below to toggle the power. The panel updates in place without sending extra messages.",
+        "de": "Verwenden Sie die Schaltfläche unten, um die Versorgung umzuschalten. Die Ansicht wird aktualisiert, ohne neue Nachrichten zu senden.",
+        "pl": "Użyj przycisku poniżej, aby przełączyć zasilanie. Panel odświeża się na miejscu bez dodatkowych wiadomości.",
+        "ru": "Нажмите кнопку ниже, чтобы переключить питание. Панель обновится на месте без лишних сообщений.",
+    },
+    "OBJECT_CONTROL_BUTTON_TURN_ON": {
+        "uk": "🔌 Увімкнути світло",
+        "en": "🔌 Turn lights on",
+        "de": "🔌 Licht einschalten",
+        "pl": "🔌 Włącz światło",
+        "ru": "🔌 Включить свет",
+    },
+    "OBJECT_CONTROL_BUTTON_TURN_OFF": {
+        "uk": "💡 Вимкнути світло",
+        "en": "💡 Turn lights off",
+        "de": "💡 Licht ausschalten",
+        "pl": "💡 Wyłącz światło",
+        "ru": "💡 Выключить свет",
+    },
+    "OBJECT_CONTROL_TOGGLE_SUCCESS": {
+        "uk": "Стан: {status}",
+        "en": "Status: {status}",
+        "de": "Status: {status}",
+        "pl": "Stan: {status}",
+        "ru": "Состояние: {status}",
+    },
+    "OBJECT_CONTROL_NOT_CONFIGURED": {
+        "uk": "⚙️ Контролер не налаштований. Вкажіть endpoint у файлі data/object_control/device.json.",
+        "en": "⚙️ Controller is not configured. Specify the endpoint in data/object_control/device.json.",
+        "de": "⚙️ Der Controller ist nicht konfiguriert. Hinterlegen Sie den Endpoint in data/object_control/device.json.",
+        "pl": "⚙️ Sterownik nie jest skonfigurowany. Podaj adres endpoint w pliku data/object_control/device.json.",
+        "ru": "⚙️ Контроллер не настроен. Укажите endpoint в файле data/object_control/device.json.",
+    },
+    "OBJECT_CONTROL_DEVICE_OFFLINE": {
+        "uk": "⚠️ Контролер недоступний. Перевірте живлення та Wi‑Fi підключення.",
+        "en": "⚠️ Controller is unreachable. Check power and Wi‑Fi connectivity.",
+        "de": "⚠️ Controller nicht erreichbar. Bitte Stromversorgung und WLAN prüfen.",
+        "pl": "⚠️ Sterownik jest niedostępny. Sprawdź zasilanie i połączenie Wi‑Fi.",
+        "ru": "⚠️ Контроллер недоступен. Проверьте питание и подключение Wi‑Fi.",
+    },
+    "OBJECT_CONTROL_DEVICE_ERROR": {
+        "uk": "⚠️ Помилка контролера: {detail}",
+        "en": "⚠️ Controller error: {detail}",
+        "de": "⚠️ Controller-Fehler: {detail}",
+        "pl": "⚠️ Błąd sterownika: {detail}",
+        "ru": "⚠️ Ошибка контроллера: {detail}",
+    },
+    "OBJECT_CONTROL_ANCHOR_LINE": {
+        "uk": "🔌 Світло: <b>{status}</b> • {user} • {time}",
+        "en": "🔌 Lights: <b>{status}</b> • {user} • {time}",
+        "de": "🔌 Licht: <b>{status}</b> • {user} • {time}",
+        "pl": "🔌 Oświetlenie: <b>{status}</b> • {user} • {time}",
+        "ru": "🔌 Свет: <b>{status}</b> • {user} • {time}",
+    },
+    "OBJECT_CONTROL_BROADCAST_ON": {
+        "uk": "🔌 {user} увімкнув світло о {time}.",
+        "en": "🔌 {user} turned the lights on at {time}.",
+        "de": "🔌 {user} hat das Licht um {time} eingeschaltet.",
+        "pl": "🔌 {user} włączył światło o {time}.",
+        "ru": "🔌 {user} включил свет в {time}.",
+    },
+    "OBJECT_CONTROL_BROADCAST_OFF": {
+        "uk": "💤 {user} вимкнув світло о {time}.",
+        "en": "💤 {user} turned the lights off at {time}.",
+        "de": "💤 {user} hat das Licht um {time} ausgeschaltet.",
+        "pl": "💤 {user} wyłączył światło o {time}.",
+        "ru": "💤 {user} выключил свет в {time}.",
+    },
+    "OBJECT_CONTROL_BROADCAST_HINT": {
+        "uk": "ℹ️ Стан синхронізовано для всіх користувачів.",
+        "en": "ℹ️ The state has been synchronized for all users.",
+        "de": "ℹ️ Der Zustand wurde für alle Benutzer synchronisiert.",
+        "pl": "ℹ️ Stan został zsynchronizowany dla wszystkich użytkowników.",
+        "ru": "ℹ️ Состояние синхронизировано для всех пользователей.",
     },
     "ALERTS_ACTIVE_SUMMARY_USER": {
         "uk": "👤 Ваші вибрані області — персональні налаштування сповіщень",
@@ -2839,6 +2978,7 @@ def ensure_dirs():
     os.makedirs(FIN_PATH, exist_ok=True)
     os.makedirs(POINTS_PATH, exist_ok=True)
     os.makedirs(REQUESTS_PATH, exist_ok=True)
+    os.makedirs(OBJECT_CONTROL_PATH, exist_ok=True)
     os.makedirs(ALERTS_STORAGE_BASE, exist_ok=True)
     os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
 
@@ -2869,6 +3009,231 @@ def work_request_user_dir(request_id: str) -> str:
     return os.path.join(work_request_dir(request_id), "user")
 
 
+# ========================== OBJECT CONTROL ==========================
+def object_control_default_state() -> dict:
+    return {
+        "state": "off",
+        "updated_at": None,
+        "updated_by": None,
+        "updated_by_name": None,
+        "history": [],
+    }
+
+
+def _object_control_normalize_state(payload: Optional[dict]) -> dict:
+    state = object_control_default_state()
+    if isinstance(payload, dict):
+        for key in ("state", "updated_at", "updated_by", "updated_by_name"):
+            if key in payload:
+                state[key] = payload.get(key)
+        history = payload.get("history")
+        if isinstance(history, list):
+            state["history"] = history[-OBJECT_CONTROL_HISTORY_LIMIT:]
+    raw_state = str(state.get("state") or "").lower()
+    state["state"] = "on" if raw_state in {"on", "1", "true", "yes"} else "off"
+    if not isinstance(state.get("history"), list):
+        state["history"] = []
+    return state
+
+
+def load_object_control_state() -> dict:
+    ensure_dirs()
+    if not os.path.exists(OBJECT_CONTROL_STATE_FILE):
+        return object_control_default_state()
+    try:
+        with open(OBJECT_CONTROL_STATE_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        data = {}
+    return _object_control_normalize_state(data)
+
+
+def save_object_control_state(payload: dict) -> None:
+    ensure_dirs()
+    state = _object_control_normalize_state(payload)
+    atomic_write_json(OBJECT_CONTROL_STATE_FILE, state)
+
+
+def object_control_state() -> dict:
+    return load_object_control_state()
+
+
+def load_object_control_config() -> dict:
+    ensure_dirs()
+    if not os.path.exists(OBJECT_CONTROL_CONFIG_FILE):
+        return {}
+    try:
+        with open(OBJECT_CONTROL_CONFIG_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def object_control_device_endpoint() -> Optional[str]:
+    config = load_object_control_config()
+    endpoint = str(config.get("endpoint") or "").strip()
+    return endpoint or None
+
+
+def object_control_status_key(state: Optional[str]) -> str:
+    return "OBJECT_CONTROL_STATUS_ON" if str(state).lower() == "on" else "OBJECT_CONTROL_STATUS_OFF"
+
+
+def object_control_status_label(target: Any, state: Optional[str]) -> str:
+    return tr(target, object_control_status_key(state))
+
+
+def object_control_last_actor_name(data: Optional[dict]) -> str:
+    if not isinstance(data, dict):
+        return "—"
+    name = str(data.get("updated_by_name") or "").strip()
+    if name:
+        return name
+    return work_request_profile_display(data.get("updated_by"))
+
+
+def object_control_last_timestamp(data: Optional[dict]) -> str:
+    if not isinstance(data, dict):
+        return "—"
+    timestamp = data.get("updated_at")
+    return format_datetime_short(timestamp) or (timestamp or "—")
+
+
+def object_control_panel_text(uid: int) -> str:
+    state = object_control_state()
+    status = object_control_status_label(uid, state.get("state"))
+    user = object_control_last_actor_name(state)
+    updated = object_control_last_timestamp(state)
+    lines = [
+        tr(uid, "OBJECT_CONTROL_HEADER"),
+        tr(uid, "OBJECT_CONTROL_DIVIDER"),
+        tr(uid, "OBJECT_CONTROL_STATUS_LINE", status=h(status)),
+        tr(uid, "OBJECT_CONTROL_BY_LINE", user=h(user or "—")),
+        tr(uid, "OBJECT_CONTROL_UPDATED_LINE", time=h(updated or "—")),
+        "",
+        tr(uid, "OBJECT_CONTROL_HINT"),
+    ]
+    return "\n".join(lines)
+
+
+def object_control_anchor_line(uid: int) -> str:
+    state = object_control_state()
+    status = object_control_status_label(uid, state.get("state"))
+    user = object_control_last_actor_name(state)
+    updated = object_control_last_timestamp(state)
+    return tr(uid, "OBJECT_CONTROL_ANCHOR_LINE", status=h(status), user=h(user or "—"), time=h(updated or "—"))
+
+
+def object_control_apply_state(new_state: str, uid: int, actor_name: str, timestamp: str) -> dict:
+    state = object_control_state()
+    state.update(
+        {
+            "state": "on" if new_state == "on" else "off",
+            "updated_at": timestamp,
+            "updated_by": uid,
+            "updated_by_name": actor_name,
+        }
+    )
+    history = list(state.get("history") or [])
+    history.append(
+        {
+            "timestamp": timestamp,
+            "state": state.get("state"),
+            "user_id": uid,
+            "user_name": actor_name,
+        }
+    )
+    state["history"] = history[-OBJECT_CONTROL_HISTORY_LIMIT:]
+    save_object_control_state(state)
+    return state
+
+
+async def object_control_send_command(new_state: str) -> Dict[str, Any]:
+    config = load_object_control_config()
+    endpoint = str(config.get("endpoint") or "").strip()
+    if not endpoint:
+        return {"ok": False, "error": "not_configured"}
+
+    payload = {"state": new_state}
+    secret = config.get("secret")
+    if secret:
+        payload["secret"] = secret
+    timeout = config.get("timeout")
+    try:
+        timeout_value = float(timeout) if timeout is not None else 7.0
+    except Exception:
+        timeout_value = 7.0
+
+    def _request() -> Dict[str, Any]:
+        try:
+            response = requests.post(endpoint, json=payload, timeout=timeout_value)
+        except Exception as exc:
+            return {"ok": False, "error": "offline", "detail": str(exc)}
+        if response.status_code >= 400:
+            detail = f"HTTP {response.status_code}"
+            try:
+                body = response.text.strip()
+                if body:
+                    detail = f"HTTP {response.status_code}: {body}"
+            except Exception:
+                pass
+            return {"ok": False, "error": "device_error", "detail": detail}
+        remote_state: Optional[str] = None
+        try:
+            decoded = response.json()
+            if isinstance(decoded, dict):
+                remote_state = decoded.get("state")
+        except Exception:
+            remote_state = None
+        result_state = str(remote_state or new_state or "off").lower()
+        return {"ok": True, "state": "on" if result_state == "on" else "off"}
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _request)
+
+
+def object_control_toggle_button(uid: int) -> str:
+    state = object_control_state()
+    current = state.get("state")
+    key = "OBJECT_CONTROL_BUTTON_TURN_OFF" if str(current).lower() == "on" else "OBJECT_CONTROL_BUTTON_TURN_ON"
+    return tr(uid, key)
+
+
+def kb_object_control(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(object_control_toggle_button(uid), callback_data="object_toggle"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_TASKS_BACK"), callback_data="back_root"))
+    return kb
+
+
+async def object_control_broadcast(state_value: str, actor_uid: int, timestamp: str) -> None:
+    actor_name = work_request_profile_display(actor_uid)
+    status_key = "OBJECT_CONTROL_BROADCAST_ON" if state_value == "on" else "OBJECT_CONTROL_BROADCAST_OFF"
+    for target in list_completed_user_ids():
+        profile = load_user(target) or {}
+        chat_id = registration_chat_id(target, profile)
+        if not chat_id:
+            continue
+        lines = [
+            tr(target, "OBJECT_CONTROL_HEADER"),
+            tr(target, "OBJECT_CONTROL_DIVIDER"),
+            tr(
+                target,
+                status_key,
+                user=h(actor_name),
+                time=h(format_datetime_short(timestamp) or (timestamp or "")),
+            ),
+            tr(target, "OBJECT_CONTROL_STATUS_LINE", status=h(object_control_status_label(target, state_value))),
+            tr(target, "OBJECT_CONTROL_BROADCAST_HINT"),
+        ]
+        kb = kb_broadcast_close()
+        try:
+            await bot.send_message(chat_id, "\n".join(lines), reply_markup=kb)
+        except Exception:
+            continue
 def work_request_exists(request_id: str) -> bool:
     return os.path.exists(work_request_file(request_id))
 
@@ -6299,6 +6664,7 @@ def project_status_text(uid: int) -> str:
             completed=task_stats.get("completed", 0),
         )
     )
+    lines.append(object_control_anchor_line(uid))
     return "\n".join(lines)
 
 
@@ -6314,6 +6680,7 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(tr(uid, "BTN_TASKS"), callback_data="menu_tasks"),
         InlineKeyboardButton(tr(uid, "BTN_PHOTO_TIMELINE"), callback_data="menu_photos"),
     )
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_OBJECT_CONTROL"), callback_data="menu_object_control"))
     kb.row(
         InlineKeyboardButton(tr(uid, "BTN_FINANCE"), callback_data="menu_finance"),
         InlineKeyboardButton(tr(uid, "BTN_ALERTS"), callback_data="menu_alerts"),
@@ -12833,6 +13200,56 @@ async def menu_tasks(c: types.CallbackQuery):
     text = tr(uid, "TASKS_MENU_INTRO", active=stats.get("active", 0), completed=stats.get("completed", 0))
     await clear_then_anchor(uid, text, kb_tasks_menu(uid))
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "menu_object_control")
+async def menu_object_control(c: types.CallbackQuery):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
+    text = object_control_panel_text(uid)
+    await clear_then_anchor(uid, text, kb_object_control(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "object_toggle")
+async def object_toggle(c: types.CallbackQuery):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
+
+    async with OBJECT_CONTROL_LOCK:
+        current_state = object_control_state().get("state")
+        desired_state = "off" if str(current_state).lower() == "on" else "on"
+        result = await object_control_send_command(desired_state)
+        if not result.get("ok"):
+            error = result.get("error")
+            detail = str(result.get("detail") or "")
+            if error == "not_configured":
+                return await c.answer(tr(uid, "OBJECT_CONTROL_NOT_CONFIGURED"), show_alert=True)
+            if error == "device_error":
+                return await c.answer(tr(uid, "OBJECT_CONTROL_DEVICE_ERROR", detail=detail), show_alert=True)
+            return await c.answer(tr(uid, "OBJECT_CONTROL_DEVICE_OFFLINE"), show_alert=True)
+
+        actual_state = result.get("state") or desired_state
+        timestamp = datetime.now(timezone.utc).isoformat()
+        actor_name = work_request_profile_display(uid)
+        object_control_apply_state(actual_state, uid, actor_name, timestamp)
+
+    status_text = object_control_status_label(uid, actual_state)
+    await anchor_show_text(uid, object_control_panel_text(uid), kb_object_control(uid))
+
+    recipients = [target for target in list_completed_user_ids() if target != uid]
+    for target in recipients:
+        try:
+            await anchor_show_root(target)
+        except Exception:
+            continue
+
+    await object_control_broadcast(actual_state, uid, timestamp)
+    await c.answer(tr(uid, "OBJECT_CONTROL_TOGGLE_SUCCESS", status=status_text))
 
 
 @dp.callback_query_handler(lambda c: c.data == "tasks_active")
