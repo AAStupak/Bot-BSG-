@@ -1,16 +1,9 @@
-# Установка зависимостей для Telegram-бота BSG
-
-## 1. Создание и активация виртуального окружения (рекомендуется)
-python3 -m venv .venv
-source .venv/bin/activate
-
-## 2. Обновление менеджера пакетов pip
-python -m pip install --upgrade pip
-
-## 3. Установка основных библиотек бота одной командой
-pip install aiogram==2.25.1 openpyxl pillow requests
-
-## 4. Дополнительные утилиты (по необходимости)
-# Для работы с изображениями в Linux могут потребоваться системные зависимости:
-# sudo apt-get update && sudo apt-get install -y libjpeg-dev zlib1g-dev
-
+Python 3.10+
+python3-venv
+python3-pip
+aiogram==2.25.1
+openpyxl
+pillow
+requests
+libjpeg-dev (Linux)
+zlib1g-dev (Linux)
