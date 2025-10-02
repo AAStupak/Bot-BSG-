@@ -2440,11 +2440,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "❌ Закрыть",
     },
     "TASKS_COMPLETE_PROMPT": {
-        "uk": "📤 <b>Завершення заявки {code}</b>\nНадішліть фотографії чи файли як підтвердження виконання. Коли будете готові, натисніть «✅ Відправити звіт» або «⏭ Пропустити файли».",
-        "en": "📤 <b>Finishing job {code}</b>\nSend photos or documents as proof. When ready, press “✅ Send report” or “⏭ Skip files”.",
-        "de": "📤 <b>Auftrag {code} abschließen</b>\nSenden Sie Fotos oder Dokumente als Nachweis. Drücken Sie anschließend „✅ Bericht senden“ oder „⏭ Ohne Dateien“.",
-        "pl": "📤 <b>Zakończenie zlecenia {code}</b>\nWyślij zdjęcia lub pliki jako potwierdzenie. Gdy będziesz gotowy, kliknij „✅ Wyślij raport” lub „⏭ Pomiń pliki”.",
-        "ru": "📤 <b>Завершение заявки {code}</b>\nОтправьте фотографии или файлы для подтверждения. Когда будете готовы, нажмите «✅ Отправить отчёт» или «⏭ Пропустить файлы».",
+        "uk": "📤 <b>Завершення заявки {code}</b>\nНадішліть фотографії чи файли як підтвердження виконання. Коли все готово, натисніть «✅ Закрити заявку» або «⏭ Пропустити файли».",
+        "en": "📤 <b>Finishing job {code}</b>\nSend photos or documents as proof. When ready, press “✅ Close job” or “⏭ Skip files”.",
+        "de": "📤 <b>Auftrag {code} abschließen</b>\nSenden Sie Fotos oder Dokumente als Nachweis. Wenn alles bereit ist, klicken Sie „✅ Auftrag schließen“ oder „⏭ Ohne Dateien“.",
+        "pl": "📤 <b>Zakończenie zlecenia {code}</b>\nWyślij zdjęcia lub pliki jako potwierdzenie. Gdy wszystko gotowe, kliknij „✅ Zamknij zlecenie” lub „⏭ Pomiń pliki”.",
+        "ru": "📤 <b>Завершение заявки {code}</b>\nОтправьте фотографии или файлы для подтверждения. Когда всё готово, нажмите «✅ Закрыть заявку» или «⏭ Пропустить файлы».",
     },
     "TASKS_ACTION_SKIP_FILES": {
         "uk": "⏭ Пропустити файли",
@@ -2454,11 +2454,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "⏭ Пропустить файлы",
     },
     "TASKS_ACTION_SEND_REPORT": {
-        "uk": "✅ Відправити звіт",
-        "en": "✅ Send report",
-        "de": "✅ Bericht senden",
-        "pl": "✅ Wyślij raport",
-        "ru": "✅ Отправить отчёт",
+        "uk": "✅ Закрити заявку",
+        "en": "✅ Close job",
+        "de": "✅ Auftrag schließen",
+        "pl": "✅ Zamknij zlecenie",
+        "ru": "✅ Закрыть заявку",
     },
     "TASKS_ACTION_CANCEL": {
         "uk": "❌ Скасувати",
@@ -6580,6 +6580,8 @@ def kb_admin_task_card(request: dict) -> InlineKeyboardMarkup:
     if request.get("user_files"):
         kb.add(InlineKeyboardButton("📤 Отчёт", callback_data=f"adm_task_report:{req_id}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_tasks"))
+    if req_id:
+        kb.add(InlineKeyboardButton("❌ Закрыть", callback_data=f"adm_task_close:{req_id}"))
     return kb
 
 
@@ -12621,6 +12623,8 @@ async def task_view(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "task_close")
 async def task_close(c: types.CallbackQuery):
     uid = c.from_user.id
+    if c.message:
+        await _delete_message_safe(c.message.chat.id, c.message.message_id)
     stats = work_request_user_stats(uid)
     text = tr(uid, "TASKS_MENU_INTRO", active=stats.get("active", 0), completed=stats.get("completed", 0))
     await clear_then_anchor(uid, text, kb_tasks_menu(uid))
@@ -12764,9 +12768,11 @@ async def _task_complete_finalize(uid: int, request: dict, uploaded: List[dict])
         if not chat_id:
             continue
         try:
+            header = tr(admin_id, "TASKS_COMPLETE_DONE_ADMIN", user=h(user_name), code=h(req_id))
+            body = work_request_card_text(admin_id, request)
             await bot.send_message(
                 chat_id,
-                tr(admin_id, "TASKS_COMPLETE_DONE_ADMIN", user=h(user_name), code=h(req_id)),
+                f"{header}\n\n{body}",
                 reply_markup=kb_admin_task_card(request),
             )
         except Exception:
@@ -15896,6 +15902,13 @@ async def adm_task_report(c: types.CallbackQuery):
     await c.answer()
 
 
+async def _adm_task_send_prompt(uid: int, chat_id: int, text: str, kb: InlineKeyboardMarkup):
+    await flow_prepare_prompt(uid)
+    prompt = await bot.send_message(chat_id, text, reply_markup=kb)
+    flow_store_prompt(uid, prompt)
+    return prompt
+
+
 @dp.callback_query_handler(lambda c: c.data == "adm_task_create")
 async def adm_task_create(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
@@ -15907,12 +15920,7 @@ async def adm_task_create(c: types.CallbackQuery, state: FSMContext):
     await WorkRequestCreateFSM.waiting_title.set()
     await state.update_data(task_id=request_id, task_admin_files=[], task_title="", task_description="")
     await flow_clear(uid)
-    prompt = await bot.send_message(
-        c.message.chat.id,
-        tr(uid, "TASKS_ADMIN_CREATE_TITLE"),
-        reply_markup=kb_admin_task_cancel(),
-    )
-    flow_track(uid, prompt)
+    await _adm_task_send_prompt(uid, c.message.chat.id, tr(uid, "TASKS_ADMIN_CREATE_TITLE"), kb_admin_task_cancel())
     await c.answer()
 
 
@@ -15933,69 +15941,93 @@ async def adm_task_cancel(c: types.CallbackQuery, state: FSMContext):
 async def adm_task_collect_title(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     title = (m.text or "").strip()
-    try:
-        await bot.delete_message(m.chat.id, m.message_id)
-    except Exception:
-        pass
+    await flow_delete_message(uid, m)
     if not title:
         warn = await bot.send_message(m.chat.id, "❗ Введите название заявки.", reply_markup=kb_admin_task_cancel())
-        flow_track(uid, warn)
+        flow_track_warning(uid, warn)
         return
     await state.update_data(task_title=title)
     await WorkRequestCreateFSM.waiting_description.set()
-    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DESCRIPTION"), reply_markup=kb_admin_task_cancel())
-    flow_track(uid, prompt)
+    await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DESCRIPTION"), kb_admin_task_cancel())
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_title, content_types=ContentType.ANY)
+async def adm_task_title_reject(m: types.Message, state: FSMContext):
+    if m.content_type == ContentType.TEXT:
+        return
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, "⚠️ Здесь нужно ввести текст.", reply_markup=kb_admin_task_cancel())
+    flow_track_warning(uid, warn)
 
 
 @dp.message_handler(state=WorkRequestCreateFSM.waiting_description, content_types=ContentType.TEXT)
 async def adm_task_collect_description(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     description = (m.text or "").strip()
-    try:
-        await bot.delete_message(m.chat.id, m.message_id)
-    except Exception:
-        pass
+    await flow_delete_message(uid, m)
     await state.update_data(task_description=description)
     await WorkRequestCreateFSM.waiting_due.set()
-    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DEADLINE"), reply_markup=kb_admin_task_cancel())
-    flow_track(uid, prompt)
+    await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DEADLINE"), kb_admin_task_cancel())
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_description, content_types=ContentType.ANY)
+async def adm_task_description_reject(m: types.Message, state: FSMContext):
+    if m.content_type == ContentType.TEXT:
+        return
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, "⚠️ Здесь нужно отправить текст.", reply_markup=kb_admin_task_cancel())
+    flow_track_warning(uid, warn)
 
 
 @dp.message_handler(state=WorkRequestCreateFSM.waiting_due, content_types=ContentType.TEXT)
 async def adm_task_collect_deadline(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     raw = (m.text or "").strip()
-    try:
-        await bot.delete_message(m.chat.id, m.message_id)
-    except Exception:
-        pass
+    await flow_delete_message(uid, m)
     parsed = parse_work_request_deadline(raw)
     if not parsed:
         warn = await bot.send_message(m.chat.id, "❗ Неверный формат даты. Пример: 31.12.2025 18:00", reply_markup=kb_admin_task_cancel())
-        flow_track(uid, warn)
+        flow_track_warning(uid, warn)
         return
     await state.update_data(task_deadline=parsed.isoformat())
     await WorkRequestCreateFSM.waiting_address.set()
-    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_ADDRESS"), reply_markup=kb_admin_task_cancel())
-    flow_track(uid, prompt)
+    await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_ADDRESS"), kb_admin_task_cancel())
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_due, content_types=ContentType.ANY)
+async def adm_task_deadline_reject(m: types.Message, state: FSMContext):
+    if m.content_type == ContentType.TEXT:
+        return
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, "⚠️ Здесь нужно указать дату текстом.", reply_markup=kb_admin_task_cancel())
+    flow_track_warning(uid, warn)
 
 
 @dp.message_handler(state=WorkRequestCreateFSM.waiting_address, content_types=ContentType.TEXT)
 async def adm_task_collect_address(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     address = (m.text or "").strip()
-    try:
-        await bot.delete_message(m.chat.id, m.message_id)
-    except Exception:
-        pass
+    await flow_delete_message(uid, m)
     if not address:
-        warn = await bot.send_message(m.chat.id, "❗ Укажите адрес выполнения.", reply_markup=kb_admin_task_cancel())
-        flow_track(uid, warn)
+        warn = await bot.send_message(m.chat.id, "❗ Укажите адрес заявки.", reply_markup=kb_admin_task_cancel())
+        flow_track_warning(uid, warn)
         return
     await state.update_data(task_address=address)
     await WorkRequestCreateFSM.waiting_files.set()
-    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_FILES"), reply_markup=kb_admin_task_files())
-    flow_track(uid, prompt)
+    await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_FILES"), kb_admin_task_files())
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_address, content_types=ContentType.ANY)
+async def adm_task_address_reject(m: types.Message, state: FSMContext):
+    if m.content_type == ContentType.TEXT:
+        return
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, "⚠️ Укажите адрес текстом.", reply_markup=kb_admin_task_cancel())
+    flow_track_warning(uid, warn)
 
 
 @dp.message_handler(state=WorkRequestCreateFSM.waiting_files, content_types=[ContentType.PHOTO, ContentType.DOCUMENT])
@@ -16003,10 +16035,7 @@ async def adm_task_collect_files(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     data = await state.get_data()
     request_id = data.get("task_id")
-    try:
-        await bot.delete_message(m.chat.id, m.message_id)
-    except Exception:
-        pass
+    await flow_delete_message(uid, m)
     if not request_id:
         await state.finish()
         await flow_clear(uid)
@@ -16020,18 +16049,24 @@ async def adm_task_collect_files(m: types.Message, state: FSMContext):
         flow_track(uid, note)
     else:
         warn = await bot.send_message(m.chat.id, tr(uid, "TASKS_ATTACHMENT_FAILED"), reply_markup=kb_admin_task_files())
-        flow_track(uid, warn)
+        flow_track_warning(uid, warn)
 
 
 @dp.message_handler(state=WorkRequestCreateFSM.waiting_files, content_types=ContentType.TEXT)
 async def adm_task_files_text(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    try:
-        await bot.delete_message(m.chat.id, m.message_id)
-    except Exception:
-        pass
-    prompt = await bot.send_message(m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_FILES"), reply_markup=kb_admin_task_files())
-    flow_track(uid, prompt)
+    await flow_delete_message(uid, m)
+    await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_FILES"), kb_admin_task_files())
+
+
+@dp.message_handler(state=WorkRequestCreateFSM.waiting_files, content_types=ContentType.ANY)
+async def adm_task_files_reject(m: types.Message, state: FSMContext):
+    if m.content_type in {ContentType.TEXT, ContentType.PHOTO, ContentType.DOCUMENT}:
+        return
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, "⚠️ Можно прикрепить фото или документ.", reply_markup=kb_admin_task_files())
+    flow_track_warning(uid, warn)
 
 
 async def _adm_task_show_users(uid: int, state: FSMContext, page: int = 1) -> bool:
@@ -16131,6 +16166,16 @@ async def adm_task_assign(c: types.CallbackQuery, state: FSMContext):
     admin_text = tr(uid, "TASKS_ADMIN_CREATE_DONE", code=h(request_id), user=h(work_request_profile_display(target_uid)))
     await clear_then_anchor(uid, admin_text, kb_admin_tasks())
     await c.answer("Создано")
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_task_close:"))
+async def adm_task_close(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if c.message:
+        await _delete_message_safe(c.message.chat.id, c.message.message_id)
+    await c.answer("Закрыто")
 
 
 @dp.callback_query_handler(lambda c: c.data == "adm_users")
