@@ -12933,7 +12933,7 @@ async def _task_complete_finalize(uid: int, request: dict, uploaded: List[dict])
             body = work_request_card_text(admin_id, request)
             await bot.send_message(
                 chat_id,
-                f"{header}\n\n{body}\n\n{tr(admin_id, "TASKS_COMPLETE_SIGN_HINT")}",
+                f"{header}\n\n{body}\n\n{tr(admin_id, 'TASKS_COMPLETE_SIGN_HINT')}",
                 reply_markup=kb_admin_task_card(request, viewer=admin_id),
             )
         except Exception:
