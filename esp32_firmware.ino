@@ -367,7 +367,7 @@ static String baseCss() {
       ".toggleSquare:disabled{opacity:.6;cursor:wait}" \
       ".toggleSquare.is-on .toggleKnob{transform:translateX(100%);background:#000}" \
       ".statusNote{font-size:13px;color:var(--mut);line-height:1.5}" \
-      "footer{margin-top:32px;font-size:11px;color:var(--mut);text-align:center;letter-spacing:.24em;text-transform:uppercase}";";
+        "footer{margin-top:32px;font-size:11px;color:var(--mut);text-align:center;letter-spacing:.24em;text-transform:uppercase}";
 }
 
 
