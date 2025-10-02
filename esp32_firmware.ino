@@ -12,6 +12,13 @@
 static const uint8_t RELAY_PIN = 23;            // GPIO that drives the contactor
 static const bool RELAY_ACTIVE_HIGH = true;     // set to false if the relay is active low
 
+// Status LED and buttons that manage the configuration portal / factory reset.
+// Adjust these pins to match the actual wiring of the board.
+static const uint8_t STATUS_LED_PIN = 2;        // On many ESP32 devkits GPIO2 drives the built-in LED
+static const bool STATUS_LED_ACTIVE_LOW = true; // Flip to false if your LED is wired active-high
+static const uint8_t HOLD_BUTTON_PIN = 0;       // Long press (BOOT button on most devkits)
+static const uint8_t CONFIRM_BUTTON_PIN = 4;    // Secondary button to confirm factory reset
+
 // ================= Portal defaults =================
 static const char *DEFAULT_AP_SSID = "SRC-Link";
 static const char *DEFAULT_AP_PASS = "12345678";
@@ -27,7 +34,7 @@ String savedPASS;
 String apSsid;
 String apPass;
 String savedLang = "ru";
-String adminPass = "111";
+String adminPass = "1234";
 String sessionToken;
 String apiSecret;
 int tzOffsetMin = 180;
@@ -35,6 +42,18 @@ int tzOffsetMin = 180;
 bool relayState = false;
 String relayUpdatedAt;
 String relayUpdatedBy;
+
+bool statusLedState = false;
+bool factoryResetArmed = false;
+unsigned long holdStartMs = 0;
+unsigned long blinkTickerMs = 0;
+unsigned long factoryArmDeadlineMs = 0;
+bool lastHoldLevel = true;
+bool lastConfirmLevel = true;
+
+static const uint32_t FACTORY_HOLD_MS = 4000;      // hold duration to arm reset
+static const uint32_t FACTORY_BLINK_MS = 250;      // blink cadence while armed
+static const uint32_t FACTORY_CONFIRM_MS = 15000;  // window to confirm reset once armed
 
 // ================= Helpers =================
 static inline String trimCopy(String value) {
@@ -68,6 +87,52 @@ static inline void applyRelay(bool on) {
   relayState = on;
   bool level = RELAY_ACTIVE_HIGH ? on : !on;
   digitalWrite(RELAY_PIN, level ? HIGH : LOW);
+}
+
+static inline void writeStatusLed(bool on) {
+  bool level = STATUS_LED_ACTIVE_LOW ? !on : on;
+  digitalWrite(STATUS_LED_PIN, level ? HIGH : LOW);
+  statusLedState = on;
+}
+
+static inline void toggleStatusLed() {
+  writeStatusLed(!statusLedState);
+}
+
+static void cancelFactoryArm() {
+  factoryResetArmed = false;
+  factoryArmDeadlineMs = 0;
+  holdStartMs = 0;
+  blinkTickerMs = 0;
+  writeStatusLed(false);
+}
+
+static void performFactoryReset() {
+  cancelFactoryArm();
+  prefs.clear();
+  savedSSID = "";
+  savedPASS = "";
+  savedLang = "ru";
+  adminPass = "1234";
+  apSsid = DEFAULT_AP_SSID;
+  apPass = DEFAULT_AP_PASS;
+  tzOffsetMin = 180;
+  apiSecret = "";
+  relayState = false;
+  relayUpdatedBy = "";
+  relayUpdatedAt = "";
+  prefs.putString("admpass", adminPass);
+  prefs.putString("apSsid", apSsid);
+  prefs.putString("apPass", apPass);
+  prefs.putString("lang", savedLang);
+  prefs.putInt("tzMin", tzOffsetMin);
+  prefs.putBool("relayOn", relayState);
+  prefs.putString("relayBy", relayUpdatedBy);
+  prefs.putString("relayAt", relayUpdatedAt);
+  prefs.putString("apiSecret", apiSecret);
+  applyRelay(false);
+  delay(50);
+  ESP.restart();
 }
 
 static void persistRelayState(bool on, const String &actor, const String &timestamp) {
@@ -145,6 +210,13 @@ static inline void sendJson(int code, const String &body) {
 
 static inline void setAuthCookie() {
   server.sendHeader("Set-Cookie", "SL_AUTH=" + sessionToken + "; Max-Age=86400; Path=/", true);
+}
+
+static void handleCaptiveRedirect() {
+  IPAddress ip = WiFi.softAPIP();
+  String target = String("http://") + ip.toString() + "/login";
+  server.sendHeader("Location", target, true);
+  server.send(302, "text/html", "<html><head><meta http-equiv='refresh' content='0; url=/login'></head><body>Redirecting…</body></html>");
 }
 // ================= Localization =================
 static String baseCss() {
@@ -852,6 +924,15 @@ static void startPortal() {
   server.on("/login", HTTP_POST, handleLogin);
   server.on("/logout", HTTP_POST, handleLogout);
 
+  server.on("/generate_204", HTTP_ANY, handleCaptiveRedirect);
+  server.on("/gen_204", HTTP_ANY, handleCaptiveRedirect);
+  server.on("/fwlink", HTTP_ANY, handleCaptiveRedirect);
+  server.on("/connecttest.txt", HTTP_ANY, handleCaptiveRedirect);
+  server.on("/ncsi.txt", HTTP_ANY, handleCaptiveRedirect);
+  server.on("/hotspot-detect.html", HTTP_ANY, []() {
+    server.send(200, "text/html", "<html><head><meta http-equiv='refresh' content='0; url=/login'></head><body>Redirecting…</body></html>");
+  });
+
   server.on("/", []() { pageHome(); });
   server.on("/settings", []() { pageSettings(); });
 
@@ -893,11 +974,20 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   applyRelay(false);
 
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  writeStatusLed(false);
+  pinMode(HOLD_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(CONFIRM_BUTTON_PIN, INPUT_PULLUP);
+
   prefs.begin("wifi", false);
   savedSSID = prefs.getString("ssid", "");
   savedPASS = prefs.getString("pass", "");
   savedLang = prefs.getString("lang", "ru");
-  adminPass = prefs.getString("admpass", "111");
+  adminPass = prefs.getString("admpass", "1234");
+  if (!adminPass.length()) {
+    adminPass = "1234";
+    prefs.putString("admpass", adminPass);
+  }
   apSsid = prefs.getString("apSsid", DEFAULT_AP_SSID);
   apPass = prefs.getString("apPass", DEFAULT_AP_PASS);
   if (apSsid.length() < 1) apSsid = DEFAULT_AP_SSID;
@@ -923,6 +1013,44 @@ void setup() {
 }
 
 void loop() {
+  bool holdLevel = digitalRead(HOLD_BUTTON_PIN);
+  bool confirmLevel = digitalRead(CONFIRM_BUTTON_PIN);
+  unsigned long nowMs = millis();
+
+  if (!factoryResetArmed) {
+    if (!holdLevel) {
+      if (!holdStartMs) {
+        holdStartMs = nowMs;
+      } else if (nowMs - holdStartMs >= FACTORY_HOLD_MS) {
+        factoryResetArmed = true;
+        factoryArmDeadlineMs = nowMs + FACTORY_CONFIRM_MS;
+        blinkTickerMs = nowMs;
+        writeStatusLed(true);
+      }
+    } else {
+      holdStartMs = 0;
+    }
+  }
+
+  if (factoryResetArmed) {
+    if (nowMs - blinkTickerMs >= FACTORY_BLINK_MS) {
+      blinkTickerMs = nowMs;
+      toggleStatusLed();
+    }
+    if (nowMs > factoryArmDeadlineMs) {
+      cancelFactoryArm();
+    } else {
+      bool holdPressedEdge = !holdLevel && lastHoldLevel;
+      bool confirmPressedEdge = !confirmLevel && lastConfirmLevel;
+      if (holdPressedEdge || confirmPressedEdge) {
+        performFactoryReset();
+      }
+    }
+  }
+
+  lastHoldLevel = holdLevel;
+  lastConfirmLevel = confirmLevel;
+
   dnsServer.processNextRequest();
   server.handleClient();
 }
