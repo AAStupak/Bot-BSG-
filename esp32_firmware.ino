@@ -143,7 +143,7 @@ String renderHtml() {
                      "button{display:inline-flex;align-items:center;gap:8px;border:none;border-radius:999px;padding:12px 22px;font-size:15px;font-weight:600;cursor:pointer;transition:.2s;}"
                      ".primary{background:#38bdf8;color:#0f172a;}.danger{background:#f97316;color:#0f172a;}.muted{background:#334155;color:#e2e8f0;}"
                      "p,li{line-height:1.55;}ul{padding-left:18px;}footer{margin-top:32px;font-size:13px;color:#94a3b8;text-align:center;}</style></head><body><main>");
-  html += F("<h1>🔌 Пульт объекта</h1><p>Режим: <b>");
+  html += F("<h1>💡 Пульт объекта</h1><p>Режим: <b>");
   html += mode;
   html += F("</b> • IP: <code>");
   html += ipInfo;
@@ -152,7 +152,7 @@ String renderHtml() {
   html += F("</p><form method=\"post\" action=\"/toggle\"><input type=\"hidden\" name=\"desired\" value=\"");
   html += relayState ? "off" : "on";
   html += F("\"><button class=\"");
-  html += relayState ? "danger">💤 Выключить" : "primary">🔌 Включить";
+  html += relayState ? "danger">💤 Выключить" : "primary">💡 Включить";
   html += F("</button></form></fieldset><fieldset><legend>Настройка Wi-Fi</legend><form method=\"post\" action=\"/save\">");
   html += F("<label for=\"ssid\">Выберите сеть</label><select id=\"ssid\" name=\"ssid\">\n");
   html += renderNetworkOptions();
