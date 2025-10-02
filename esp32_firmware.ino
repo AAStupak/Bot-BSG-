@@ -36,7 +36,6 @@ String apPass;
 String savedLang = "ru";
 String adminPass = "1234";
 String sessionToken;
-String apiSecret;
 int tzOffsetMin = 180;
 
 bool relayState = false;
@@ -117,7 +116,6 @@ static void performFactoryReset() {
   apSsid = DEFAULT_AP_SSID;
   apPass = DEFAULT_AP_PASS;
   tzOffsetMin = 180;
-  apiSecret = "";
   relayState = false;
   relayUpdatedBy = "";
   relayUpdatedAt = "";
@@ -129,7 +127,6 @@ static void performFactoryReset() {
   prefs.putBool("relayOn", relayState);
   prefs.putString("relayBy", relayUpdatedBy);
   prefs.putString("relayAt", relayUpdatedAt);
-  prefs.putString("apiSecret", apiSecret);
   applyRelay(false);
   delay(50);
   ESP.restart();
@@ -157,11 +154,6 @@ static String currentStateJson() {
   if (relayUpdatedBy.length()) {
     json += ",\"updated_by\":\"";
     json += relayUpdatedBy;
-    json += "\"";
-  }
-  if (apiSecret.length()) {
-    json += ",\"secret_set\":\"";
-    json += apiSecret;
     json += "\"";
   }
   json += "}";
@@ -221,53 +213,54 @@ static void handleCaptiveRedirect() {
 // ================= Localization =================
 static String baseCss() {
   return
-      ":root{--bg:#000;--panel:#000;--fg:#e9eef3;--mut:#b9c5cf;--line:#0ff;--line2:#2aa9b3;--title:#ff0;--accent:#ffd400}" \
+      ":root{--bg:#050b10;--panel:#0c1722;--fg:#e6edf6;--mut:#8f9bae;--line:#1d9bf0;--line-soft:rgba(29,155,240,.35);--accent:#1d9bf0}" \
       "*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);" \
-      "font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans',Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;" \
+      "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans',Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;" \
       "-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}body{min-height:100vh}" \
-      ".wrap{max-width:1160px;margin:0 auto;padding:16px}" \
-      "header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}" \
-      ".brand{display:flex;gap:10px;align-items:center}" \
-      ".logo{width:40px;height:40px;border:2px solid var(--line);display:grid;place-items:center;font-weight:900;letter-spacing:.5px;color:#0ff}" \
-      ".logo span{font-size:12px;line-height:1}" \
-      "h1{margin:0;font-size:17px;font-weight:800;letter-spacing:.15px;text-transform:uppercase;color:#e7f7ff}" \
+      ".wrap{max-width:1120px;margin:0 auto;padding:18px 20px}" \
+      "header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}" \
+      "h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#f3f7fb}" \
       ".kv{font-size:12px;color:var(--mut)}" \
-      ".grid{display:grid;gap:12px;grid-template-columns:1fr}" \
-      "@media(min-width:740px){.grid{grid-template-columns:1fr 1fr}}" \
-      "@media(min-width:1040px){.grid{grid-template-columns:2fr 1fr}}" \
-      ".card{position:relative;background:var(--panel);padding:12px;border:2px solid var(--line)}" \
-      ".titleBar{position:absolute;left:8px;top:-10px;display:inline-block;padding:.35em 1em;border:2px solid var(--line);" \
-      "background:var(--title);color:#111;font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:12px}" \
-      "label{display:block;font-size:11px;color:#aeb8c3;margin:7px 0 4px;text-transform:uppercase;letter-spacing:.35px}" \
-      "input,select,button{appearance:none;border:2px solid var(--line);background:#000;color:#dff;padding:7px 10px;font-size:14px;width:100%;outline:none}" \
-      "input::placeholder{color:#6aa3a8}" \
-      "input:focus-visible,select:focus-visible{outline:2px solid var(--line2)}" \
+      ".grid{display:grid;gap:16px;grid-template-columns:1fr}" \
+      "@media(min-width:780px){.grid{grid-template-columns:1fr 1fr}}" \
+      "@media(min-width:1080px){.grid{grid-template-columns:2fr 1fr}}" \
+      ".card{position:relative;background:var(--panel);padding:18px;border:1px solid var(--line-soft);box-shadow:0 18px 40px rgba(0,0,0,.35)}" \
+      ".titleBar{position:absolute;left:16px;top:-14px;padding:.35em 1.2em;border:1px solid var(--line);background:#07111b;color:#dce9f7;font-weight:700;letter-spacing:.24em;text-transform:uppercase;font-size:11px}" \
+      "label{display:block;font-size:11px;color:#9fb0c7;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.28em}" \
+      "input,select,button{appearance:none;border:1px solid var(--line-soft);background:#09131d;color:var(--fg);padding:8px 12px;font-size:14px;width:100%;outline:none;border-radius:4px}" \
+      "input::placeholder{color:#5f768f}" \
+      "input:focus-visible,select:focus-visible{border-color:var(--line);box-shadow:0 0 0 2px rgba(29,155,240,.25)}" \
       "input:disabled,select:disabled,button:disabled{opacity:.55;cursor:not-allowed}" \
-      ".btn{width:auto;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.45px;font-weight:800;" \
-      "background:#000;color:#dff;border:2px solid var(--line);padding:8px 12px;font-size:13px;text-decoration:none}" \
-      ".btn-prim{background:#001820}" \
-      ".row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}" \
-      ".list{border:2px solid var(--line);max-height:320px;overflow:auto;margin-top:7px;background:#000}" \
-      ".item{display:flex;gap:8px;justify-content:space-between;align-items:center;padding:9px 11px;border-bottom:2px solid #034}" \
+      ".btn{width:auto;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-transform:uppercase;letter-spacing:.28em;font-weight:700;" \
+      "background:#0c1d2a;color:#dce9f7;border:1px solid var(--line-soft);padding:9px 16px;font-size:12px;text-decoration:none;border-radius:4px;transition:background .15s ease,border-color .15s ease}" \
+      ".btn:hover{border-color:var(--line);background:#102436}" \
+      ".btn-prim{background:#112c3f;color:#f1f7fd;border-color:var(--line)}" \
+      ".row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}" \
+      "#langSeg{display:flex;gap:6px;border:1px solid var(--line-soft);border-radius:4px;padding:2px;background:#0b1824}" \
+      ".list{border:1px solid var(--line-soft);max-height:320px;overflow:auto;margin-top:10px;background:#08121c;border-radius:4px}" \
+      ".item{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid rgba(29,155,240,.12)}" \
       ".item:last-child{border-bottom:none}" \
-      ".item:hover{background:#001018}" \
-      ".item.selected{outline:2px solid var(--line2)}" \
-      ".item .left{display:flex;gap:8px;align-items:center;min-width:0}" \
-      ".lock{width:13px;height:13px;display:inline-block;color:cyan}" \
-      ".ssid{font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#eef3f7;font-size:14px}" \
-      ".meta{display:flex;gap:8px;align-items:center;font-size:12px;color:#8ad}" \
-      ".centerWrap{min-height:100vh;display:grid;place-items:center;padding:16px}" \
-      ".cardCenter{max-width:420px;width:100%}" \
-      ".powerCard{display:flex;flex-direction:column;gap:18px;padding-top:24px}" \
-      ".powerState{font-size:22px;font-weight:800;display:flex;align-items:center;gap:12px}" \
-      ".powerBtn{position:relative;display:inline-flex;align-items:center;gap:10px;padding:12px 26px;border-radius:999px;font-weight:900;font-size:15px;" \
-      "text-transform:uppercase;letter-spacing:.4px;background:linear-gradient(135deg,#0ff,#08f);color:#00151f;border:2px solid var(--line);" \
-      "box-shadow:0 12px 28px rgba(0,255,255,0.2);transition:transform .15s ease,box-shadow .15s ease}" \
-      ".powerBtn.off{background:linear-gradient(135deg,#ffe08a,#ffb347);color:#321}" \
-      ".powerBtn:active{transform:translateY(1px);box-shadow:0 4px 12px rgba(0,0,0,.35)}" \
-      ".statusNote{font-size:13px;color:#8ad}" \
-      "footer{margin-top:32px;font-size:13px;color:#94a3b8;text-align:center}";
+      ".item:hover{background:#0f1d29}" \
+      ".item.selected{border:1px solid var(--line);background:#12293d}" \
+      ".item .left{display:flex;gap:10px;align-items:center;min-width:0}" \
+      ".lock{width:13px;height:13px;display:inline-block;color:#49a9ff}" \
+      ".ssid{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#eaf2fb;font-size:14px}" \
+      ".meta{display:flex;gap:8px;align-items:center;font-size:12px;color:#7f93ab}" \
+      ".centerWrap{min-height:100vh;display:grid;place-items:center;padding:32px}" \
+      ".cardCenter{max-width:420px;width:100%;padding:28px 24px;background:var(--panel);border:1px solid var(--line-soft);box-shadow:0 24px 44px rgba(0,0,0,.45);position:relative}" \
+      ".togglePanel{display:flex;flex-direction:column;gap:22px;padding-top:28px}" \
+      ".powerState{font-size:22px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}" \
+      ".toggleWrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}" \
+      ".toggleSquare{position:relative;width:160px;height:48px;padding:0;border:1px solid var(--line-soft);background:#081520;color:var(--mut);text-transform:uppercase;letter-spacing:.2em;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:border-color .18s ease,color .18s ease}" \
+      ".toggleSquare .toggleLabel{z-index:1;font-size:11px;letter-spacing:.2em;text-transform:uppercase}" \
+      ".toggleSquare .toggleKnob{position:absolute;top:5px;left:5px;width:calc(50% - 10px);height:calc(100% - 10px);border-radius:4px;border:1px solid var(--line);background:rgba(29,155,240,.18);transform:translateX(0);transition:transform .18s ease,background .18s ease}" \
+      ".toggleSquare.is-on{color:#f1f7fd;border-color:var(--line)}" \
+      ".toggleSquare:disabled{opacity:.65;cursor:wait}" \
+      ".toggleSquare.is-on .toggleKnob{transform:translateX(100%);background:rgba(29,155,240,.6)}" \
+      ".statusNote{font-size:13px;color:#7f93ab;line-height:1.5}" \
+      "footer{margin-top:40px;font-size:11px;color:#5f728a;text-align:center;letter-spacing:.24em;text-transform:uppercase}";
 }
+
 
 static String i18nHead(const String &pageKey) {
   String s = "<script>var __PAGE='" + pageKey + "',__DEF_LANG='" + savedLang + "';</script>";
@@ -279,9 +272,8 @@ var I={
   home_btn:"Главная",settings_btn:"Настройки",logout:"Выйти",
   wifi:"Wi-Fi",scan:"Сканировать",none:"Сети не найдены",ssid:"SSID",pass:"Пароль",save:"Сохранить и подключиться",
   disconnect:"Отключиться",forget:"Забыть Wi-Fi",connectedNow:"Подключено к",needDisconnect:"Чтобы подключиться к другой сети, сначала отключитесь.",
-  object_panel:"Пульт объекта",object_on:"💡 Свет включен",object_off:"🌑 Свет выключен",
-  object_turn_on:"⚡ Включить",object_turn_off:"⏻ Выключить",object_updated:"Обновлено",
-  refresh:"Обновить",api_secret:"Секрет для Telegram",secret_save:"Сохранить секрет",secret_hint:"Используйте этот секрет в настройках бота, чтобы запросы были защищены.",
+  object_panel:"Пульт объекта",object_on:"Свет включен",object_off:"Свет выключен",
+  object_turn_on:"Включить",object_turn_off:"Выключить",object_updated:"Обновлено",
   history_none:"История отсутствует",
   login:"Вход",enter:"Войти",wrong:"Неверный пароль",login_pass_ph:"Пароль для входа",
   security:"Безопасность",newPass:"Новый пароль входа (1–8)",changePass:"Сменить пароль",
@@ -291,7 +283,6 @@ var I={
   status_block:"Текущее состояние",
   actor_bot:"Телеграм",
   object_refresh:"Обновить",
-  secret_set:"Текущий секрет",
   forget_hint:"Для подключения к другой сети сначала отключитесь."
  },
  uk:{
@@ -299,9 +290,8 @@ var I={
   home_btn:"Головна",settings_btn:"Налаштування",logout:"Вийти",
   wifi:"Wi-Fi",scan:"Сканувати",none:"Мережі не знайдені",ssid:"SSID",pass:"Пароль",save:"Зберегти та підключитись",
   disconnect:"Відʼєднатись",forget:"Забути Wi-Fi",connectedNow:"Підключено до",needDisconnect:"Щоб підключитись до іншої мережі, спершу відʼєднайтесь.",
-  object_panel:"Пульт об'єкта",object_on:"💡 Світло увімкнено",object_off:"🌑 Світло вимкнено",
-  object_turn_on:"⚡ Увімкнути",object_turn_off:"⏻ Вимкнути",object_updated:"Оновлено",
-  refresh:"Оновити",api_secret:"Секрет для Telegram",secret_save:"Зберегти секрет",secret_hint:"Використовуйте секрет у боті, щоб захистити запити.",
+  object_panel:"Пульт об'єкта",object_on:"Світло увімкнено",object_off:"Світло вимкнено",
+  object_turn_on:"Увімкнути",object_turn_off:"Вимкнути",object_updated:"Оновлено",
   history_none:"Історія відсутня",
   login:"Вхід",enter:"Увійти",wrong:"Невірний пароль",login_pass_ph:"Пароль для входу",
   security:"Безпека",newPass:"Новий пароль входу (1–8)",changePass:"Змінити пароль",
@@ -311,7 +301,6 @@ var I={
   status_block:"Поточний стан",
   actor_bot:"Telegram",
   object_refresh:"Оновити",
-  secret_set:"Поточний секрет",
   forget_hint:"Щоб підключитись до іншої мережі, спершу відʼєднайтесь."
  },
  en:{
@@ -319,9 +308,8 @@ var I={
   home_btn:"Home",settings_btn:"Settings",logout:"Logout",
   wifi:"Wi-Fi",scan:"Scan",none:"No networks found",ssid:"SSID",pass:"Password",save:"Save & Connect",
   disconnect:"Disconnect",forget:"Forget Wi-Fi",connectedNow:"Connected to",needDisconnect:"To join another network, please disconnect first.",
-  object_panel:"Object control",object_on:"💡 Light is ON",object_off:"🌑 Light is OFF",
-  object_turn_on:"⚡ Turn on",object_turn_off:"⏻ Turn off",object_updated:"Updated",
-  refresh:"Refresh",api_secret:"Telegram secret",secret_save:"Save secret",secret_hint:"Use this secret in the bot so requests stay protected.",
+  object_panel:"Object control",object_on:"Light is ON",object_off:"Light is OFF",
+  object_turn_on:"Turn on",object_turn_off:"Turn off",object_updated:"Updated",
   history_none:"No history yet",
   login:"Login",enter:"Enter",wrong:"Wrong password",login_pass_ph:"Login password",
   security:"Security",newPass:"New login password (1–8)",changePass:"Change password",
@@ -331,7 +319,6 @@ var I={
   status_block:"Current status",
   actor_bot:"Telegram",
   object_refresh:"Refresh",
-  secret_set:"Current secret",
   forget_hint:"Disconnect first to join another network."
  }
 };
@@ -366,18 +353,16 @@ static String htmlHeader(const String &title, const String &pageKey) {
   String s = "<!doctype html><html lang='" + savedLang + "'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1'>";
   s += "<title>" + title + "</title><style>" + baseCss() + "</style>" + i18nHead(pageKey) + "</head><body>";
   s += "<div class='wrap'><header>";
-  s += "<div class='brand'><div class='logo'><span>SRC</span></div><div>";
-  s += "<h1 id='ttl' data-i18n='title_" + pageKey + "'>" + title + "</h1><div class='kv'>SAAK · SRKLink</div>";
-  s += "</div></div>";
+  s += "<h1 id='ttl' data-i18n='title_" + pageKey + "'>" + title + "</h1>";
   s += "<div class='row'>";
-  s += "<div class='row' id='langSeg' style='border:2px solid var(--line);padding:2px'>";
+  s += "<div class='row' id='langSeg'>";
   s += "<button type='button' data-lang-btn='ru' class='btn'>РУС</button>";
   s += "<button type='button' data-lang-btn='uk' class='btn'>УКР</button>";
   s += "<button type='button' data-lang-btn='en' class='btn'>EN</button>";
   s += "</div>";
   s += "<a href='/' class='btn'><span data-i18n='home_btn'>Home</span></a>";
   s += "<a href='/settings' class='btn btn-prim'><span data-i18n='settings_btn'>Settings</span></a>";
-  s += "<form method='POST' action='/logout' style='margin-left:8px'><button class='btn' type='submit'><span data-i18n='logout'>Logout</span></button></form>";
+  s += "<form method='POST' action='/logout'><button class='btn' type='submit'><span data-i18n='logout'>Logout</span></button></form>";
   s += "</div></header>";
   return s;
 }
@@ -387,18 +372,17 @@ static String htmlHeaderLogin(const String &title) {
   s += "<title>" + title + "</title><style>" + baseCss() + "</style>" + i18nHead("login") + "</head><body>";
   s += "<main class='centerWrap'><div class='card cardCenter'>";
   s += "<div class='titleBar' id='ttl' data-i18n='title_login'>" + title + "</div>";
-  s += "<div class='kv'>SAAK · SRKLink</div>";
-  s += "<div class='row' style='margin-top:10px'><div class='row' id='langSeg' style='border:2px solid var(--line);padding:2px'>";
+  s += "<div class='row' id='langSeg'>";
   s += "<button type='button' data-lang-btn='ru' class='btn'>РУС</button>";
   s += "<button type='button' data-lang-btn='uk' class='btn'>УКР</button>";
   s += "<button type='button' data-lang-btn='en' class='btn'>EN</button>";
-  s += "</div></div>";
+  s += "</div>";
   s += "</div></main>";
   return s;
 }
 
 static String htmlFooter() {
-  return "<footer>© SAAK • SRKLink</footer></div></body></html>";
+  return "<footer>SRKLink Control</footer></div></body></html>";
 }
 static void pageLogin(bool wrong) {
   String s = htmlHeaderLogin("SRKLink • Login");
@@ -423,72 +407,35 @@ static void pageHome() {
   }
   String s = htmlHeader("SRKLink • Home", "home");
   s += "<div class='grid'>";
-  s += "<div class='card powerCard'><div class='titleBar' data-i18n='object_panel'>Пульт объекта</div>";
+  s += "<div class='card togglePanel'><div class='titleBar' data-i18n='object_panel'>Пульт объекта</div>";
   s += "<div class='powerState' id='powerState'>—</div>";
   s += "<div class='statusNote' id='powerMeta'>—</div>";
-  s += "<div class='row'><button class='powerBtn' id='toggleBtn'><span id='toggleLabel'>—</span></button>";
+  s += "<div class='toggleWrap'><button class='toggleSquare' id='toggleBtn'><span class='toggleLabel' id='toggleLabel'>—</span><span class='toggleKnob'></span></button>";
   s += "<button class='btn' id='refreshBtn' data-i18n='refresh'>Refresh</button></div>";
   s += "</div>";
-  s += "<div class='card'><div class='titleBar' data-i18n='api_secret'>Секрет для Telegram</div>";
-  s += "<div class='kv' style='margin-top:18px'><span data-i18n='secret_hint'>Используйте этот секрет в настройках бота, чтобы запросы были защищены.</span></div>";
-  s += "<label data-i18n='secret_set'>Current secret</label><input id='secretValue' placeholder='secret'>";
-  s += "<div class='row' style='margin-top:8px'><button class='btn btn-prim' id='secretSave'><span data-i18n='secret_save'>Save secret</span></button></div>";
+  s += "<div class='card'><div class='titleBar' data-i18n='status_block'>Статус</div>";
+  s += "<div class='kv' id='powerSummary'>—</div>";
   s += "</div></div>";
+
   s += R"HTML(
 <script>
 const $=id=>document.getElementById(id);
 let currentState='off';
 const powerState=$('powerState');
 const powerMeta=$('powerMeta');
+const powerSummary=$('powerSummary');
 const toggleBtn=$('toggleBtn');
 const toggleLabel=$('toggleLabel');
 const refreshBtn=$('refreshBtn');
-const secretValue=$('secretValue');
-const secretSave=$('secretSave');
 function text(key){var L=document.documentElement.lang||'ru';return (I[L]&&I[L][key])||(I['ru'][key])||key;}
-function formatMeta(d){
-  if(!d.updated_at){return '—';}
-  var actor=d.updated_by?d.updated_by:'—';
-  return text('object_updated')+': '+d.updated_at+(actor&&actor!=='—' ? ' • '+actor : '');
-}
-function applyState(d){
-  currentState = (d.state==='on')?'on':'off';
-  powerState.textContent = currentState==='on'?text('object_on'):text('object_off');
-  toggleLabel.textContent = currentState==='on'?text('object_turn_off'):text('object_turn_on');
-  if(currentState==='on'){ toggleBtn.classList.add('off'); }
-  else{ toggleBtn.classList.remove('off'); }
-  powerMeta.textContent = formatMeta(d);
-  if(typeof d.secret_set!=='undefined'){ secretValue.value=d.secret_set||''; }
-}
-async function loadState(){
-  try{
-    const r=await fetch('/api/state');
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const data=await r.json();
-    applyState(data);
-  }catch(e){ powerMeta.textContent=text('fail')+': '+e.message; }
-}
-async function toggle(){
-  const desired = currentState==='on'? 'off':'on';
-  toggleBtn.disabled=true; toggleBtn.classList.add('disabled');
-  try{
-    const r=await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:desired,actor:'Web UI'})});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const data=await r.json();
-    applyState(data);
-  }catch(e){ powerMeta.textContent=text('fail')+': '+e.message; }
-  toggleBtn.disabled=false; toggleBtn.classList.remove('disabled');
-}
-async function saveSecret(){
-  try{
-    const r=await fetch('/api/secret',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'secret='+encodeURIComponent(secretValue.value||'')});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    powerMeta.textContent=text('saved');
-  }catch(e){ powerMeta.textContent=text('fail')+': '+e.message; }
-}
+function actorName(d){if(!d) return '—'; if(d.updated_by_name) return d.updated_by_name; if(d.updated_by) return d.updated_by; return '—';}
+function formatMeta(d){if(!d||!d.updated_at){return '—';} var actor=actorName(d); return text('object_updated')+': '+d.updated_at+(actor&&actor!=='—' ? ' • '+actor : '');}
+function formatSummary(d){var actor=actorName(d); var time=(d&&d.updated_at)?d.updated_at:'—'; var stateLabel=currentState==='on'?text('object_on'):text('object_off'); return stateLabel+' • '+actor+' • '+time;}
+function applyState(d){d=d||{}; currentState=(d.state==='on')?'on':'off'; var isOn=currentState==='on'; powerState.textContent=isOn?text('object_on'):text('object_off'); toggleLabel.textContent=isOn?text('object_turn_off'):text('object_turn_on'); toggleBtn.classList.toggle('is-on',isOn); powerMeta.textContent=formatMeta(d); if(powerSummary){ powerSummary.textContent=formatSummary(d);} }
+async function loadState(){ try{ const r=await fetch('/api/state'); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json(); applyState(data); }catch(e){ powerMeta.textContent=text('fail')+': '+e.message; if(powerSummary){ powerSummary.textContent='—'; } } }
+async function toggle(){ const desired=currentState==='on'?'off':'on'; toggleBtn.disabled=true; try{ const r=await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:desired,actor:'Web UI'})}); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json(); applyState(data); }catch(e){ powerMeta.textContent=text('fail')+': '+e.message; } toggleBtn.disabled=false; }
 refreshBtn.addEventListener('click',loadState);
 toggleBtn.addEventListener('click',toggle);
-secretSave.addEventListener('click',saveSecret);
 loadState();
 </script>
 )HTML";
@@ -872,17 +819,12 @@ static void handleApiStatePost() {
     sendJson(400, "{\"ok\":false,\"error\":\"empty_body\"}");
     return;
   }
-  String providedSecret = parseJsonValue(body, "secret");
-  if (apiSecret.length() && providedSecret != apiSecret) {
-    sendJson(401, "{\"ok\":false,\"error\":\"unauthorized\"}");
-    return;
-  }
   String stateValue = parseJsonValue(body, "state");
   stateValue.toLowerCase();
   bool requested = (stateValue == "on" || stateValue == "1" || stateValue == "true");
   String actor = parseJsonValue(body, "actor");
   if (!actor.length()) {
-    actor = providedSecret.length() ? "Telegram" : "API";
+    actor = "API";
   }
   String when = parseJsonValue(body, "timestamp");
   if (!when.length()) {
@@ -890,17 +832,6 @@ static void handleApiStatePost() {
   }
   persistRelayState(requested, actor, when);
   sendJson(200, currentStateJson());
-}
-
-static void handleSecretUpdate() {
-  if (!isAuthorized()) {
-    server.send(401, "text/plain", "unauthorized");
-    return;
-  }
-  String secret = trimCopy(server.hasArg("secret") ? server.arg("secret") : "");
-  apiSecret = secret;
-  prefs.putString("apiSecret", apiSecret);
-  server.send(200, "text/plain", "OK");
 }
 
 // ================= Routing =================
@@ -938,7 +869,6 @@ static void startPortal() {
 
   server.on("/api/state", HTTP_GET, handleApiStateGet);
   server.on("/api/state", HTTP_POST, handleApiStatePost);
-  server.on("/api/secret", HTTP_POST, handleSecretUpdate);
   server.on("/api/status", HTTP_GET, handleGetStatus);
 
   server.on("/scan", HTTP_GET, handleScan);
@@ -993,7 +923,6 @@ void setup() {
   if (apSsid.length() < 1) apSsid = DEFAULT_AP_SSID;
   if (apPass.length() < 8) apPass = DEFAULT_AP_PASS;
   tzOffsetMin = prefs.getInt("tzMin", 180);
-  apiSecret = prefs.getString("apiSecret", "");
   relayState = prefs.getBool("relayOn", false);
   relayUpdatedBy = prefs.getString("relayBy", "");
   relayUpdatedAt = prefs.getString("relayAt", "");

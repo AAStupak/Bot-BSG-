@@ -3020,6 +3020,13 @@ def object_control_default_state() -> dict:
     }
 
 
+def object_control_default_config() -> dict:
+    return {
+        "endpoint": "http://192.168.4.1/api/state",
+        "timeout": 7,
+    }
+
+
 def _object_control_normalize_state(payload: Optional[dict]) -> dict:
     state = object_control_default_state()
     if isinstance(payload, dict):
@@ -3039,7 +3046,9 @@ def _object_control_normalize_state(payload: Optional[dict]) -> dict:
 def load_object_control_state() -> dict:
     ensure_dirs()
     if not os.path.exists(OBJECT_CONTROL_STATE_FILE):
-        return object_control_default_state()
+        default_state = object_control_default_state()
+        atomic_write_json(OBJECT_CONTROL_STATE_FILE, default_state)
+        return default_state
     try:
         with open(OBJECT_CONTROL_STATE_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -3061,7 +3070,9 @@ def object_control_state() -> dict:
 def load_object_control_config() -> dict:
     ensure_dirs()
     if not os.path.exists(OBJECT_CONTROL_CONFIG_FILE):
-        return {}
+        default_config = object_control_default_config()
+        atomic_write_json(OBJECT_CONTROL_CONFIG_FILE, default_config)
+        return default_config
     try:
         with open(OBJECT_CONTROL_CONFIG_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -3158,9 +3169,6 @@ async def object_control_send_command(new_state: str) -> Dict[str, Any]:
         return {"ok": False, "error": "not_configured"}
 
     payload = {"state": new_state}
-    secret = config.get("secret")
-    if secret:
-        payload["secret"] = secret
     timeout = config.get("timeout")
     try:
         timeout_value = float(timeout) if timeout is not None else 7.0
