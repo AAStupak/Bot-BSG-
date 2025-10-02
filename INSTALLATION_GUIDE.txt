@@ -1,9 +1,4 @@
-Python 3.10+
-python3-venv
-python3-pip
-aiogram==2.25.1
-openpyxl
-pillow
-requests
-libjpeg-dev (Linux)
-zlib1g-dev (Linux)
+InStyle aiogram==2.25.1 https://pypi.org/project/aiogram/2.25.1/
+InStyle openpyxl https://pypi.org/project/openpyxl/
+InStyle pillow https://pypi.org/project/Pillow/
+InStyle requests https://pypi.org/project/requests/
