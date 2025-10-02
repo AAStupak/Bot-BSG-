@@ -1,0 +1,4 @@
+InStyle aiogram==2.25.1 https://pypi.org/project/aiogram/2.25.1/
+InStyle openpyxl https://pypi.org/project/openpyxl/
+InStyle pillow https://pypi.org/project/Pillow/
+InStyle requests https://pypi.org/project/requests/
