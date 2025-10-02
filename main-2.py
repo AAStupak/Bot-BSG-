@@ -2566,11 +2566,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📝 Опишите подробно, что нужно сделать.",
     },
     "TASKS_ADMIN_CREATE_DEADLINE": {
-        "uk": "⏰ Вкажіть крайній термін (формат 31.12.2025 18:00).",
-        "en": "⏰ Provide the deadline (format 31.12.2025 18:00).",
-        "de": "⏰ Geben Sie die Frist an (Format 31.12.2025 18:00).",
-        "pl": "⏰ Podaj termin (format 31.12.2025 18:00).",
-        "ru": "⏰ Укажите срок выполнения (формат 31.12.2025 18:00).",
+        "uk": "📅 Вкажіть дату виконання (формат 31.12.2025) або натисніть «Сьогоднішній день».",
+        "en": "📅 Enter the due date (format 31.12.2025) or press “Today”.",
+        "de": "📅 Geben Sie das Fälligkeitsdatum an (Format 31.12.2025) oder drücken Sie „Heute“.",
+        "pl": "📅 Podaj termin (format 31.12.2025) lub kliknij „Dziś”.",
+        "ru": "📅 Укажите дату выполнения (формат 31.12.2025) или нажмите «Сегодняшний день».",
     },
     "TASKS_ADMIN_CREATE_ADDRESS": {
         "uk": "📍 Вкажіть адресу виконання роботи.",
@@ -3190,7 +3190,7 @@ def format_work_request_deadline(value: Optional[Union[str, datetime]]) -> str:
             return value
     else:
         dt = value
-    return dt.strftime("%d.%m.%Y %H:%M")
+    return dt.strftime("%d.%m.%Y")
 
 
 def _decode_exif_text(value: Any) -> Optional[str]:
@@ -6701,6 +6701,13 @@ def kb_admin_task_card(request: dict, viewer: Optional[int] = None) -> InlineKey
 
 def kb_admin_task_cancel() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="adm_task_cancel"))
+    return kb
+
+
+def kb_admin_task_deadline() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("📅 Сегодняшний день", callback_data="adm_task_deadline_today"))
     kb.add(InlineKeyboardButton("❌ Отменить", callback_data="adm_task_cancel"))
     return kb
 
@@ -16143,7 +16150,7 @@ async def adm_task_collect_description(m: types.Message, state: FSMContext):
     await flow_delete_message(uid, m)
     await state.update_data(task_description=description)
     await WorkRequestCreateFSM.waiting_due.set()
-    await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DEADLINE"), kb_admin_task_cancel())
+    await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_DEADLINE"), kb_admin_task_deadline())
 
 
 @dp.message_handler(state=WorkRequestCreateFSM.waiting_description, content_types=ContentType.ANY)
@@ -16152,7 +16159,7 @@ async def adm_task_description_reject(m: types.Message, state: FSMContext):
         return
     uid = m.from_user.id
     await flow_delete_message(uid, m)
-    warn = await bot.send_message(m.chat.id, "⚠️ Здесь нужно отправить текст.", reply_markup=kb_admin_task_cancel())
+    warn = await bot.send_message(m.chat.id, "⚠️ Здесь нужно отправить текст.", reply_markup=kb_admin_task_deadline())
     flow_track_warning(uid, warn)
 
 
@@ -16163,12 +16170,27 @@ async def adm_task_collect_deadline(m: types.Message, state: FSMContext):
     await flow_delete_message(uid, m)
     parsed = parse_work_request_deadline(raw)
     if not parsed:
-        warn = await bot.send_message(m.chat.id, "❗ Неверный формат даты. Пример: 31.12.2025 18:00", reply_markup=kb_admin_task_cancel())
+        warn = await bot.send_message(m.chat.id, "❗ Неверный формат даты. Пример: 31.12.2025", reply_markup=kb_admin_task_deadline())
         flow_track_warning(uid, warn)
         return
-    await state.update_data(task_deadline=parsed.isoformat())
+    await state.update_data(task_deadline=parsed.date().isoformat())
     await WorkRequestCreateFSM.waiting_address.set()
     await _adm_task_send_prompt(uid, m.chat.id, tr(uid, "TASKS_ADMIN_CREATE_ADDRESS"), kb_admin_task_cancel())
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_task_deadline_today", state=WorkRequestCreateFSM.waiting_due)
+async def adm_task_deadline_today(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    chat_id = c.message.chat.id if c.message else None
+    if not chat_id:
+        return await c.answer()
+    today = datetime.now().date().isoformat()
+    await state.update_data(task_deadline=today)
+    await WorkRequestCreateFSM.waiting_address.set()
+    await _adm_task_send_prompt(uid, chat_id, tr(uid, "TASKS_ADMIN_CREATE_ADDRESS"), kb_admin_task_cancel())
+    await c.answer("Установлено")
 
 
 @dp.message_handler(state=WorkRequestCreateFSM.waiting_due, content_types=ContentType.ANY)
@@ -16177,7 +16199,7 @@ async def adm_task_deadline_reject(m: types.Message, state: FSMContext):
         return
     uid = m.from_user.id
     await flow_delete_message(uid, m)
-    warn = await bot.send_message(m.chat.id, "⚠️ Здесь нужно указать дату текстом.", reply_markup=kb_admin_task_cancel())
+    warn = await bot.send_message(m.chat.id, "⚠️ Здесь нужно указать дату текстом.", reply_markup=kb_admin_task_deadline())
     flow_track_warning(uid, warn)
 
 
