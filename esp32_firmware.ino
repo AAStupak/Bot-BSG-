@@ -8,6 +8,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <cstring>
+#include <algorithm>
 #include <new>
 
 // Прошивка восстановлена до версии веб-пульта, существовавшей до загрузки
@@ -326,10 +327,10 @@ static String baseCss() {
       "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans',Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;" \
       "-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}body{min-height:100vh}" \
       ".wrap{max-width:1160px;margin:0 auto;padding:16px}" \
-      "header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}" \
+      "header{display:flex;flex-direction:column;align-items:flex-start;gap:12px;margin-bottom:32px}" \
       "h1{margin:0;font-size:17px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--fg)}" \
       ".kv{font-size:12px;color:var(--mut)}" \
-      ".grid{display:grid;gap:16px;grid-template-columns:1fr}" \
+      ".grid{display:grid;gap:16px;grid-template-columns:1fr;margin-top:6px}" \
       "@media(min-width:760px){.grid{grid-template-columns:1fr 1fr}}" \
       "@media(min-width:1040px){.grid{grid-template-columns:2fr 1fr}}" \
       ".card{position:relative;background:var(--panel);padding:18px;border:var(--linew) solid var(--line);box-shadow:0 18px 36px rgba(0,0,0,.32)}" \
@@ -362,10 +363,11 @@ static String baseCss() {
       ".togglePanel{display:flex;flex-direction:column;gap:22px;padding-top:28px}" \
       ".powerState{font-size:22px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}" \
       ".toggleWrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}" \
-      ".toggleSquare{position:relative;width:160px;height:48px;padding:0;border:var(--linew) solid var(--line);background:#000;color:var(--mut);text-transform:uppercase;letter-spacing:.24em;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;transition:background .18s ease,color .18s ease}" \
-      ".toggleSquare .toggleLabel{z-index:1;font-size:11px;letter-spacing:.24em;text-transform:uppercase}" \
-      ".toggleSquare .toggleKnob{position:absolute;top:4px;left:4px;width:calc(50% - 8px);height:calc(100% - 8px);border:var(--linew) solid var(--line);background:rgba(0,255,255,.15);transform:translateX(0);transition:transform .18s ease,background .18s ease}" \
+      ".toggleSquare{position:relative;width:160px;height:48px;padding:0;border:var(--linew) solid var(--line);background:#000;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .18s ease,color .18s ease}" \
+      ".toggleSquare .toggleIcon{z-index:1;font-size:20px;line-height:1;transform:rotate(-35deg);transition:transform .2s ease,color .18s ease}" \
+      ".toggleSquare .toggleKnob{position:absolute;top:4px;left:4px;width:calc(50% - 8px);height:calc(100% - 8px);border:var(--linew) solid var(--line);background:rgba(0,255,255,.18);transform:translateX(0);transition:transform .18s ease,background .18s ease}" \
       ".toggleSquare.is-on{color:#111;background:var(--accent)}" \
+      ".toggleSquare.is-on .toggleIcon{transform:rotate(0deg);color:#111}" \
       ".toggleSquare:disabled{opacity:.6;cursor:wait}" \
       ".toggleSquare.is-on .toggleKnob{transform:translateX(100%);background:#000}" \
       ".statusNote{font-size:13px;color:var(--mut);line-height:1.5}" \
@@ -562,7 +564,7 @@ static void pageHome() {
   s += "<div class='card togglePanel'><div class='titleBar' data-i18n='object_panel'>Пульт объекта</div>";
   s += "<div class='powerState' id='powerState'>—</div>";
   s += "<div class='statusNote' id='powerMeta'>—</div>";
-  s += "<div class='toggleWrap'><button class='toggleSquare' id='toggleBtn'><span class='toggleLabel' id='toggleLabel'>—</span><span class='toggleKnob'></span></button>";
+  s += "<div class='toggleWrap'><button class='toggleSquare' id='toggleBtn' type='button'><span class='toggleIcon' aria-hidden='true'>✓</span><span class='toggleKnob'></span></button>";
   s += "<button class='btn' id='refreshBtn' data-i18n='object_refresh'>Refresh</button></div>";
   s += "</div>";
   s += "<div class='card'><div class='titleBar' data-i18n='status_block'>Статус</div>";
@@ -579,7 +581,6 @@ const powerMeta=$('powerMeta');
 const powerSummary=$('powerSummary');
 const wifiSummary=$('wifiSummary');
 const toggleBtn=$('toggleBtn');
-const toggleLabel=$('toggleLabel');
 const refreshBtn=$('refreshBtn');
 function dict(){var L=document.documentElement.lang||'ru';return I[L]||I['ru'];}
 function text(key){var t=dict();return t[key]||key;}
@@ -595,7 +596,7 @@ function wifiMessage(d){var t=dict();if(!d) return t.wifi_status_unknown;var cod
 function actorName(d){if(!d) return '—'; if(d.updated_by_name) return d.updated_by_name; if(d.updated_by) return d.updated_by; return '—';}
 function formatMeta(d){if(!d||!d.updated_at){return '—';} var actor=actorName(d); return text('object_updated')+': '+d.updated_at+(actor&&actor!=='—' ? ' • '+actor : '');}
 function formatSummary(d){var actor=actorName(d); var time=(d&&d.updated_at)?d.updated_at:'—'; var stateLabel=currentState==='on'?text('object_on'):text('object_off'); return stateLabel+' • '+actor+' • '+time;}
-function applyState(d){d=d||{}; currentState=(d.state==='on')?'on':'off'; var isOn=currentState==='on'; powerState.textContent=isOn?text('object_on'):text('object_off'); toggleLabel.textContent=isOn?text('object_turn_off'):text('object_turn_on'); toggleBtn.classList.toggle('is-on',isOn); powerMeta.textContent=formatMeta(d); if(powerSummary){ powerSummary.textContent=formatSummary(d);} }
+function applyState(d){d=d||{}; currentState=(d.state==='on')?'on':'off'; var isOn=currentState==='on'; powerState.textContent=isOn?text('object_on'):text('object_off'); toggleBtn.classList.toggle('is-on',isOn); toggleBtn.setAttribute('aria-label', isOn?text('object_turn_off'):text('object_turn_on')); toggleBtn.title=isOn?text('object_turn_off'):text('object_turn_on'); powerMeta.textContent=formatMeta(d); if(powerSummary){ powerSummary.textContent=formatSummary(d);} }
 async function loadState(){ try{ const r=await fetch('/api/state'); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json(); applyState(data); }catch(e){ powerMeta.textContent=text('fail')+': '+e.message; if(powerSummary){ powerSummary.textContent='—'; } } }
 async function loadSystem(){ try{ const r=await fetch('/api/status'); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json(); if(wifiSummary){ wifiSummary.textContent=wifiMessage(data); } }catch(e){ if(wifiSummary){ wifiSummary.textContent=text('fail')+': '+e.message; } } }
 async function toggle(){ const desired=currentState==='on'?'off':'on'; toggleBtn.disabled=true; try{ const r=await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:desired,actor:'Web UI'})}); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json(); applyState(data); }catch(e){ powerMeta.textContent=text('fail')+': '+e.message; } toggleBtn.disabled=false; }
@@ -925,8 +926,9 @@ static void handleScan() {
     wifi_scan_config_t config;
     std::memset(&config, 0, sizeof(config));
     config.show_hidden = true;
-    config.scan_type = WIFI_SCAN_TYPE_PASSIVE;
-    config.scan_time.passive = 220;
+    config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    config.scan_time.active.min = 240;
+    config.scan_time.active.max = 480;
 
     esp_wifi_scan_stop();
     esp_wifi_clear_ap_list();
@@ -960,6 +962,9 @@ static void handleScan() {
         server.send(500, "application/json", "{\"error\":\"scan_failed\"}");
         return;
       }
+      std::sort(records, records + count, [](const wifi_ap_record_t &a, const wifi_ap_record_t &b) {
+        return a.rssi > b.rssi;
+      });
     }
 
     String json = "{\"ok\":true,\"count\":" + String(count) + ",\"networks\":[";
@@ -973,7 +978,9 @@ static void handleScan() {
     }
     json += "]}";
 
-    delete[] records;
+    if (records) {
+      delete[] records;
+    }
     esp_wifi_set_ps(previousPs);
     esp_wifi_clear_ap_list();
     server.send(200, "application/json", json);
