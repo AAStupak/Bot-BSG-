@@ -315,7 +315,7 @@ static void handleCaptiveRedirect() {
 // ================= Localization =================
 static String baseCss() {
   return
-      ":root{--bg:#000;--panel:#000;--fg:#e9eef3;--mut:#a6b2c0;--line:#0ff;--line2:#2aa9b3;--title:#ff0;--accent:#ffd400}" \
+      ":root{--bg:#000;--panel:#000;--fg:#e9eef3;--mut:#a6b2c0;--line:#0ff;--line2:#2aa9b3;--title:#ff0;--accent:#ffd400;--linew:1.5px}" \
       "*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);" \
       "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans',Ubuntu,Cantarell,'Helvetica Neue',Arial,sans-serif;" \
       "-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}body{min-height:100vh}" \
@@ -326,41 +326,44 @@ static String baseCss() {
       ".grid{display:grid;gap:16px;grid-template-columns:1fr}" \
       "@media(min-width:760px){.grid{grid-template-columns:1fr 1fr}}" \
       "@media(min-width:1040px){.grid{grid-template-columns:2fr 1fr}}" \
-      ".card{position:relative;background:var(--panel);padding:18px;border:2px solid var(--line);box-shadow:0 18px 40px rgba(0,0,0,.35)}" \
-      ".titleBar{position:absolute;left:12px;top:-14px;padding:.35em 1.2em;border:2px solid var(--line);background:var(--title);color:#111;font-weight:800;letter-spacing:.2em;text-transform:uppercase;font-size:11px}" \
+      ".card{position:relative;background:var(--panel);padding:18px;border:var(--linew) solid var(--line);box-shadow:0 18px 36px rgba(0,0,0,.32)}" \
+      ".titleBar{position:absolute;left:12px;top:-14px;padding:.35em 1.2em;border:var(--linew) solid var(--line);background:var(--title);color:#111;font-weight:800;letter-spacing:.2em;text-transform:uppercase;font-size:11px}" \
       "label{display:block;font-size:11px;color:#9fb0c7;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.28em}" \
-      "input,select,button{appearance:none;border:2px solid var(--line);background:#000;color:var(--fg);padding:8px 12px;font-size:14px;width:100%;outline:none}" \
+      "input,select,button{appearance:none;border:var(--linew) solid var(--line);background:#000;color:var(--fg);padding:8px 12px;font-size:14px;width:100%;outline:none}" \
       "input::placeholder{color:#6aa3a8}" \
-      "input:focus-visible,select:focus-visible{outline:2px solid var(--line2);outline-offset:2px}" \
+      "input:focus-visible,select:focus-visible{outline:var(--linew) solid var(--line2);outline-offset:2px}" \
       "input:disabled,select:disabled,button:disabled{opacity:.55;cursor:not-allowed}" \
-      ".btn{width:auto;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-transform:uppercase;letter-spacing:.35em;font-weight:800;" \
-      "background:#000;color:var(--fg);border:2px solid var(--line);padding:9px 16px;font-size:12px;text-decoration:none}" \
+      ".btn{width:auto;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-transform:uppercase;letter-spacing:.28em;font-weight:800;" \
+      "background:#000;color:var(--fg);border:var(--linew) solid var(--line);padding:8px 14px;font-size:12px;text-decoration:none}" \
       ".btn:hover{background:#001820}" \
       ".btn-prim{background:#001820}" \
       ".row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}" \
-      "#langSeg{display:flex;gap:6px;border:2px solid var(--line);padding:2px;background:#000}" \
-      ".list{border:2px solid var(--line);max-height:320px;overflow:auto;margin-top:10px;background:#000}" \
-      ".item{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:2px solid rgba(0,255,255,.25)}" \
+      "#langSeg{display:flex;gap:6px;border:var(--linew) solid var(--line);padding:4px;background:#000;border-radius:10px}" \
+      "#langSeg .langBtn{border:var(--linew) solid transparent;background:rgba(0,0,0,.6);color:var(--fg);padding:6px 10px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;border-radius:6px;min-width:46px;text-align:center}" \
+      "#langSeg .langBtn.active{background:var(--accent);color:#111;border-color:var(--line)}" \
+      "#langSeg .langBtn:not(.active){border-color:rgba(0,255,255,.35)}" \
+      ".list{border:var(--linew) solid var(--line);max-height:320px;overflow:auto;margin-top:10px;background:#000}" \
+      ".item{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:var(--linew) solid rgba(0,255,255,.25)}" \
       ".item:last-child{border-bottom:none}" \
       ".item:hover{background:#001018}" \
-      ".item.selected{outline:2px solid var(--line2)}" \
+      ".item.selected{outline:var(--linew) solid var(--line2)}" \
       ".item .left{display:flex;gap:10px;align-items:center;min-width:0}" \
       ".lock{width:13px;height:13px;display:inline-block;color:var(--line)}" \
       ".ssid{font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#eef3f7;font-size:14px}" \
       ".meta{display:flex;gap:8px;align-items:center;font-size:12px;color:#8ad}" \
       ".centerWrap{min-height:100vh;display:grid;place-items:center;padding:24px}" \
-      ".cardCenter{max-width:420px;width:100%;padding:26px 24px;background:var(--panel);border:2px solid var(--line);position:relative;box-shadow:0 24px 44px rgba(0,0,0,.5)}" \
+      ".cardCenter{max-width:420px;width:100%;padding:26px 24px;background:var(--panel);border:var(--linew) solid var(--line);position:relative;box-shadow:0 24px 44px rgba(0,0,0,.5)}" \
       ".togglePanel{display:flex;flex-direction:column;gap:22px;padding-top:28px}" \
       ".powerState{font-size:22px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}" \
       ".toggleWrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}" \
-      ".toggleSquare{position:relative;width:160px;height:48px;padding:0;border:2px solid var(--line);background:#000;color:var(--mut);text-transform:uppercase;letter-spacing:.28em;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;transition:background .18s ease,color .18s ease}" \
-      ".toggleSquare .toggleLabel{z-index:1;font-size:11px;letter-spacing:.28em;text-transform:uppercase}" \
-      ".toggleSquare .toggleKnob{position:absolute;top:4px;left:4px;width:calc(50% - 8px);height:calc(100% - 8px);border:2px solid var(--line);background:rgba(0,255,255,.15);transform:translateX(0);transition:transform .18s ease,background .18s ease}" \
+      ".toggleSquare{position:relative;width:160px;height:48px;padding:0;border:var(--linew) solid var(--line);background:#000;color:var(--mut);text-transform:uppercase;letter-spacing:.24em;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;transition:background .18s ease,color .18s ease}" \
+      ".toggleSquare .toggleLabel{z-index:1;font-size:11px;letter-spacing:.24em;text-transform:uppercase}" \
+      ".toggleSquare .toggleKnob{position:absolute;top:4px;left:4px;width:calc(50% - 8px);height:calc(100% - 8px);border:var(--linew) solid var(--line);background:rgba(0,255,255,.15);transform:translateX(0);transition:transform .18s ease,background .18s ease}" \
       ".toggleSquare.is-on{color:#111;background:var(--accent)}" \
       ".toggleSquare:disabled{opacity:.6;cursor:wait}" \
       ".toggleSquare.is-on .toggleKnob{transform:translateX(100%);background:#000}" \
       ".statusNote{font-size:13px;color:var(--mut);line-height:1.5}" \
-      "footer{margin-top:32px;font-size:11px;color:var(--mut);text-align:center;letter-spacing:.24em;text-transform:uppercase}";
+      "footer{margin-top:32px;font-size:11px;color:var(--mut);text-align:center;letter-spacing:.24em;text-transform:uppercase}";";
 }
 
 
@@ -372,7 +375,7 @@ var I={
  ru:{
   title_home:"SRKLink • Главная",title_settings:"SRKLink • Настройки",title_login:"SRKLink • Вход",
   home_btn:"Главная",settings_btn:"Настройки",logout:"Выйти",
-  wifi:"Wi-Fi",scan:"Сканировать",none:"Сети не найдены",ssid:"SSID",pass:"Пароль",save:"Сохранить и подключиться",
+  wifi:"Wi-Fi",scan:"Сканировать",none:"Сети не найдены",scan_wait:"Поиск сетей…",scan_error:"Ошибка сканирования",scan_ready:"Найдено сетей:",ssid:"SSID",pass:"Пароль",save:"Сохранить и подключиться",
   disconnect:"Отключиться",forget:"Забыть Wi-Fi",connectedNow:"Подключено к",needDisconnect:"Чтобы подключиться к другой сети, сначала отключитесь.",
   object_panel:"Пульт объекта",object_on:"Свет включен",object_off:"Свет выключен",
   object_turn_on:"Включить",object_turn_off:"Выключить",object_updated:"Обновлено",
@@ -403,7 +406,7 @@ var I={
  uk:{
   title_home:"SRKLink • Головна",title_settings:"SRKLink • Налаштування",title_login:"SRKLink • Вхід",
   home_btn:"Головна",settings_btn:"Налаштування",logout:"Вийти",
-  wifi:"Wi-Fi",scan:"Сканувати",none:"Мережі не знайдені",ssid:"SSID",pass:"Пароль",save:"Зберегти та підключитись",
+  wifi:"Wi-Fi",scan:"Сканувати",none:"Мережі не знайдені",scan_wait:"Пошук мереж…",scan_error:"Помилка сканування",scan_ready:"Знайдено мереж:",ssid:"SSID",pass:"Пароль",save:"Зберегти та підключитись",
   disconnect:"Відʼєднатись",forget:"Забути Wi-Fi",connectedNow:"Підключено до",needDisconnect:"Щоб підключитись до іншої мережі, спершу відʼєднайтесь.",
   object_panel:"Пульт об'єкта",object_on:"Світло увімкнено",object_off:"Світло вимкнено",
   object_turn_on:"Увімкнути",object_turn_off:"Вимкнути",object_updated:"Оновлено",
@@ -434,7 +437,7 @@ var I={
  en:{
   title_home:"SRKLink • Home",title_settings:"SRKLink • Settings",title_login:"SRKLink • Login",
   home_btn:"Home",settings_btn:"Settings",logout:"Logout",
-  wifi:"Wi-Fi",scan:"Scan",none:"No networks found",ssid:"SSID",pass:"Password",save:"Save & Connect",
+  wifi:"Wi-Fi",scan:"Scan",none:"No networks found",scan_wait:"Scanning…",scan_error:"Scan failed",scan_ready:"Networks found:",ssid:"SSID",pass:"Password",save:"Save & Connect",
   disconnect:"Disconnect",forget:"Forget Wi-Fi",connectedNow:"Connected to",needDisconnect:"To join another network, please disconnect first.",
   object_panel:"Object control",object_on:"Light is ON",object_off:"Light is OFF",
   object_turn_on:"Turn on",object_turn_off:"Turn off",object_updated:"Updated",
@@ -497,9 +500,9 @@ static String htmlHeader(const String &title, const String &pageKey) {
   s += "<h1 id='ttl' data-i18n='title_" + pageKey + "'>" + title + "</h1>";
   s += "<div class='row'>";
   s += "<div class='row' id='langSeg'>";
-  s += "<button type='button' data-lang-btn='ru' class='btn'>РУС</button>";
-  s += "<button type='button' data-lang-btn='uk' class='btn'>УКР</button>";
-  s += "<button type='button' data-lang-btn='en' class='btn'>EN</button>";
+  s += "<button type='button' data-lang-btn='ru' class='langBtn'>РУС</button>";
+  s += "<button type='button' data-lang-btn='uk' class='langBtn'>УКР</button>";
+  s += "<button type='button' data-lang-btn='en' class='langBtn'>EN</button>";
   s += "</div>";
   s += "<a href='/' class='btn'><span data-i18n='home_btn'>Home</span></a>";
   s += "<a href='/settings' class='btn btn-prim'><span data-i18n='settings_btn'>Settings</span></a>";
@@ -514,9 +517,9 @@ static String htmlHeaderLogin(const String &title) {
   s += "<main class='centerWrap'><div class='card cardCenter'>";
   s += "<div class='titleBar' id='ttl' data-i18n='title_login'>" + title + "</div>";
   s += "<div class='row' id='langSeg'>";
-  s += "<button type='button' data-lang-btn='ru' class='btn'>РУС</button>";
-  s += "<button type='button' data-lang-btn='uk' class='btn'>УКР</button>";
-  s += "<button type='button' data-lang-btn='en' class='btn'>EN</button>";
+  s += "<button type='button' data-lang-btn='ru' class='langBtn'>РУС</button>";
+  s += "<button type='button' data-lang-btn='uk' class='langBtn'>УКР</button>";
+  s += "<button type='button' data-lang-btn='en' class='langBtn'>EN</button>";
   s += "</div>";
   s += "</div></main>";
   return s;
@@ -656,7 +659,8 @@ function bars(r){ return (r>=-55)?3:(r>=-70)?2:(r>-90)?1:0; }
 function renderScan(d){
   list.innerHTML='';
   if(!(d.networks&&d.networks.length)){
-    list.innerHTML='<div class="item" data-i18n="none">No networks found</div>';
+    list.innerHTML='<div class="item">'+text('none')+'</div>';
+    scanStatus.textContent=text('none');
     return;
   }
   d.networks.forEach(ap=>{
@@ -666,10 +670,36 @@ function renderScan(d){
     row.addEventListener('click',()=>{ if(ap.ssid){ ssid.value=ap.ssid; document.querySelectorAll('.item').forEach(x=>x.classList.remove('selected')); row.classList.add('selected'); } });
     list.appendChild(row);
   });
-  scanStatus.textContent='Found: '+(d.count||0);
+  scanStatus.textContent=text('scan_ready')+' '+(d.count||0);
 }
-async function scanStart(){ scanStatus.textContent='…'; await fetch('/scan?start=1'); if(scanTimer) clearInterval(scanTimer);
-  scanTimer=setInterval(async()=>{ const r=await fetch('/scan'); const d=await r.json(); if(d.running) return; clearInterval(scanTimer); scanTimer=null; renderScan(d); }, 400);
+async function scanStart(){
+  scanStatus.textContent=text('scan_wait');
+  list.innerHTML='<div class="item">'+text('scan_wait')+'</div>';
+  try{
+    const startRes=await fetch('/scan?start=1');
+    if(!startRes.ok) throw new Error('HTTP '+startRes.status);
+  }catch(e){
+    scanStatus.textContent=text('scan_error');
+    list.innerHTML='<div class="item">'+text('scan_error')+'</div>';
+    return;
+  }
+  if(scanTimer) clearInterval(scanTimer);
+  scanTimer=setInterval(async()=>{
+    try{
+      const r=await fetch('/scan');
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      if(d.running) return;
+      clearInterval(scanTimer);
+      scanTimer=null;
+      renderScan(d);
+    }catch(err){
+      clearInterval(scanTimer);
+      scanTimer=null;
+      scanStatus.textContent=text('scan_error');
+      list.innerHTML='<div class="item">'+text('scan_error')+'</div>';
+    }
+  }, 400);
 }
 async function refresh(){
   const r=await fetch('/api/status'); const d=await r.json();
@@ -691,13 +721,20 @@ async function refresh(){
   $('apPass').value=d.apPass||'';
   $('nowLbl').textContent=d.epoch?new Date((d.epoch+(d.tzMin||0)*60)*1000).toLocaleString():'—';
   connRow.textContent=wifiMessage(d);
+  const canDisconnect = d.mode==='sta' || d.connecting;
   if(d.mode==='sta'){
     saveBtn.disabled=true; ssid.disabled=true; pass.disabled=true; disconnectBtn.disabled=false;
     reachHint.innerHTML=`STA IP: <b>${d.staIp||'-'}</b> · Portal: <b>http://${d.apIp||'192.168.4.1'}/</b>`;
   } else {
-    saveBtn.disabled=false; ssid.disabled=false; pass.disabled=false; disconnectBtn.disabled=true;
+    saveBtn.disabled=false; ssid.disabled=false; pass.disabled=false;
     reachHint.innerHTML=`Portal: <b>http://${d.apIp||'192.168.4.1'}/</b>`;
   }
+  if(d.connecting){
+    saveBtn.disabled=true;
+    ssid.disabled=true;
+    pass.disabled=true;
+  }
+  disconnectBtn.disabled=!canDisconnect;
 }
 $('saveBtn').onclick=async()=>{
   try{
@@ -882,7 +919,7 @@ static void handleScan() {
     WiFi.mode(WIFI_AP_STA);
     esp_wifi_set_ps(WIFI_PS_NONE);
     WiFi.scanDelete();
-    WiFi.scanNetworks(true);
+    WiFi.scanNetworks(true, true, false, 7000);
     server.send(200, "application/json", "{\"ok\":true}");
     return;
   }
