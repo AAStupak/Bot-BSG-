@@ -15286,20 +15286,91 @@ def finance_collect_outstanding(uid: int) -> Tuple[List[dict], List[dict]]:
     return available, blocked
 
 
+def _finance_prune_combo_states(states: Dict[int, List[int]], target_cents: int, limit: int = 200000) -> Dict[int, List[int]]:
+    """Keep the number of cached sums within a reasonable bound."""
+    if len(states) <= limit:
+        return states
+    items = sorted(states.items())
+    kept: Dict[int, List[int]] = {}
+    if 0 in states:
+        kept[0] = states[0]
+    step = max(1, len(items) // limit)
+    for idx, (total, selection) in enumerate(items):
+        if total == 0:
+            continue
+        if idx % step == 0 or total >= target_cents:
+            kept[total] = selection
+        if len(kept) >= limit:
+            break
+    if target_cents not in kept:
+        best = max((item for item in items if item[0] <= target_cents), default=None, key=lambda kv: kv[0])
+        if best:
+            kept[best[0]] = best[1]
+    return kept
+
+
 def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tuple[List[dict], float]:
+    if not receipts:
+        return [], 0.0
     cleaned: List[Tuple[float, dict]] = []
     for rec in receipts:
-        amount = receipt_amount(rec)
+        amount = max(0.0, receipt_amount(rec))
         cleaned.append((amount, rec))
-    cleaned.sort(key=lambda x: x[0])
-    selected: List[dict] = []
-    total = 0.0
-    for amount, rec in cleaned:
-        selected.append(rec)
-        total += amount
-        if target is not None and total + 0.01 >= target:
-            break
-    return selected, round(total, 2)
+    total_amount = round(sum(amount for amount, _ in cleaned), 2)
+    if target is None:
+        return [rec for _, rec in cleaned], total_amount
+    try:
+        target_value = float(target)
+    except (TypeError, ValueError):
+        target_value = total_amount
+    if target_value <= 0:
+        return [], 0.0
+    target_cents = int(round(target_value * 100))
+    if target_cents <= 0:
+        return [], 0.0
+    total_cents = int(round(total_amount * 100))
+    if target_cents >= total_cents:
+        return [rec for _, rec in cleaned], total_amount
+
+    combos: Dict[int, List[int]] = {0: []}
+    over_target_best: Optional[Tuple[int, List[int]]] = None
+    max_states = 200000
+    for idx, (amount, _rec) in enumerate(cleaned):
+        amount_cents = int(round(amount * 100))
+        if amount_cents <= 0:
+            continue
+        snapshot = list(combos.items())
+        for current_sum, selection in snapshot:
+            new_sum = current_sum + amount_cents
+            new_selection = selection + [idx]
+            if new_sum > target_cents:
+                if over_target_best is None or new_sum < over_target_best[0] or (
+                    over_target_best and new_sum == over_target_best[0] and len(new_selection) < len(over_target_best[1])
+                ):
+                    over_target_best = (new_sum, new_selection)
+                continue
+            existing = combos.get(new_sum)
+            if existing is None or len(new_selection) < len(existing):
+                combos[new_sum] = new_selection
+        if len(combos) > max_states:
+            combos = _finance_prune_combo_states(combos, target_cents, limit=max_states)
+
+    best_sum = max((s for s in combos.keys() if 0 < s <= target_cents), default=0)
+    if best_sum > 0:
+        indices = combos[best_sum]
+        selected = [cleaned[i][1] for i in indices]
+        total = round(sum(cleaned[i][0] for i in indices), 2)
+        return selected, total
+    if over_target_best:
+        indices = over_target_best[1]
+        selected = [cleaned[i][1] for i in indices]
+        total = round(sum(cleaned[i][0] for i in indices), 2)
+        return selected, total
+    positive = [(amt, rec) for amt, rec in cleaned if amt > 0]
+    if positive:
+        amount, rec = min(positive, key=lambda x: x[0])
+        return [rec], round(amount, 2)
+    return [], 0.0
 
 
 def finance_group_receipts(receipts: List[dict]) -> Dict[str, List[dict]]:
@@ -15398,6 +15469,13 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
     lines.append(f"💰 Сума до виплати: <b>{fmt_money(total)} грн</b>")
     if requested is not None and abs(requested - total) > 0.01:
         lines.append(f"Запитувана сума: {fmt_money(requested)} грн")
+        diff = round(total - requested, 2)
+        if diff > 0.01:
+            lines.append(f"⚠️ За доступними чеками можна сформувати лише {fmt_money(total)} грн.")
+        elif diff < -0.01:
+            lines.append(
+                f"⚠️ Сума перевищує запитувану на {fmt_money(abs(diff))} грн через номінали чеків."
+            )
     lines.append(f"Чеків у запиті: <b>{len(selected)}</b>")
     grouped = finance_group_receipts(selected)
     snapshot = finance_scope_snapshot(uid, scope, grouped)
@@ -15747,6 +15825,15 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     if abs(requested_sum - calc_sum) > 0.01:
         user_lines.append(f"💰 Запитана сума: <b>{fmt_money(requested_sum)} грн</b>")
         user_lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+        diff_value = round(calc_sum - requested_sum, 2)
+        if diff_value < -0.01:
+            user_lines.append(
+                f"⚠️ Зафіксовано виплату на {fmt_money(calc_sum)} грн — менше запитуваного значення через наявні чеки."
+            )
+        elif diff_value > 0.01:
+            user_lines.append(
+                f"⚠️ Сума за обраними чеками перевищує запит на {fmt_money(diff_value)} грн."
+            )
     else:
         user_lines.append(f"💰 Сума до виплати: <b>{fmt_money(calc_sum)} грн</b>")
     if outstanding_before is not None:
@@ -15770,6 +15857,15 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     ]
     if abs(requested_sum - calc_sum) > 0.01:
         admin_lines.append(f"• Чеки у вибірці: {fmt_money(calc_sum)} грн")
+        diff_value = round(calc_sum - requested_sum, 2)
+        if diff_value < -0.01:
+            admin_lines.append(
+                f"• ⚠️ Сформовано на меншу суму ({fmt_money(calc_sum)} грн) через наявні чеки."
+            )
+        elif diff_value > 0.01:
+            admin_lines.append(
+                f"• ⚠️ Перевищення запиту на {fmt_money(diff_value)} грн з огляду на вибрані чеки."
+            )
     admin_lines.append(f"• Кількість чеків: {len(receipts)}")
     if outstanding_before is not None:
         admin_lines.append(f"• Борг до запиту: {fmt_money(float(outstanding_before))} грн")
