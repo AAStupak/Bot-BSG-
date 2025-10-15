@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
+BSG › botSYSTEM — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Версия 18.0.0 | Ревизия sr-bot-2025-10-05-finance2
 ч
 Зависимости:
@@ -40,17 +40,19 @@ Bot.BSG — Telegram Bot (SINGLE FILE, FULL PROJECT)
 Токен: встроен по просьбе пользователя.
 """
 
-import os, sys, json, random, re, base64, hashlib, secrets, asyncio
+import os, sys, json, random, re, base64, hashlib, secrets, asyncio, math
+from decimal import Decimal, ROUND_HALF_UP
+import unicodedata
 from html import escape as html_escape
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, List, Tuple, Any, Set, Union
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageOps
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
-from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited
+from aiogram.utils.exceptions import MessageNotModified, MessageCantBeEdited, BadRequest
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     InputFile, ContentType, ReplyKeyboardRemove,
@@ -71,7 +73,8 @@ except Exception:
 TOKEN = "7005343266:AAG0bnY-wTc3kScKiIskSd0fO6MstesSbCk"
 ADMIN_CODE = "3004"
 
-BOT_NAME = "Bot.BSG"
+BOT_NAME = "BSG › botSYSTEM"
+WORKSPACE_BRAND = "BSG › SYSTEM"
 BOT_VERSION = "18.0.0"
 BOT_REVISION = "sr-bot-2025-10-05-finance2"
 
@@ -79,6 +82,163 @@ BASE_PATH = "data/projects"
 USERS_PATH = "data/users"
 BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
+POINTS_PATH = os.path.join("data", "points")
+GLOBAL_FINANCE_FILE = os.path.join(FIN_PATH, "global.json")
+
+FINANCE_COMPANY_TITLE = os.getenv("BSG_FINANCE_COMPANY_TITLE", "компанія BSG")
+
+POINTS_RECEIPT_AWARD = 0.3
+POINTS_PHOTO_AWARD = 0.5
+POINTS_PARCEL_AWARD = 1.0
+
+def _normalize_chat_identifier(raw: Any) -> Optional[Union[int, str]]:
+    if raw is None:
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        candidate = raw.strip()
+        if not candidate:
+            return None
+        if candidate.lstrip("-").isdigit():
+            try:
+                return int(candidate)
+            except Exception:
+                return candidate
+        return candidate
+    return None
+
+
+DEFAULT_REQUIRED_COMMUNITY_CHAT = _normalize_chat_identifier(os.getenv("BSG_REQUIRED_CHAT", "-4979028084"))
+DEFAULT_REQUIRED_COMMUNITY_TITLE = os.getenv("BSG_REQUIRED_TITLE", "Test BSG")
+DEFAULT_REQUIRED_COMMUNITY_INVITE = (os.getenv("BSG_REQUIRED_INVITE") or "").strip()
+COMMUNITY_GATE_CONFIG_FILE = os.path.join("data", "community_gate.json")
+REQUIRED_COMMUNITY_CHAT: Optional[Union[int, str]] = DEFAULT_REQUIRED_COMMUNITY_CHAT
+REQUIRED_COMMUNITY_TITLE = DEFAULT_REQUIRED_COMMUNITY_TITLE
+REQUIRED_COMMUNITY_INVITE = DEFAULT_REQUIRED_COMMUNITY_INVITE
+COMMUNITY_GATE_CACHE: Optional[Tuple[Optional[Union[int, str]], str, str]] = None
+COMMUNITY_GATE_CACHE_MTIME: Optional[float] = None
+
+
+def atomic_write_json(path: str, payload: Any) -> None:
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp_path = f"{path}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+def required_community_settings(force_reload: bool = False) -> Tuple[Optional[Union[int, str]], str, str]:
+    global REQUIRED_COMMUNITY_CHAT, REQUIRED_COMMUNITY_TITLE, REQUIRED_COMMUNITY_INVITE
+    global COMMUNITY_GATE_CACHE, COMMUNITY_GATE_CACHE_MTIME
+
+    directory = os.path.dirname(COMMUNITY_GATE_CONFIG_FILE)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    file_exists = os.path.exists(COMMUNITY_GATE_CONFIG_FILE)
+    current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE) if file_exists else None
+    if (
+        COMMUNITY_GATE_CACHE is not None
+        and not force_reload
+        and ((current_mtime is None and COMMUNITY_GATE_CACHE_MTIME is None) or current_mtime == COMMUNITY_GATE_CACHE_MTIME)
+    ):
+        return COMMUNITY_GATE_CACHE
+
+    default_payload = {
+        "chat_id": str(DEFAULT_REQUIRED_COMMUNITY_CHAT) if DEFAULT_REQUIRED_COMMUNITY_CHAT is not None else "",
+        "title": DEFAULT_REQUIRED_COMMUNITY_TITLE,
+        "invite": DEFAULT_REQUIRED_COMMUNITY_INVITE,
+        "_note": "Edit chat_id/title/invite to match the required community before sharing the bot.",
+    }
+
+    data: Dict[str, Any]
+    if not file_exists:
+        atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, default_payload)
+        data = default_payload
+        current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+    else:
+        try:
+            with open(COMMUNITY_GATE_CONFIG_FILE, "r", encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            if not isinstance(loaded, dict):
+                raise ValueError("invalid gate config")
+            data = loaded
+        except Exception:
+            data = default_payload
+            atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, data)
+            current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+
+    missing = False
+    for key in ("chat_id", "title", "invite"):
+        if key not in data:
+            data[key] = default_payload.get(key, "")
+            missing = True
+    if missing:
+        atomic_write_json(COMMUNITY_GATE_CONFIG_FILE, data)
+        current_mtime = os.path.getmtime(COMMUNITY_GATE_CONFIG_FILE)
+
+    raw_chat = data.get("chat_id")
+    chat_id = _normalize_chat_identifier(str(raw_chat).strip() if raw_chat is not None else None)
+    title = str(data.get("title") or DEFAULT_REQUIRED_COMMUNITY_TITLE)
+    invite = str(data.get("invite") or "").strip()
+
+    REQUIRED_COMMUNITY_CHAT = chat_id
+    REQUIRED_COMMUNITY_TITLE = title
+    REQUIRED_COMMUNITY_INVITE = invite
+    COMMUNITY_GATE_CACHE = (chat_id, title, invite)
+    COMMUNITY_GATE_CACHE_MTIME = current_mtime
+    return COMMUNITY_GATE_CACHE
+
+
+def registration_gate_contact_display_name() -> str:
+    if REGISTRATION_GATE_CONTACT_DISPLAY:
+        return REGISTRATION_GATE_CONTACT_DISPLAY
+    raw = REGISTRATION_GATE_CONTACT_NAME.strip()
+    if not raw:
+        return "Алексей"
+    parts = [segment for segment in raw.replace("\u00a0", " ").split(" ") if segment]
+    if not parts:
+        return "Алексей"
+    if len(parts) == 1:
+        return parts[0]
+    return parts[-1]
+
+
+# Ensure the community gate file exists at startup and cache the defaults.
+required_community_settings()
+REGISTRATION_GATE_DIR = os.path.join("data", "registration_gate")
+REGISTRATION_GATE_FILE = os.path.join(REGISTRATION_GATE_DIR, "attempts.json")
+REGISTRATION_GATE_CONTACT_NAME = os.getenv("BSG_REQUIRED_CONTACT_NAME", "Алексей").strip() or "Алексей"
+REGISTRATION_GATE_CONTACT_ROLE = os.getenv("BSG_REQUIRED_CONTACT_ROLE", "директор компании BSG")
+REGISTRATION_GATE_CONTACT_DISPLAY = (os.getenv("BSG_REQUIRED_CONTACT_DISPLAY") or "").strip()
+_registration_notify_raw = (os.getenv("BSG_REG_NOTIFY_CHAT") or "").strip()
+if _registration_notify_raw:
+    if _registration_notify_raw.lstrip("-").isdigit():
+        try:
+            REGISTRATION_NOTIFY_CHAT: Optional[Union[int, str]] = int(_registration_notify_raw)
+        except Exception:
+            REGISTRATION_NOTIFY_CHAT = _registration_notify_raw
+    else:
+        REGISTRATION_NOTIFY_CHAT = _registration_notify_raw
+else:
+    REGISTRATION_NOTIFY_CHAT = None
+
+if REGISTRATION_NOTIFY_CHAT is None:
+    fallback_chat, _, _ = required_community_settings()
+    if fallback_chat:
+        REGISTRATION_NOTIFY_CHAT = fallback_chat
 
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"}
 
@@ -89,8 +249,15 @@ ALERTS_API_URL = f"{ALERTS_API_BASE_URL}{ALERTS_API_ACTIVE_ENDPOINT}"
 ALERTS_DEFAULT_HISTORY_PERIOD = "week_ago"
 ALERTS_API_TOKEN = "62f89091e56951ef257f763e445c09c1fd9dacd1ab2203"
 ALERTS_API_TIMEOUT = 15
-ALERTS_POLL_INTERVAL = 30  # seconds
+ALERTS_POLL_INTERVAL = 5  # seconds
 ALERTS_HISTORY_CACHE_TTL = 300  # seconds
+ALERTS_STANDDOWN_DISPLAY_WINDOW = 90 * 60  # seconds
+ALERTS_DIRNAME = "alerts"
+ALERTS_STATE_FILENAME = "state.json"
+ALERTS_HISTORY_DIRNAME = "history"
+ALERTS_LEGACY_HISTORY_FILENAME = "history.json"
+ALERTS_USERS_FILENAME = "subscriptions.json"
+ALERTS_TIMELINE_KEY = "timeline"
 
 UKRAINE_REGIONS = [
     "Винницкая область",
@@ -102,7 +269,6 @@ UKRAINE_REGIONS = [
     "Запорожская область",
     "Ивано-Франковская область",
     "Киевская область",
-    "г. Киев",
     "Кировоградская область",
     "Луганская область",
     "Львовская область",
@@ -119,6 +285,7 @@ UKRAINE_REGIONS = [
     "Черниговская область",
     "Черновицкая область",
 ]
+UKRAINE_REGIONS_SET: Set[str] = set(UKRAINE_REGIONS)
 
 LANG_ORDER = [
     ("uk", "🇺🇦 Українська"),
@@ -127,23 +294,31 @@ LANG_ORDER = [
     ("pl", "🇵🇱 Polski"),
     ("ru", "🇷🇺 Русский"),
 ]
+LANG_LABELS = {code: label for code, label in LANG_ORDER}
 
 DEFAULT_LANG = "uk"
 
 TEXTS: Dict[str, Dict[str, str]] = {
     "ANCHOR_NO_PROJECT": {
-        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Активний проєкт ще не обрано.\nПопросіть адміністратора активувати об'єкт, щоб відкрити робочі розділи.\n\n📋 <b>Меню дій</b>\nСкористайтеся кнопками нижче, щоб переглянути доступні можливості.",
-        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 No active project has been selected yet.\nAsk an administrator to activate a project to unlock the working sections.\n\n📋 <b>Actions</b>\nUse the buttons below to explore the available features.",
-        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Es ist derzeit kein aktives Projekt ausgewählt.\nBitten Sie einen Administrator, ein Projekt zu aktivieren, um die Arbeitsbereiche zu öffnen.\n\n📋 <b>Aktionen</b>\nVerwenden Sie die Schaltflächen unten, um die verfügbaren Funktionen zu erkunden.",
-        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Aktywny projekt nie został jeszcze wybrany.\nPoproś administratora o aktywację obiektu, aby odblokować sekcje robocze.\n\n📋 <b>Menu działań</b>\nSkorzystaj z przycisków poniżej, aby zobaczyć dostępne funkcje.",
-        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n🔍 Активный объект пока не выбран.\nПопросите администратора включить проект, чтобы открыть рабочие разделы.\n\n📋 <b>Меню действий</b>\nИспользуйте кнопки ниже, чтобы изучить доступные возможности.",
+        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n🔍 Активний проєкт ще не обрано.\nПопросіть адміністратора активувати об'єкт, щоб відкрити робочі розділи.\n\n📋 <b>Меню дій</b>\nСкористайтеся кнопками нижче, щоб переглянути доступні можливості.",
+        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n🔍 No active project has been selected yet.\nAsk an administrator to activate a project to unlock the working sections.\n\n📋 <b>Actions</b>\nUse the buttons below to explore the available features.",
+        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n🔍 Es ist derzeit kein aktives Projekt ausgewählt.\nBitten Sie einen Administrator, ein Projekt zu aktivieren, um die Arbeitsbereiche zu öffnen.\n\n📋 <b>Aktionen</b>\nVerwenden Sie die Schaltflächen unten, um die verfügbaren Funktionen zu erkunden.",
+        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n🔍 Aktywny projekt nie został jeszcze wybrany.\nPoproś administratora o aktywację obiektu, aby odblokować sekcje robocze.\n\n📋 <b>Menu działań</b>\nSkorzystaj z przycisków poniżej, aby zobaczyć dostępne funkcje.",
+        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n🔍 Активный объект пока не выбран.\nПопросите администратора включить проект, чтобы открыть рабочие разделы.\n\n📋 <b>Меню действий</b>\nИспользуйте кнопки ниже, чтобы изучить доступные возможности.",
     },
     "ANCHOR_PROJECT": {
-        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Регіон: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
-        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Region: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
-        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Region: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
-        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Region: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
-        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Регион: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Область: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
+        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Oblast: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
+        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Oblast: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
+        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Obwód: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
+        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Область: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+    },
+    "ANCHOR_POINTS_LINE": {
+        "uk": "🏅 Балів: <b>{points}</b>",
+        "en": "🏅 Points: <b>{points}</b>",
+        "de": "🏅 Punkte: <b>{points}</b>",
+        "pl": "🏅 Punkty: <b>{points}</b>",
+        "ru": "🏅 Баллы: <b>{points}</b>",
     },
     "ANCHOR_PROJECT_BSG_SUMMARY": {
         "uk": "🏢 Посилки BSG: усього — <b>{total}</b> • забрати — <b>{pending}</b> • отримано — <b>{delivered}</b>",
@@ -155,30 +330,30 @@ TEXTS: Dict[str, Dict[str, str]] = {
     "ANCHOR_ALERT_SUMMARY": {
         "uk": "🇺🇦 Активні тривоги: <b>{count}</b> областей",
         "en": "🇺🇦 Active alerts: <b>{count}</b> oblasts",
-        "de": "🇺🇦 Aktive Alarme: <b>{count}</b> Regionen",
+        "de": "🇺🇦 Aktive Alarme: <b>{count}</b> Oblasten",
         "pl": "🇺🇦 Aktywne alarmy: <b>{count}</b> obwodów",
         "ru": "🇺🇦 Активные тревоги: <b>{count}</b> областей",
     },
     "ANCHOR_ALERT_ACTIVE": {
-        "uk": "🚨 Тривога у регіоні <b>{region}</b> • {type} • від {start} • {severity}",
-        "en": "🚨 Alert in <b>{region}</b> • {type} • since {start} • {severity}",
-        "de": "🚨 Alarm in <b>{region}</b> • {type} • seit {start} • {severity}",
-        "pl": "🚨 Alarm w regionie <b>{region}</b> • {type} • od {start} • {severity}",
-        "ru": "🚨 Тревога в регионе <b>{region}</b> • {type} • с {start} • {severity}",
+        "uk": "🚨 Тривога у <b>{region}</b> • {type} • від {start} • {severity}",
+        "en": "🚨 Alert for <b>{region}</b> oblast • {type} • since {start} • {severity}",
+        "de": "🚨 Alarm für Oblast <b>{region}</b> • {type} • seit {start} • {severity}",
+        "pl": "🚨 Alarm w obwodzie <b>{region}</b> • {type} • od {start} • {severity}",
+        "ru": "🚨 Тревога в <b>{region}</b> • {type} • с {start} • {severity}",
     },
     "ANCHOR_ALERT_RECENT": {
         "uk": "🟡 Остання тривога у <b>{region}</b> • {type} • {start} → {end}",
-        "en": "🟡 Last alert in <b>{region}</b> • {type} • {start} → {end}",
-        "de": "🟡 Letzter Alarm in <b>{region}</b> • {type} • {start} → {end}",
-        "pl": "🟡 Ostatni alarm w <b>{region}</b> • {type} • {start} → {end}",
+        "en": "🟡 Last alert for <b>{region}</b> oblast • {type} • {start} → {end}",
+        "de": "🟡 Letzter Alarm für Oblast <b>{region}</b> • {type} • {start} → {end}",
+        "pl": "🟡 Ostatni alarm w obwodzie <b>{region}</b> • {type} • {start} → {end}",
         "ru": "🟡 Последняя тревога в <b>{region}</b> • {type} • {start} → {end}",
     },
     "ANCHOR_ALERT_CALM": {
-        "uk": "🟢 У регіоні <b>{region}</b> спокійно.",
-        "en": "🟢 <b>{region}</b> is calm.",
-        "de": "🟢 In <b>{region}</b> ist es ruhig.",
-        "pl": "🟢 W regionie <b>{region}</b> jest spokojnie.",
-        "ru": "🟢 В регионе <b>{region}</b> спокойно.",
+        "uk": "🟢 В області <b>{region}</b> відбій тривоги.",
+        "en": "🟢 <b>{region}</b> oblast — alert cleared.",
+        "de": "🟢 In der Oblast <b>{region}</b> wurde der Alarm aufgehoben.",
+        "pl": "🟢 W obwodzie <b>{region}</b> alarm odwołano.",
+        "ru": "🟢 В области <b>{region}</b> отбой тревоги.",
     },
     "ANCHOR_ALERT_CAUSE": {
         "uk": "🎯 Причина: {cause}",
@@ -193,6 +368,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "🔎 Details: {details}",
         "pl": "🔎 Szczegóły: {details}",
         "ru": "🔎 Детали: {details}",
+    },
+    "ANCHOR_ALERT_LOCATION": {
+        "uk": "📍 Локація: {location}",
+        "en": "📍 Location: {location}",
+        "de": "📍 Ort: {location}",
+        "pl": "📍 Lokalizacja: {location}",
+        "ru": "📍 Локация: {location}",
+    },
+    "ANCHOR_ALERT_COORDS": {
+        "uk": "🧭 Координати: {coords}",
+        "en": "🧭 Coordinates: {coords}",
+        "de": "🧭 Koordinaten: {coords}",
+        "pl": "🧭 Współrzędne: {coords}",
+        "ru": "🧭 Координаты: {coords}",
     },
     "BTN_CHECKS": {
         "uk": "🧾 Чеки",
@@ -251,39 +440,67 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🚨 <b>Воздушные тревоги</b>\n━━━━━━━━━━━━━━━━━━\nПросматривайте активные сигналы, историю и управляйте регионами уведомлений.\nВыберите действие ниже.",
     },
     "ALERTS_BTN_ACTIVE": {
-        "uk": "🔥 Поточні тривоги",
-        "en": "🔥 Active alerts",
-        "de": "🔥 Aktive Alarme",
-        "pl": "🔥 Aktywne alarmy",
-        "ru": "🔥 Активные тревоги",
+        "uk": "🚨 Активні сигнали",
+        "en": "🚨 Live alerts",
+        "de": "🚨 Live-Alarme",
+        "pl": "🚨 Aktywne sygnały",
+        "ru": "🚨 Активные сигналы",
     },
     "ALERTS_BTN_OVERVIEW": {
-        "uk": "🗺️ Статус областей",
-        "en": "🗺️ Region status",
-        "de": "🗺️ Regionenstatus",
-        "pl": "🗺️ Status regionów",
-        "ru": "🗺️ Статус областей",
+        "uk": "🗺️ Карта областей",
+        "en": "🗺️ Oblast map",
+        "de": "🗺️ Oblast-Karte",
+        "pl": "🗺️ Mapa obwodów",
+        "ru": "🗺️ Карта областей",
     },
     "ALERTS_BTN_HISTORY": {
-        "uk": "📜 Історія",
-        "en": "📜 History",
-        "de": "📜 Verlauf",
-        "pl": "📜 Historia",
-        "ru": "📜 История",
+        "uk": "🕓 Журнал тривог",
+        "en": "🕓 Alert log",
+        "de": "🕓 Alarmprotokoll",
+        "pl": "🕓 Dziennik alarmów",
+        "ru": "🕓 Журнал тревог",
     },
     "ALERTS_BTN_SUBSCRIPTIONS": {
-        "uk": "🧭 Керувати областями",
-        "en": "🧭 Manage regions",
-        "de": "🧭 Regionen verwalten",
-        "pl": "🧭 Zarządzaj regionami",
-        "ru": "🧭 Управлять регионами",
+        "uk": "🎛️ Мої області",
+        "en": "🎛️ My oblasts",
+        "de": "🎛️ Meine Oblaste",
+        "pl": "🎛️ Moje obwody",
+        "ru": "🎛️ Мои области",
     },
     "ALERTS_ACTIVE_HEADER": {
-        "uk": "🔥 <b>Поточні тривоги</b> ({count})",
-        "en": "🔥 <b>Active alerts</b> ({count})",
-        "de": "🔥 <b>Aktive Alarme</b> ({count})",
-        "pl": "🔥 <b>Aktywne alarmy</b> ({count})",
-        "ru": "🔥 <b>Активные тревоги</b> ({count})",
+        "uk": "🚨Активні сигнали({count})",
+        "en": "🚨Active alerts({count})",
+        "de": "🚨Aktive Alarme({count})",
+        "pl": "🚨Aktywne alarmy({count})",
+        "ru": "🚨Активные сигналы({count})",
+    },
+    "ALERTS_ACTIVE_DIVIDER": {
+        "uk": "━━━━━━━━━━━━━━━━━━",
+        "en": "━━━━━━━━━━━━━━━━━━",
+        "de": "━━━━━━━━━━━━━━━━━━",
+        "pl": "━━━━━━━━━━━━━━━━━━",
+        "ru": "━━━━━━━━━━━━━━━━━━",
+    },
+    "ALERTS_ACTIVE_SUMMARY_TOTAL": {
+        "uk": "📍 Активні тривоги: {count}",
+        "en": "📍 Active alerts: {count}",
+        "de": "📍 Aktive Alarme: {count}",
+        "pl": "📍 Aktywne alarmy: {count}",
+        "ru": "📍 Активные тревоги: {count}",
+    },
+    "ALERTS_ACTIVE_SUMMARY_USER": {
+        "uk": "👤 Ваші вибрані області — персональні налаштування сповіщень",
+        "en": "👤 Your selected oblasts — personal alert preferences",
+        "de": "👤 Ihre ausgewählten Oblaste – persönliche Alarm-Einstellungen",
+        "pl": "👤 Twoje wybrane obwody — osobiste ustawienia alertów",
+        "ru": "👤 Ваши выбранные области — персональные настройки оповещений",
+    },
+    "ALERTS_ACTIVE_SUMMARY_PROJECT": {
+        "uk": "🏗 Прив’язано до об’єкта — області, визначені адміністратором",
+        "en": "🏗 Project scope — oblasts defined by the administrator",
+        "de": "🏗 Projektbezug – Oblaste, die vom Administrator festgelegt wurden",
+        "pl": "🏗 Powiązano z obiektem — obwody określone przez administratora",
+        "ru": "🏗 Привязано к объекту — области, определённые администратором",
     },
     "ALERTS_HISTORY_HEADER": {
         "uk": "📜 <b>Історія тривог</b> ({count})",
@@ -293,11 +510,25 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "📜 <b>История тревог</b> ({count})",
     },
     "ALERTS_OVERVIEW_HEADER": {
-        "uk": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
-        "en": "🗺️ <b>Region status</b>\n━━━━━━━━━━━━━━━━━━\nSee which oblasts are under alert right now.",
-        "de": "🗺️ <b>Status der Regionen</b>\n━━━━━━━━━━━━━━━━━━\nÜberblick über aktuelle Alarme nach Oblast.",
-        "pl": "🗺️ <b>Status regionów</b>\n━━━━━━━━━━━━━━━━━━\nSprawdź, w których obwodach trwa alarm.",
-        "ru": "🗺️ <b>Статус областей</b>\n━━━━━━━━━━━━━━━━━━\nПроверяйте, где сейчас действует тревога.",
+        "uk": "🗺️ Статус областей України\n━━━━━━━━━━━━━━━━━━\nПеревірте, де зараз лунає тривога.",
+        "en": "🗺️ Status of Ukraine's oblasts\n━━━━━━━━━━━━━━━━━━\nSee where alerts are sounding right now.",
+        "de": "🗺️ Status der Oblaste der Ukraine\n━━━━━━━━━━━━━━━━━━\nPrüfen Sie, wo gerade Alarm ausgelöst wird.",
+        "pl": "🗺️ Status obwodów Ukrainy\n━━━━━━━━━━━━━━━━━━\nSprawdź, gdzie trwa alarm.",
+        "ru": "🗺️ Статус областей Украины\n━━━━━━━━━━━━━━━━━━\nПроверяйте, где сейчас звучит тревога.",
+    },
+    "ALERTS_OVERVIEW_UPDATED": {
+        "uk": "🔄 Оновлено: {time}",
+        "en": "🔄 Updated: {time}",
+        "de": "🔄 Aktualisiert: {time}",
+        "pl": "🔄 Zaktualizowano: {time}",
+        "ru": "🔄 Обновлено: {time}",
+    },
+    "ALERTS_OVERVIEW_GUIDE": {
+        "uk": "ℹ️ Інструкція:\n🟢 Час показує відбій тривоги.\n🔴 Час показує початок тривоги.",
+        "en": "ℹ️ Guide:\n🟢 Time marks when the alert ended.\n🔴 Time marks when the alert began.",
+        "de": "ℹ️ Hinweis:\n🟢 Die Uhrzeit zeigt das Ende des Alarms.\n🔴 Die Uhrzeit zeigt den Beginn des Alarms.",
+        "pl": "ℹ️ Instrukcja:\n🟢 Czas oznacza odwołanie alarmu.\n🔴 Czas oznacza początek alarmu.",
+        "ru": "ℹ️ Инструкция:\n🟢 Время = отбой тревоги\n🔴 Время = начало тревоги",
     },
     "ALERTS_OVERVIEW_ACTIVE": {
         "uk": "🔴 {region} — тривога з {start}",
@@ -314,11 +545,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🔴 {region} — тревога (время уточняется)",
     },
     "ALERTS_OVERVIEW_CALM": {
-        "uk": "🟢 {region} — спокійно",
-        "en": "🟢 {region} — calm",
-        "de": "🟢 {region} — ruhig",
-        "pl": "🟢 {region} — spokojnie",
-        "ru": "🟢 {region} — спокойно",
+        "uk": "🟢 {region} — відбій тривоги",
+        "en": "🟢 {region} — alert cleared",
+        "de": "🟢 {region} — Alarm aufgehoben",
+        "pl": "🟢 {region} — alarm odwołано",
+        "ru": "🟢 {region} — отбой тревоги",
     },
     "ALERTS_NO_ACTIVE": {
         "uk": "✅ Зараз немає активних тривог для вибраних областей.",
@@ -342,39 +573,60 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "⚠️ Сначала выберите хотя бы один регион для уведомлений.",
     },
     "ALERTS_SUBS_HEADER": {
-        "uk": "🧭 <b>Області сповіщень</b>",
-        "en": "🧭 <b>Alert regions</b>",
-        "de": "🧭 <b>Alarm-Regionen</b>",
-        "pl": "🧭 <b>Regiony alertów</b>",
-        "ru": "🧭 <b>Регионы тревог</b>",
+        "uk": "🧭 Області сповіщень",
+        "en": "🧭 Alert oblasts",
+        "de": "🧭 Alarmbezirke",
+        "pl": "🧭 Obwody powiadomień",
+        "ru": "🧭 Области тревог",
+    },
+    "ALERTS_SUBS_DIVIDER": {
+        "uk": "━━━━━━━━━━━━━━━━━━",
+        "en": "━━━━━━━━━━━━━━━━━━",
+        "de": "━━━━━━━━━━━━━━━━━━",
+        "pl": "━━━━━━━━━━━━━━━━━━",
+        "ru": "━━━━━━━━━━━━━━━━━━",
     },
     "ALERTS_SUBS_NOTE_HAS_PROJECT": {
-        "uk": "Основна область проєкту: <b>{region}</b> — її неможливо вимкнути.",
-        "en": "Project region: <b>{region}</b> — it cannot be disabled.",
-        "de": "Projektregion: <b>{region}</b> — kann nicht deaktiviert werden.",
-        "pl": "Region projektu: <b>{region}</b> — nie można go wyłączyć.",
-        "ru": "Область проекта: <b>{region}</b> — её нельзя отключить.",
+        "uk": "Основна область проєкту: {region}.  \nІнші області можна обрати вручну.  ",
+        "en": "Project oblast: {region}.  \nYou can add other oblasts manually.  ",
+        "de": "Projektbezirk: {region}.  \nWeitere Bezirke lassen sich manuell wählen.  ",
+        "pl": "Obwód projektu: {region}.  \nPozostałe obwody możesz wybrać ręcznie.  ",
+        "ru": "Область проекта: {region}.  \nДругие области можно выбрать вручную.  ",
     },
     "ALERTS_SUBS_NOTE_NO_PROJECT": {
-        "uk": "Наразі активний проєкт не вибрано, ви можете обрати будь-які області вручну.",
-        "en": "No active project region is set; feel free to pick any regions manually.",
-        "de": "Derzeit ist keine Projektregion aktiv; wählen Sie beliebige Regionen manuell aus.",
-        "pl": "Nie ustawiono aktywnego projektu, możesz ręcznie wybrać dowolne regiony.",
-        "ru": "Сейчас активный проект не выбран; можно вручную выбрать любые регионы.",
+        "uk": "Наразі активний проєкт не вибрано.  \nОбласті можна обрати вручну.  ",
+        "en": "No active project is selected.  \nChoose oblasts manually.  ",
+        "de": "Derzeit ist kein Projekt aktiv.  \nBezirke lassen sich manuell wählen.  ",
+        "pl": "Żaden projekt nie jest aktywny.  \nObwody możesz wybrać ręcznie.  ",
+        "ru": "Активный проект пока не выбран.  \nОбласти можно выбрать вручную.  ",
+    },
+    "ALERTS_SUBS_LIST_TITLE": {
+        "uk": "📍 Активні області:",
+        "en": "📍 Active oblasts:",
+        "de": "📍 Aktive Bezirke:",
+        "pl": "📍 Aktywne obwody:",
+        "ru": "📍 Активные области:",
+    },
+    "ALERTS_SUBS_LIST_EMPTY": {
+        "uk": "—",
+        "en": "—",
+        "de": "—",
+        "pl": "—",
+        "ru": "—",
     },
     "ALERTS_SUBS_MANAGE": {
-        "uk": "Додайте або приберіть області за допомогою кнопок нижче.",
-        "en": "Add or remove regions using the buttons below.",
-        "de": "Fügen Sie Regionen über die Schaltflächen unten hinzu oder entfernen Sie sie.",
-        "pl": "Dodaj lub usuń regiony za pomocą przycisków poniżej.",
-        "ru": "Добавляйте или убирайте регионы с помощью кнопок ниже.",
+        "uk": "➕➖ Керування списком через кнопки",
+        "en": "➕➖ Manage the list with the buttons",
+        "de": "➕➖ Liste über die Schaltflächen verwalten",
+        "pl": "➕➖ Zarządzaj listą przy użyciu przycisków",
+        "ru": "➕➖ Управляйте списком с помощью кнопок",
     },
     "ALERTS_SUBS_SELECTED": {
         "uk": "Активні області: {items}",
-        "en": "Selected regions: {items}",
-        "de": "Aktive Regionen: {items}",
-        "pl": "Aktywne regiony: {items}",
-        "ru": "Выбранные регионы: {items}",
+        "en": "Selected oblasts: {items}",
+        "de": "Aktive Bezirke: {items}",
+        "pl": "Aktywne obwody: {items}",
+        "ru": "Выбранные области: {items}",
     },
     "ALERTS_SUBS_ADDED": {
         "uk": "✅ Додано область: {region}",
@@ -417,6 +669,188 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "✖️ Schließen",
         "pl": "✖️ Zamknąć",
         "ru": "✖️ Закрыть",
+    },
+    "ALERTS_PUSH_OPEN": {
+        "uk": "🔎 Відкрити детально",
+        "en": "🔎 Open details",
+        "de": "🔎 Details anzeigen",
+        "pl": "🔎 Otwórz szczegóły",
+        "ru": "🔎 Открыть детально",
+    },
+    "ALERTS_PUSH_COLLAPSE": {
+        "uk": "⬆️ Згорнути",
+        "en": "⬆️ Collapse",
+        "de": "⬆️ Einklappen",
+        "pl": "⬆️ Zwiń",
+        "ru": "⬆️ Свернуть",
+    },
+    "ALERTS_PUSH_DELETE": {
+        "uk": "🗑 Видалити повідомлення",
+        "en": "🗑 Delete message",
+        "de": "🗑 Nachricht löschen",
+        "pl": "🗑 Usuń wiadomość",
+        "ru": "🗑 Удалить сообщение",
+    },
+    "ALERTS_PUSH_HEADER_ALERT": {
+        "uk": "🚨 ТРИВОГА | {region}",
+        "en": "🚨 ALERT | {region}",
+        "de": "🚨 ALARM | {region}",
+        "pl": "🚨 ALARM | {region}",
+        "ru": "🚨 ТРЕВОГА | {region}",
+    },
+    "ALERTS_PUSH_HEADER_STANDDOWN": {
+        "uk": "🟢 ВІДБІЙ | {region}",
+        "en": "🟢 CLEAR | {region}",
+        "de": "🟢 ENTWARNUNG | {region}",
+        "pl": "🟢 ODWOŁANIE | {region}",
+        "ru": "🟢 ОТБОЙ | {region}",
+    },
+    "ALERTS_PUSH_SUMMARY_RUNNING": {
+        "uk": "{icon} {type} • 🕒 {start} → {progress}",
+        "en": "{icon} {type} • 🕒 {start} → {progress}",
+        "de": "{icon} {type} • 🕒 {start} → {progress}",
+        "pl": "{icon} {type} • 🕒 {start} → {progress}",
+        "ru": "{icon} {type} • 🕒 {start} → {progress}",
+    },
+    "ALERTS_PUSH_SUMMARY_ENDED": {
+        "uk": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "en": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "de": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "pl": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+        "ru": "{icon} {type} • 🕒 {start} → ✅ {ended}",
+    },
+    "ALERTS_PUSH_SUMMARY_LEAD_ALERT": {
+        "uk": "🚨 Коротке сповіщення про тривогу",
+        "en": "🚨 Quick alert notification",
+        "de": "🚨 Kurze Alarmbenachrichtigung",
+        "pl": "🚨 Krótkie powiadomienie o alarmie",
+        "ru": "🚨 Короткое уведомление о тревоге",
+    },
+    "ALERTS_PUSH_SUMMARY_LEAD_STANDDOWN": {
+        "uk": "",
+        "en": "",
+        "de": "",
+        "pl": "",
+        "ru": "",
+    },
+    "ALERTS_DURATION_RUNNING": {
+        "uk": "триває {duration}",
+        "en": "ongoing for {duration}",
+        "de": "läuft seit {duration}",
+        "pl": "trwa {duration}",
+        "ru": "идёт {duration}",
+    },
+    "ALERTS_DURATION_COMPLETED": {
+        "uk": "тривала {duration}",
+        "en": "lasted {duration}",
+        "de": "dauerte {duration}",
+        "pl": "trwała {duration}",
+        "ru": "длилась {duration}",
+    },
+    "ALERTS_DURATION_LESS_MINUTE": {
+        "uk": "менше хвилини",
+        "en": "less than a minute",
+        "de": "unter einer Minute",
+        "pl": "mniej niż minutę",
+        "ru": "менее минуты",
+    },
+    "ALERTS_PUSH_DETAIL_TITLE_ALERT": {
+        "uk": "🚨 ТРИВОГА — {region}",
+        "en": "🚨 ALERT — {region}",
+        "de": "🚨 ALARM — {region}",
+        "pl": "🚨 ALARM — {region}",
+        "ru": "🚨 ТРЕВОГА — {region}",
+    },
+    "ALERTS_PUSH_DETAIL_TITLE_STANDDOWN": {
+        "uk": "🟢 ВІДБІЙ ТРИВОГИ — {region}",
+        "en": "🟢 ALERT CLEARED — {region}",
+        "de": "🟢 ENTWARNUNG — {region}",
+        "pl": "🟢 ALARM ODWOŁANY — {region}",
+        "ru": "🟢 ОТБОЙ ТРЕВОГИ — {region}",
+    },
+    "ALERTS_PUSH_DETAIL_TYPE": {
+        "uk": "{icon} Тип загрози: {value}",
+        "en": "{icon} Threat type: {value}",
+        "de": "{icon} Bedrohungsart: {value}",
+        "pl": "{icon} Rodzaj zagrożenia: {value}",
+        "ru": "{icon} Тип угрозы: {value}",
+    },
+    "ALERTS_PUSH_DETAIL_START": {
+        "uk": "🕒 Початок: {date} • {time}",
+        "en": "🕒 Start: {date} • {time}",
+        "de": "🕒 Beginn: {date} • {time}",
+        "pl": "🕒 Początek: {date} • {time}",
+        "ru": "🕒 Начало: {date} • {time}",
+    },
+    "ALERTS_PUSH_DETAIL_END_STANDDOWN": {
+        "uk": "✅ Відбій: {date} • {time}",
+        "en": "✅ Cleared: {date} • {time}",
+        "de": "✅ Entwarnung: {date} • {time}",
+        "pl": "✅ Odwołanie: {date} • {time}",
+        "ru": "✅ Отбой: {date} • {time}",
+    },
+    "ALERTS_PUSH_DETAIL_DURATION": {
+        "uk": "⏱ Тривалість: {duration}",
+        "en": "⏱ Duration: {duration}",
+        "de": "⏱ Dauer: {duration}",
+        "pl": "⏱ Czas trwania: {duration}",
+        "ru": "⏱ Длительность: {duration}",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_HEADER": {
+        "uk": "📊 Статистика на зараз",
+        "en": "📊 Current statistics",
+        "de": "📊 Aktuelle Statistik",
+        "pl": "📊 Aktualne statystyki",
+        "ru": "📊 Статистика на сейчас",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_COUNTRY": {
+        "uk": "• 🇺🇦 По Україні: {value}",
+        "en": "• 🇺🇦 Across Ukraine: {value}",
+        "de": "• 🇺🇦 In der Ukraine: {value}",
+        "pl": "• 🇺🇦 W Ukrainie: {value}",
+        "ru": "• 🇺🇦 По Украине: {value}",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_REGION_ACTIVE": {
+        "uk": "• 🏙 В області: {value}",
+        "en": "• 🏙 In the oblast: {value}",
+        "de": "• 🏙 In der Oblast: {value}",
+        "pl": "• 🏙 W obwodzie: {value}",
+        "ru": "• 🏙 В области: {value}",
+    },
+    "ALERTS_PUSH_DETAIL_STATS_REGION_CLEAR": {
+        "uk": "• 🏙 В області: завершена",
+        "en": "• 🏙 In the oblast: cleared",
+        "de": "• 🏙 In der Oblast: beendet",
+        "pl": "• 🏙 W obwodzie: zakończona",
+        "ru": "• 🏙 В области: завершена",
+    },
+    "ALERTS_PUSH_DETAIL_RECOMMENDATIONS_HEADER": {
+        "uk": "⚠️ Рекомендації",
+        "en": "⚠️ Recommendations",
+        "de": "⚠️ Empfehlungen",
+        "pl": "⚠️ Zalecenia",
+        "ru": "⚠️ Рекомендации",
+    },
+    "ALERTS_PUSH_DETAIL_STANDDOWN_HEADER": {
+        "uk": "✅ Ситуацію стабілізовано",
+        "en": "✅ Situation stabilised",
+        "de": "✅ Lage stabilisiert",
+        "pl": "✅ Sytuacja ustabilizowana",
+        "ru": "✅ Ситуация стабилизировалась",
+    },
+    "ALERTS_PUSH_DETAIL_STANDDOWN_NOTE": {
+        "uk": "Будьте уважні та стежте за новими сповіщеннями",
+        "en": "Stay cautious and watch for new notifications",
+        "de": "Bleiben Sie aufmerksam und verfolgen Sie neue Meldungen",
+        "pl": "Bądź ostrożny i śledź nowe powiadomienia",
+        "ru": "Будьте осторожны и следите за новыми уведомлениями",
+    },
+    "ALERTS_PUSH_DETAIL_FOOTER": {
+        "uk": "✅ Бережіть себе!",
+        "en": "✅ Stay safe!",
+        "de": "✅ Bleiben Sie sicher!",
+        "pl": "✅ Dbajcie o siebie!",
+        "ru": "✅ Берегите себя!",
     },
     "ALERTS_NAV_PREV": {
         "uk": "◀️ Попередня",
@@ -502,6 +936,111 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "📬 Przypisz TTN użytkownikowi",
         "ru": "📬 Закрепить ТТН за пользователем",
     },
+    "BTN_PROFILE": {
+        "uk": "👤 Мій профіль",
+        "en": "👤 My profile",
+        "de": "👤 Mein Profil",
+        "pl": "👤 Mój profil",
+        "ru": "👤 Мой профиль",
+    },
+    "BTN_PROFILE_EDIT": {
+        "uk": "✏️ Редагувати профіль",
+        "en": "✏️ Edit profile",
+        "de": "✏️ Profil bearbeiten",
+        "pl": "✏️ Edytuj profil",
+        "ru": "✏️ Редактировать профиль",
+    },
+    "BTN_PROFILE_VIEW_PHOTO": {
+        "uk": "👁 Переглянути фото",
+        "en": "👁 View photo",
+        "de": "👁 Foto anzeigen",
+        "pl": "👁 Zobacz zdjęcie",
+        "ru": "👁 Просмотреть фото",
+    },
+    "BTN_PROFILE_HIDE_PHOTO": {
+        "uk": "📝 Повернутись до тексту",
+        "en": "📝 Back to summary",
+        "de": "📝 Zurück zur Übersicht",
+        "pl": "📝 Wróć do podsumowania",
+        "ru": "📝 Вернуться к тексту",
+    },
+    "BTN_PROFILE_DONE": {
+        "uk": "✅ Готово",
+        "en": "✅ Done",
+        "de": "✅ Fertig",
+        "pl": "✅ Gotowe",
+        "ru": "✅ Готово",
+    },
+    "BTN_PROFILE_POINTS": {
+        "uk": "🏅 Балли",
+        "en": "🏅 Points",
+        "de": "🏅 Punkte",
+        "pl": "🏅 Punkty",
+        "ru": "🏅 Баллы",
+    },
+    "BTN_PROFILE_UPDATE_PHOTO": {
+        "uk": "🖼 Оновити фото",
+        "en": "🖼 Update photo",
+        "de": "🖼 Foto aktualisieren",
+        "pl": "🖼 Zaktualizuj zdjęcie",
+        "ru": "🖼 Обновить фото",
+    },
+    "BTN_PROFILE_REMOVE_PHOTO": {
+        "uk": "🗑 Видалити фото",
+        "en": "🗑 Remove photo",
+        "de": "🗑 Foto löschen",
+        "pl": "🗑 Usuń zdjęcie",
+        "ru": "🗑 Удалить фото",
+    },
+    "BTN_PROFILE_FIELD_LAST": {
+        "uk": "1. Прізвище",
+        "en": "1. Last name",
+        "de": "1. Nachname",
+        "pl": "1. Nazwisko",
+        "ru": "1. Фамилия",
+    },
+    "BTN_PROFILE_FIELD_FIRST": {
+        "uk": "2. Ім'я",
+        "en": "2. First name",
+        "de": "2. Vorname",
+        "pl": "2. Imię",
+        "ru": "2. Имя",
+    },
+    "BTN_PROFILE_FIELD_MIDDLE": {
+        "uk": "3. По батькові",
+        "en": "3. Patronymic",
+        "de": "3. Vatersname",
+        "pl": "3. Drugie imię",
+        "ru": "3. Отчество",
+    },
+    "BTN_PROFILE_FIELD_BIRTHDATE": {
+        "uk": "4. Дата народження",
+        "en": "4. Birth date",
+        "de": "4. Geburtsdatum",
+        "pl": "4. Data urodzenia",
+        "ru": "4. Дата рождения",
+    },
+    "BTN_PROFILE_FIELD_REGION": {
+        "uk": "5. Область",
+        "en": "5. Region",
+        "de": "5. Region",
+        "pl": "5. Obwód",
+        "ru": "5. Область",
+    },
+    "BTN_PROFILE_FIELD_PHONE": {
+        "uk": "6. Телефон",
+        "en": "6. Phone",
+        "de": "6. Telefon",
+        "pl": "6. Telefon",
+        "ru": "6. Телефон",
+    },
+    "BTN_PROFILE_CANCEL": {
+        "uk": "⬅️ Скасувати",
+        "en": "⬅️ Cancel",
+        "de": "⬅️ Abbrechen",
+        "pl": "⬅️ Anuluj",
+        "ru": "⬅️ Отменить",
+    },
     "BTN_BACK_ROOT": {
         "uk": "⬅️ На головну",
         "en": "⬅️ Main menu",
@@ -586,6 +1125,20 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "👋 Miło Cię znów widzieć, {name}!",
         "ru": "👋 Рад снова видеть, {name}!",
     },
+    "START_GROUP_REDIRECT": {
+        "uk": "👋 Привіт, {name}!\nЦей бот працює у приватних повідомленнях. Щоб продовжити, відкрийте <b>{workspace}</b> у особистому чаті за посиланням нижче.",
+        "en": "👋 Hi, {name}!\nThis bot works in private messages. Open <b>{workspace}</b> in a direct chat via the link below to keep going.",
+        "de": "👋 Hallo, {name}!\nDieser Bot funktioniert in privaten Nachrichten. Öffnen Sie <b>{workspace}</b> im Direktchat über den Link unten, um fortzufahren.",
+        "pl": "👋 Cześć, {name}!\nTen bot działa w prywatnych wiadomościach. Otwórz <b>{workspace}</b> w czacie prywatnym, korzystając z linku poniżej, aby kontynuować.",
+        "ru": "👋 Привет, {name}!\nЭтот бот работает в личных сообщениях. Чтобы продолжить, откройте <b>{workspace}</b> в приватном чате по ссылке ниже.",
+    },
+    "START_GROUP_OPEN_BOT": {
+        "uk": "🔐 Відкрити бота",
+        "en": "🔐 Open the bot",
+        "de": "🔐 Bot öffnen",
+        "pl": "🔐 Otwórz bota",
+        "ru": "🔐 Открыть бота",
+    },
     "START_PROMPT_FULLNAME": {
         "uk": "👤 Введіть прізвище та ім'я (наприклад, Іваненко Іван).",
         "en": "👤 Please enter your full name (for example, Smith John).",
@@ -620,6 +1173,695 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "de": "✅ Profil gespeichert. Ihr Code: <b>{code}</b>\nWillkommen an Bord!",
         "pl": "✅ Profil zapisany. Twój kod: <b>{code}</b>\nWitamy na pokładzie!",
         "ru": "✅ Профиль сохранён. Ваш код: <b>{code}</b>\nДобро пожаловать!",
+    },
+    "ONBOARD_LANGUAGE_CONFIRMED": {
+        "uk": "Мову переключено на {language}.",
+        "en": "Language switched to {language}.",
+        "de": "Sprache auf {language} umgestellt.",
+        "pl": "Język zmieniono na {language}.",
+        "ru": "Язык переключен на {language}.",
+    },
+    "REGISTER_GATE_CHECKING": {
+        "uk": "⏳ Перевіряємо участь у спільноті <b>{community}</b>…",
+        "en": "⏳ Checking your membership in <b>{community}</b>…",
+        "de": "⏳ Prüfen der Mitgliedschaft in <b>{community}</b> …",
+        "pl": "⏳ Sprawdzamy Twoje uczestnictwo w <b>{community}</b>…",
+        "ru": "⏳ Проверяем участие в группе <b>{community}</b>…",
+    },
+    "REGISTER_GATE_ALLOWED": {
+        "uk": "✅ ДОСТУП ПІДТВЕРДЖЕНО\n━━━━━━━━━━━━━━━━━━\nВи є учасником групи <b>{community}</b>, що підключена до робочого простору <b>{workspace}</b>.\n\n📎 Підключення успішне — система вас розпізнала.\n\nНатисніть <b>«{next_plain}»</b>, щоб завершити реєстрацію та активувати доступ.\n━━━━━━━━━━━━━━━━━━\n{workspace} — усе в одному місці. Жодних зайвих пошуків.",
+        "en": "✅ ACCESS CONFIRMED\n━━━━━━━━━━━━━━━━━━\nYou are a member of <b>{community}</b>, which is linked to the <b>{workspace}</b> workspace.\n\n📎 Connection successful — the system has recognized you.\n\nTap <b>“{next_plain}”</b> to complete registration and activate your access.\n━━━━━━━━━━━━━━━━━━\n{workspace} keeps everything in one place. No extra searching needed.",
+        "de": "✅ ZUGANG BESTÄTIGT\n━━━━━━━━━━━━━━━━━━\nSie gehören zur Gruppe <b>{community}</b>, die mit dem Arbeitsbereich <b>{workspace}</b> verbunden ist.\n\n📎 Verbindung erfolgreich – das System hat Sie erkannt.\n\nTippen Sie auf <b>„{next_plain}“</b>, um die Registrierung abzuschließen und den Zugang zu aktivieren.\n━━━━━━━━━━━━━━━━━━\n{workspace} bündelt alles an einem Ort. Keine unnötige Suche mehr.",
+        "pl": "✅ DOSTĘP POTWIERDZONY\n━━━━━━━━━━━━━━━━━━\nNależysz do grupy <b>{community}</b> połączonej z przestrzenią roboczą <b>{workspace}</b>.\n\n📎 Połączenie udane — system Cię rozpoznał.\n\nKliknij <b>„{next_plain}”</b>, aby zakończyć rejestrację i aktywować dostęp.\n━━━━━━━━━━━━━━━━━━\n{workspace} trzyma wszystko w jednym miejscu. Koniec z niepotrzebnym szukaniem.",
+        "ru": "✅ ДОСТУП ПОДТВЕРЖДЁН\n━━━━━━━━━━━━━━━━━━\nВы состоите в группе <b>{community}</b>, подключённой к рабочему пространству <b>{workspace}</b>.\n\n📎 Подключение успешно — система вас распознала.\n\nНажмите <b>«{next_plain}»</b>, чтобы завершить регистрацию и активировать доступ.\n━━━━━━━━━━━━━━━━━━\n{workspace} — всё в одном месте. Никаких лишних поисков.",
+    },
+    "REGISTER_GATE_DENIED": {
+        "uk": "🚫 Реєстрація поки недоступна, {name}.\n\nВи ще не приєдналися до групи <b>{community}</b>. Напишіть, будь ласка, <b>{contact_name}</b> ({contact_role}), щоб вас додали. Після підтвердження натисніть «Продовжити», щоб перевірити ще раз, або «Закрити», щоб прибрати повідомлення.",
+        "en": "🚫 Registration is currently unavailable, {name}.\n\nYou are not a member of <b>{community}</b> yet. Please message <b>{contact_name}</b> ({contact_role}) so they can add you. After joining, press “Continue” to check again or “Close” to hide this message.",
+        "de": "🚫 Registrierung momentan nicht möglich, {name}.\n\nSie sind noch kein Mitglied von <b>{community}</b>. Bitte kontaktieren Sie <b>{contact_name}</b> ({contact_role}), damit Sie hinzugefügt werden. Nachdem Sie beigetreten sind, tippen Sie auf „Fortfahren“, um erneut zu prüfen, oder auf „Schließen“, um diese Nachricht auszublenden.",
+        "pl": "🚫 Rejestracja jest chwilowo zablokowana, {name}.\n\nNie należysz jeszcze do grupy <b>{community}</b>. Skontaktuj się z <b>{contact_name}</b> ({contact_role}), aby dodał Cię do społeczności. Po dołączeniu kliknij „Kontynuować”, aby sprawdzić ponownie, albo „Zamknąć”, aby ukryć tę wiadomość.",
+        "ru": "🚫 Регистрация пока недоступна, {name}.\n\nВы ещё не вступили в группу <b>{community}</b>. Напишите, пожалуйста, <b>{contact_name}</b> ({contact_role}), чтобы он добавил вас. После вступления нажмите «Продолжить», чтобы проверить снова, или «Закрыть», чтобы скрыть сообщение.",
+    },
+    "REGISTER_GATE_RETRY": {
+        "uk": "🔄 Продовжити",
+        "en": "🔄 Continue",
+        "de": "🔄 Fortfahren",
+        "pl": "🔄 Kontynuować",
+        "ru": "🔄 Продолжить",
+    },
+    "REGISTER_GATE_CLOSE": {
+        "uk": "✖️ Закрити",
+        "en": "✖️ Close",
+        "de": "✖️ Schließen",
+        "pl": "✖️ Zamknąć",
+        "ru": "✖️ Закрыть",
+    },
+    "ONBOARD_WELCOME": {
+        "uk": "👋 Привіт, {name}!\nЛаскаво просимо до робочого простору <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nТут зібрано все, що допомагає працювати швидко та тримати під контролем важливі справи.\n\n> <b>{bot}</b> — ваш особистий інструмент порядку, швидкості та впевненості в роботі.\n\nℹ️ Хочете приєднатися й дізнатися, як пройти реєстрацію?\nПросто натисніть <b>«Далі»</b> і отримайте покрокову інструкцію (підпис автоматично локалізовано).",
+        "en": "👋 Hello, {name}!\nWelcome to the <b>{bot}</b> workspace\n━━━━━━━━━━━━━━━━━━\nEverything you need to work fast and stay in control of critical tasks lives here.\n\n> <b>{bot}</b> is your personal toolkit for order, speed, and confidence at work.\n\nℹ️ Ready to join and learn how to complete registration?\nJust tap <b>“Next”</b> to receive the step-by-step guide (the button label is localized automatically).",
+        "de": "👋 Hallo, {name}!\nWillkommen im Arbeitsbereich <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nHier finden Sie alles, was schnelles Arbeiten und die Kontrolle über wichtige Aufgaben erleichtert.\n\n> <b>{bot}</b> ist Ihr persönliches Werkzeug für Ordnung, Tempo und Sicherheit im Arbeitsalltag.\n\nℹ️ Möchten Sie beitreten und erfahren, wie die Registrierung funktioniert?\nTippen Sie einfach auf <b>„Weiter“</b>, um die Schritt-für-Schritt-Anleitung zu erhalten (die Beschriftung wird automatisch lokalisiert).",
+        "pl": "👋 Cześć, {name}!\nWitamy w przestrzeni roboczej <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nTutaj znajdziesz wszystko, co pomaga pracować szybko i mieć kontrolę nad ważnymi zadaniami.\n\n> <b>{bot}</b> to Twoje osobiste narzędzie porządku, szybkości i pewności w pracy.\n\nℹ️ Chcesz dołączyć i zobaczyć, jak przejść rejestrację?\nPo prostu kliknij <b>„Dalej”</b>, aby otrzymać instrukcję krok po kroku (podpis przycisku dostosowuje się automatycznie).",
+        "ru": "👋 Привет, {name}!\nДобро пожаловать в рабочее пространство <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\nЗдесь собрано всё, что помогает работать быстро и не терять контроль над важными делами.\n\n> <b>{bot}</b> — ваш личный инструмент для порядка, скорости и уверенности в работе.\n\nℹ️ Хотите присоединиться и узнать, как пройти регистрацию?\nПросто нажмите <b>«Дальше»</b> и получите пошаговую инструкцию (подпись автоматически локализуется).",
+    },
+    "ONBOARD_BRIEFING": {
+        "uk": "📝 <b>Як пройти реєстрацію</b>\n━━━━━━━━━━━━━━━━━━\n1. Вкажіть своє ім'я без скорочень.\n\n2. Запишіть прізвище точно так, як у документах.\n\n3. Додайте по батькові або напишіть, що його немає.\n\n4. Введіть дату народження у форматі ДД.ММ.РРРР.\n\n5. Оберіть область кнопкою «📍 Вибрати область».\n\n6. Поділіться телефоном через кнопку «📱 Надіслати номер».\n\n7. Завантажте фото у паспортному стилі або додайте його пізніше.\n\nГотові? Натисніть <b>«Далі»</b>, щоб почати.",
+        "en": "📝 <b>How to complete registration</b>\n━━━━━━━━━━━━━━━━━━\n1. Enter your first name without abbreviations.\n\n2. Write your last name exactly as it appears in your documents.\n\n3. Add a patronymic/middle name or tell us you don't have one.\n\n4. Provide your birth date in DD.MM.YYYY format.\n\n5. Choose your oblast using the “📍 Choose region” button.\n\n6. Share your phone number with the “📱 Share phone number” button.\n\n7. Upload a passport-style photo or add it later.\n\nReady? Press <b>“Next”</b> to begin.",
+        "de": "📝 <b>So läuft die Registrierung</b>\n━━━━━━━━━━━━━━━━━━\n1. Geben Sie Ihren Vornamen ohne Abkürzungen ein.\n\n2. Schreiben Sie den Nachnamen genau wie im Ausweis.\n\n3. Ergänzen Sie den Vatersnamen/Zweitnamen oder teilen Sie mit, dass er nicht vorhanden ist.\n\n4. Tragen Sie das Geburtsdatum im Format TT.MM.JJJJ ein.\n\n5. Wählen Sie Ihre Oblast über die Schaltfläche „📍 Region wählen“.\n\n6. Senden Sie Ihre Telefonnummer mit „📱 Nummer senden“.\n\n7. Laden Sie ein Passfoto hoch oder fügen Sie es später hinzu.\n\nBereit? Tippen Sie auf <b>„Weiter“</b>, um zu starten.",
+        "pl": "📝 <b>Jak przejść rejestrację</b>\n━━━━━━━━━━━━━━━━━━\n1. Wpisz swoje imię bez skrótów.\n\n2. Zapisz nazwisko dokładnie jak w dokumentach.\n\n3. Dodaj drugie imię/imię ojca lub napisz, że go nie ma.\n\n4. Podaj datę urodzenia w formacie DD.MM.RRRR.\n\n5. Wybierz obwód przyciskiem „📍 Wybierz region”.\n\n6. Udostępnij telefon przyciskiem „📱 Wyślij numer”.\n\n7. Prześlij zdjęcie paszportowe albo dodaj je później.\n\nGotowi? Kliknij <b>„Dalej”</b>, aby rozpocząć.",
+        "ru": "📝 <b>Как пройти регистрацию</b>\n━━━━━━━━━━━━━━━━━━\n1. Укажите своё имя без сокращений.\n\n2. Запишите фамилию точно как в паспорте.\n\n3. Добавьте отчество или сообщите, что его нет.\n\n4. Введите дату рождения в формате ДД.ММ.ГГГГ.\n\n5. Выберите область кнопкой «📍 Выбрать область».\n\n6. Поделитесь телефоном кнопкой «📱 Отправить номер».\n\n7. Загрузите фото в паспортном стиле или добавьте его позже.\n\nГотовы? Нажмите <b>«Дальше»</b>, чтобы начать.",
+    },
+
+
+    "ONBOARD_RETURNING_SHORTCUT": {
+        "uk": "Виглядає, що ви вже проходили реєстрацію. Натисніть кнопку, щоб перейти до головного меню або продовжити оновлення даних.",
+        "en": "It seems you have already completed registration. Use the button to open the main menu or continue updating your data.",
+        "de": "Sie scheinen bereits registriert zu sein. Nutzen Sie die Schaltfläche, um zum Hauptmenü zu wechseln oder Ihre Daten zu aktualisieren.",
+        "pl": "Wygląda na to, że rejestracja została już zakończona. Użyj przycisku, aby przejść do menu głównego lub zaktualizować dane.",
+        "ru": "Похоже, вы уже проходили регистрацию. Нажмите кнопку, чтобы открыть главное меню или продолжить обновление данных.",
+    },
+    "ONBOARD_ALREADY_COMPLETED": {
+        "uk": "✅ Реєстрацію вже завершено. Повертаю вас до головного меню.",
+        "en": "✅ Registration is already complete. Returning you to the main menu.",
+        "de": "✅ Die Registrierung ist bereits abgeschlossen. Ich bringe Sie zurück zum Hauptmenü.",
+        "pl": "✅ Rejestracja została już ukończona. Wracam do głównego menu.",
+        "ru": "✅ Регистрация уже завершена. Возвращаю в главное меню.",
+    },
+    "REGISTER_INTRO_PROMPT": {
+        "uk": "Починаємо! Відповідайте на запитання нижче. Всі допоміжні повідомлення будуть прибрані автоматично.",
+        "en": "Let's get started! Answer the questions below — helper messages will be cleaned up automatically.",
+        "de": "Los geht's! Beantworten Sie die folgenden Fragen – Hilfsnachrichten werden automatisch entfernt.",
+        "pl": "Zaczynamy! Odpowiedz na poniższe pytania – pomocnicze wiadomości zostaną usunięte automatycznie.",
+        "ru": "Начинаем! Отвечайте на вопросы ниже — служебные сообщения будут удалены автоматически.",
+    },
+    "REGISTER_RESUME_PROGRESS": {
+        "uk": "🔄 Продовжуємо. Залишилось заповнити: {fields}.",
+        "en": "🔄 Resuming. Fields left to fill: {fields}.",
+        "de": "🔄 Weiter geht's. Es fehlt noch: {fields}.",
+        "pl": "🔄 Kontynuujemy. Do uzupełnienia pozostało: {fields}.",
+        "ru": "🔄 Продолжаем. Осталось заполнить: {fields}.",
+    },
+    "REGISTER_RESUME_READY": {
+        "uk": "🔄 Дані вже заповнені — завершуємо перевірку.",
+        "en": "🔄 All details are already filled — wrapping up the check.",
+        "de": "🔄 Alle Angaben bereits vorhanden – Abschluss läuft.",
+        "pl": "🔄 Wszystkie dane są już uzupełnione — kończymy sprawdzanie.",
+        "ru": "🔄 Все данные уже заполнены — завершаем проверку.",
+    },
+    "REGISTER_BLOCKED_NOTICE": {
+        "uk": "❗ Завершіть реєстрацію, щоб відкрити меню. Натисніть «Далі» та виконайте всі кроки анкети.",
+        "en": "❗ Finish registration to access the menu. Tap “Next” and complete the remaining steps.",
+        "de": "❗ Schließen Sie die Registrierung ab, um das Menü zu öffnen. Tippen Sie auf „Weiter“ und vervollständigen Sie die fehlenden Angaben.",
+        "pl": "❗ Aby uzyskać dostęp do menu, dokończ rejestrację. Kliknij „Dalej” i wypełnij pozostałe kroki.",
+        "ru": "❗ Завершите регистрацию, чтобы открыть меню. Нажмите «Дальше» и выполните оставшиеся шаги.",
+    },
+    "REGISTER_LIST_AND": {
+        "uk": " і ",
+        "en": " and ",
+        "de": " und ",
+        "pl": " i ",
+        "ru": " и ",
+    },
+    "REGISTER_FIELD_LABEL_LAST_NAME": {
+        "uk": "прізвище",
+        "en": "last name",
+        "de": "Nachname",
+        "pl": "nazwisko",
+        "ru": "фамилия",
+    },
+    "REGISTER_FIELD_LABEL_FIRST_NAME": {
+        "uk": "ім'я",
+        "en": "first name",
+        "de": "Vorname",
+        "pl": "imię",
+        "ru": "имя",
+    },
+    "REGISTER_FIELD_LABEL_MIDDLE_NAME": {
+        "uk": "по батькові",
+        "en": "middle name",
+        "de": "Zweitname",
+        "pl": "drugie imię",
+        "ru": "отчество",
+    },
+    "REGISTER_FIELD_LABEL_BIRTHDATE": {
+        "uk": "дату народження",
+        "en": "birth date",
+        "de": "Geburtsdatum",
+        "pl": "datę urodzenia",
+        "ru": "дату рождения",
+    },
+    "REGISTER_FIELD_LABEL_REGION": {
+        "uk": "область",
+        "en": "region",
+        "de": "Region",
+        "pl": "region",
+        "ru": "область",
+    },
+    "REGISTER_FIELD_LABEL_PHONE": {
+        "uk": "номер телефону",
+        "en": "phone number",
+        "de": "Telefonnummer",
+        "pl": "numer telefonu",
+        "ru": "номер телефона",
+    },
+    "REGISTER_FIELD_LABEL_PHOTO": {
+        "uk": "фото",
+        "en": "photo",
+        "de": "Foto",
+        "pl": "zdjęcie",
+        "ru": "фото",
+    },
+    "REGISTER_LAST_NAME_PROMPT": {
+        "uk": "2. ✍️ <b>Вкажіть своє прізвище.</b>\nНапишіть повністю, як у паспорті.",
+        "en": "2. ✍️ <b>Enter your last name.</b>\nWrite it exactly as it appears in your ID.",
+        "de": "2. ✍️ <b>Geben Sie Ihren Nachnamen an.</b>\nSchreiben Sie ihn vollständig wie im Ausweis.",
+        "pl": "2. ✍️ <b>Podaj swoje nazwisko.</b>\nZapisz je dokładnie tak, jak w dokumentach.",
+        "ru": "2. ✍️ <b>Укажите свою фамилию.</b>\nНапишите полностью, как в паспорте."
+    },
+    "REGISTER_LAST_NAME_WARN": {
+        "uk": "❗ Перевірте прізвище: допускаються лише літери, апостроф та дефіс.",
+        "en": "❗ Please check your last name: only letters, apostrophes, and dashes are allowed.",
+        "de": "❗ Prüfen Sie den Nachnamen: Es sind nur Buchstaben, Apostroph und Bindestrich erlaubt.",
+        "pl": "❗ Sprawdź nazwisko: dozwolone są tylko litery, apostrof i myślnik.",
+        "ru": "❗ Проверьте фамилию: допустимы только буквы, апостроф и дефис.",
+    },
+    "REGISTER_LAST_NAME_OK": {
+        "uk": "Прізвище збережено: <b>{value}</b> ✅",
+        "en": "Last name saved: <b>{value}</b> ✅",
+        "de": "Nachname gespeichert: <b>{value}</b> ✅",
+        "pl": "Nazwisko zapisane: <b>{value}</b> ✅",
+        "ru": "Фамилия сохранена: <b>{value}</b> ✅",
+    },
+    "REGISTER_FIRST_NAME_PROMPT": {
+        "uk": "1. ✍️ <b>Вкажіть своє ім'я.</b>\nПишіть повністю, без скорочень, як у документах.",
+        "en": "1. ✍️ <b>Enter your first name.</b>\nWrite it fully, without abbreviations, exactly as in your documents.",
+        "de": "1. ✍️ <b>Geben Sie Ihren Vornamen ein.</b>\nSchreiben Sie ihn vollständig und ohne Abkürzungen wie in den Dokumenten.",
+        "pl": "1. ✍️ <b>Podaj swoje imię.</b>\nPisz pełnym imieniem, bez skrótów, tak jak w dokumentach.",
+        "ru": "1. ✍️ <b>Укажите своё имя.</b>\nПишите полностью, без сокращений, как в документах."
+    },
+    "REGISTER_FIRST_NAME_WARN": {
+        "uk": "❗ Перевірте ім'я: допускаються лише літери.",
+        "en": "❗ Please check your first name: only letters are allowed.",
+        "de": "❗ Prüfen Sie den Vornamen: Es sind nur Buchstaben erlaubt.",
+        "pl": "❗ Sprawdź imię: dozwolone są tylko litery.",
+        "ru": "❗ Проверьте имя: допускаются только буквы."
+    },
+    "REGISTER_FIRST_NAME_OK": {
+        "uk": "Ім'я збережено: <b>{value}</b> ✅",
+        "en": "First name saved: <b>{value}</b> ✅",
+        "de": "Vorname gespeichert: <b>{value}</b> ✅",
+        "pl": "Imię zapisane: <b>{value}</b> ✅",
+        "ru": "Имя сохранено: <b>{value}</b> ✅",
+    },
+    "REGISTER_MIDDLE_NAME_PROMPT": {
+        "uk": "3. ✍️ <b>По батькові.</b>\nЯкщо немає — напишіть «немає».",
+        "en": "3. ✍️ <b>Patronymic or middle name.</b>\nIf you don't have one, write “no”.",
+        "de": "3. ✍️ <b>Zweitname/Vatersname.</b>\nWenn keiner vorhanden ist, schreiben Sie „kein“.",
+        "pl": "3. ✍️ <b>Drugie imię / imię ojca.</b>\nJeśli go nie ma, wpisz „brak”.",
+        "ru": "3. ✍️ <b>Отчество.</b>\nЕсли его нет — напишите «Нет»."
+    },
+    "REGISTER_MIDDLE_NAME_WARN": {
+        "uk": "❗ Перевірте по батькові: використовуйте літери або напишіть «немає».",
+        "en": "❗ Check the patronymic: use letters or type “no”.",
+        "de": "❗ Prüfen Sie den Zweitnamen: Verwenden Sie Buchstaben oder schreiben Sie „kein“.",
+        "pl": "❗ Sprawdź drugie imię: użyj liter lub wpisz „brak”.",
+        "ru": "❗ Проверьте отчество: используйте буквы или напишите «Нет»."
+    },
+    "REGISTER_MIDDLE_NAME_OK": {
+        "uk": "По батькові збережено: <b>{value}</b> ✅",
+        "en": "Middle name saved: <b>{value}</b> ✅",
+        "de": "Zweitname gespeichert: <b>{value}</b> ✅",
+        "pl": "Drugie imię zapisane: <b>{value}</b> ✅",
+        "ru": "Отчество сохранено: <b>{value}</b> ✅",
+    },
+    "REGISTER_MIDDLE_NAME_SKIPPED": {
+        "uk": "По батькові пропущено. Його можна додати з профілю пізніше.",
+        "en": "Middle name skipped. You can add it later from your profile.",
+        "de": "Zweitname übersprungen. Sie können ihn später im Profil hinzufügen.",
+        "pl": "Drugie imię pominięto. Możesz dodać je później w profilu.",
+        "ru": "Отчество пропущено. Его можно добавить позже в профиле.",
+    },
+    "REGISTER_BIRTHDATE_PROMPT": {
+        "uk": "4. 📆 <b>Дата народження.</b>\nФормат: ДД.ММ.РРРР (наприклад, 25.07.1995).",
+        "en": "4. 📆 <b>Birth date.</b>\nFormat: DD.MM.YYYY (e.g., 25.07.1995).",
+        "de": "4. 📆 <b>Geburtsdatum.</b>\nFormat: TT.MM.JJJJ (z. B. 25.07.1995).",
+        "pl": "4. 📆 <b>Data urodzenia.</b>\nFormat: DD.MM.RRRR (np. 25.07.1995).",
+        "ru": "4. 📆 <b>Дата рождения.</b>\nФормат: ДД.ММ.ГГГГ (например, 25.07.1995)."
+    },
+    "REGISTER_BIRTHDATE_WARN": {
+        "uk": "❗ Не вдалося розпізнати дату. Використовуйте формат ДД.ММ.РРРР.",
+        "en": "❗ Could not parse the date. Please use DD.MM.YYYY format.",
+        "de": "❗ Datum konnte nicht erkannt werden. Bitte verwenden Sie das Format TT.MM.JJJJ.",
+        "pl": "❗ Nie udało się rozpoznać daty. Użyj formatu DD.MM.RRRR.",
+        "ru": "❗ Не удалось распознать дату. Используйте формат ДД.ММ.ГГГГ.",
+    },
+    "REGISTER_BIRTHDATE_OK": {
+        "uk": "Дату народження збережено: <b>{value}</b> ✅",
+        "en": "Birth date saved: <b>{value}</b> ✅",
+        "de": "Geburtsdatum gespeichert: <b>{value}</b> ✅",
+        "pl": "Data urodzenia zapisana: <b>{value}</b> ✅",
+        "ru": "Дата рождения сохранена: <b>{value}</b> ✅",
+    },
+    "REGISTER_REGION_PROMPT": {
+        "uk": "5. 📍 <b>Виберіть область.</b>\nНатисніть «📍 Вибрати область» і підтвердьте вибір.",
+        "en": "5. 📍 <b>Select your oblast.</b>\nTap “📍 Choose region” and confirm your choice.",
+        "de": "5. 📍 <b>Wählen Sie Ihre Oblast.</b>\nTippen Sie auf „📍 Region wählen“ und bestätigen Sie Ihre Auswahl.",
+        "pl": "5. 📍 <b>Wybierz obwód.</b>\nKliknij „📍 Wybierz region” i zatwierdź wybór.",
+        "ru": "5. 📍 <b>Выберите область.</b>\nНажмите «📍 Выбрать область» и подтвердите выбор."
+    },
+    "REGISTER_REGION_BUTTON": {
+        "uk": "📍 Вибрати область",
+        "en": "📍 Choose region",
+        "de": "📍 Region wählen",
+        "pl": "📍 Wybierz region",
+        "ru": "📍 Выбрать область",
+    },
+    "REGISTER_REGION_BACK": {
+        "uk": "⬅️ Назад",
+        "en": "⬅️ Back",
+        "de": "⬅️ Zurück",
+        "pl": "⬅️ Wstecz",
+        "ru": "⬅️ Назад"
+    },
+
+    "REGISTER_REGION_PICK": {
+        "uk": "📍 Виберіть свою область зі списку нижче.",
+        "en": "📍 Pick your oblast from the list below.",
+        "de": "📍 Wählen Sie Ihre Oblast aus der Liste unten.",
+        "pl": "📍 Wybierz swój obwód z poniższej listy.",
+        "ru": "📍 Выберите свою область из списка ниже."
+    },
+    "REGISTER_REGION_REMIND": {
+        "uk": "❗ Скористайтеся кнопкою «📍 Вибрати область», щоб обрати зі списку.",
+        "en": "❗ Use the “📍 Choose region” button to select from the list.",
+        "de": "❗ Nutzen Sie die Schaltfläche „📍 Region wählen“, um aus der Liste zu wählen.",
+        "pl": "❗ Użyj przycisku „📍 Wybierz region”, aby wybrać z listy.",
+        "ru": "❗ Используйте кнопку «📍 Выбрать область», чтобы выбрать из списка."
+    },
+    "REGISTER_REGION_SELECTED": {
+        "uk": "✅ Область збережено: <b>{region}</b>. Натисніть <b>«Далі»</b>, щоб перейти до телефону, або «⬅️ Назад», щоб змінити.",
+        "en": "✅ Region saved: <b>{region}</b>. Press <b>“Next”</b> to continue to the phone step or “⬅️ Back” to change it.",
+        "de": "✅ Region gespeichert: <b>{region}</b>. Tippen Sie auf <b>„Weiter“</b>, um mit der Telefonnummer fortzufahren, oder auf „⬅️ Zurück“, um sie zu ändern.",
+        "pl": "✅ Obwód zapisany: <b>{region}</b>. Kliknij <b>„Dalej”</b>, aby przejść do telefonu, lub „⬅️ Wstecz”, aby zmienić.",
+        "ru": "✅ Область сохранена: <b>{region}</b>. Нажмите <b>«Дальше»</b>, чтобы перейти к телефону, или «⬅️ Назад», чтобы изменить."
+    },
+    "REGISTER_REGION_OK": {
+        "uk": "Область підтверджено: <b>{value}</b> ✅",
+        "en": "Region confirmed: <b>{value}</b> ✅",
+        "de": "Region bestätigt: <b>{value}</b> ✅",
+        "pl": "Region potwierdzony: <b>{value}</b> ✅",
+        "ru": "Область подтверждена: <b>{value}</b> ✅",
+    },
+    "REGISTER_PHONE_PROMPT_NEW": {
+        "uk": "6. 📞 <b>Номер телефону для реєстрації.</b>\nНатисніть «📱 Надіслати номер», щоб поділитися контактом.",
+        "en": "6. 📞 <b>Phone number for registration.</b>\nTap “📱 Share phone number” to send your contact.",
+        "de": "6. 📞 <b>Telefonnummer für die Registrierung.</b>\nTippen Sie auf „📱 Nummer senden“, um Ihren Kontakt zu teilen.",
+        "pl": "6. 📞 <b>Numer telefonu do rejestracji.</b>\nKliknij „📱 Wyślij numer”, aby udostępnić kontakt.",
+        "ru": "6. 📞 <b>Номер телефона для регистрации.</b>\nНажмите «📱 Отправить номер», чтобы поделиться контактом."
+    },
+    "REGISTER_PHONE_WARN": {
+        "uk": "📞 Скористайтеся кнопкою «📱 Надіслати номер», щоб ми отримали правильний контакт.",
+        "en": "📞 Please tap “📱 Share phone number” so we receive the correct contact.",
+        "de": "📞 Tippen Sie auf „📱 Nummer senden“, damit wir die richtige Nummer erhalten.",
+        "pl": "📞 Kliknij „📱 Wyślij numer”, aby przesłać poprawny kontakt.",
+        "ru": "📞 Пожалуйста, нажмите «📱 Отправить номер», чтобы мы сохранили верный контакт."
+    },
+    "REGISTER_PHONE_TEXT_WARN": {
+        "uk": "📞 Надішліть коректний номер або натисніть «📱 Надіслати номер».",
+        "en": "📞 Send a valid phone number or tap “📱 Share phone number”.",
+        "de": "📞 Senden Sie eine gültige Nummer oder tippen Sie auf „📱 Nummer senden“.",
+        "pl": "📞 Wyślij poprawny numer lub kliknij „📱 Wyślij numer”.",
+        "ru": "📞 Отправьте корректный номер или нажмите «📱 Отправить номер»."
+    },
+    "REGISTER_PHONE_OK": {
+        "uk": "Номер збережено: <b>{value}</b> ✅",
+        "en": "Phone number saved: <b>{value}</b> ✅",
+        "de": "Telefonnummer gespeichert: <b>{value}</b> ✅",
+        "pl": "Numer telefonu zapisany: <b>{value}</b> ✅",
+        "ru": "Номер телефона сохранён: <b>{value}</b> ✅",
+    },
+    "REGISTER_PHOTO_PROMPT": {
+        "uk": "7. 📸 <b>Фото профілю.</b>\nПаспортний формат: чітке обличчя та нейтральний фон. Можна додати пізніше кнопкою «Пропустити».",
+        "en": "7. 📸 <b>Profile photo.</b>\nPassport style: clear face and neutral background. You can add it later with “Skip”.",
+        "de": "7. 📸 <b>Profilfoto.</b>\nPassfoto-Format: klares Gesicht und neutraler Hintergrund. Sie können es später über „Überspringen“ hinzufügen.",
+        "pl": "7. 📸 <b>Zdjęcie profilowe.</b>\nFormat paszportowy: wyraźna twarz i neutralne tło. Możesz dodać je później przyciskiem „Pomiń”.",
+        "ru": "7. 📸 <b>Фото профиля.</b>\nПаспортный формат: чёткое лицо и нейтральный фон. Можно добавить позже кнопкой «Пропустить»."
+    },
+    "REGISTER_PHOTO_WARN": {
+        "uk": "❗ Не вдалося обробити фото. Надішліть його знову у форматі JPG або PNG.",
+        "en": "❗ Could not process the photo. Please send it again in JPG or PNG format.",
+        "de": "❗ Foto konnte nicht verarbeitet werden. Bitte senden Sie es erneut als JPG oder PNG.",
+        "pl": "❗ Nie udało się przetworzyć zdjęcia. Wyślij je ponownie w formacie JPG lub PNG.",
+        "ru": "❗ Не удалось обработать фото. Пожалуйста, отправьте его снова в формате JPG или PNG."
+    },
+    "REGISTER_PHOTO_RECEIVED": {
+        "uk": "Фото отримано ✅",
+        "en": "Photo received ✅",
+        "de": "Foto erhalten ✅",
+        "pl": "Zdjęcie otrzymane ✅",
+        "ru": "Фото получено ✅",
+    },
+    "REGISTER_PHOTO_SKIP_CONFIRM": {
+        "uk": "Фото можна завантажити пізніше у розділі профілю.",
+        "en": "You can upload a photo later from your profile section.",
+        "de": "Sie können das Foto später im Profilbereich hochladen.",
+        "pl": "Zdjęcie możesz dodać później w swoim profilu.",
+        "ru": "Фото можно загрузить позже в разделе профиля.",
+    },
+    "REGISTER_PHOTO_KEEP_CONFIRM": {
+        "uk": "Поточне фото залишилося без змін ✅",
+        "en": "Current photo kept without changes ✅",
+        "de": "Aktuelles Foto bleibt unverändert ✅",
+        "pl": "Aktualne zdjęcie pozostawiono bez zmian ✅",
+        "ru": "Текущее фото оставлено без изменений ✅",
+    },
+    "REGISTER_FINISH_CONFIRM": {
+        "uk": "Реєстрацію завершено. Ваш артикул BSG — <b>{code}</b>.",
+        "en": "Registration completed. Your BSG article is <b>{code}</b>.",
+        "de": "Registrierung abgeschlossen. Ihre BSG-Kennung lautet <b>{code}</b>.",
+        "pl": "Rejestracja zakończona. Twój kod BSG to <b>{code}</b>.",
+        "ru": "Регистрация завершена. Ваш артикул BSG — <b>{code}</b>.",
+    },
+    "PROFILE_HEADER": {
+        "uk": "👤 <b>Мій профіль</b>",
+        "en": "👤 <b>My profile</b>",
+        "de": "👤 <b>Mein Profil</b>",
+        "pl": "👤 <b>Mój profil</b>",
+        "ru": "👤 <b>Мой профиль</b>",
+    },
+    "PROFILE_EDIT_HINT": {
+        "uk": "✏️ Режим редагування активний. Оберіть поле нижче, щоб оновити дані.",
+        "en": "✏️ Edit mode is active. Pick a field below to update your data.",
+        "de": "✏️ Bearbeitungsmodus aktiv. Wählen Sie unten ein Feld, um die Daten zu aktualisieren.",
+        "pl": "✏️ Tryb edycji jest aktywny. Wybierz pole poniżej, aby zaktualizować dane.",
+        "ru": "✏️ Режим редактирования активен. Выберите поле ниже, чтобы обновить данные.",
+    },
+    "PROFILE_FIELD_LAST_NAME": {
+        "uk": "Прізвище",
+        "en": "Last name",
+        "de": "Nachname",
+        "pl": "Nazwisko",
+        "ru": "Фамилия",
+    },
+    "PROFILE_FIELD_FIRST_NAME": {
+        "uk": "Ім'я",
+        "en": "First name",
+        "de": "Vorname",
+        "pl": "Imię",
+        "ru": "Имя",
+    },
+    "PROFILE_FIELD_MIDDLE_NAME": {
+        "uk": "По батькові",
+        "en": "Patronymic",
+        "de": "Vatersname",
+        "pl": "Drugie imię",
+        "ru": "Отчество",
+    },
+    "PROFILE_FIELD_BIRTHDATE": {
+        "uk": "Дата народження",
+        "en": "Birth date",
+        "de": "Geburtsdatum",
+        "pl": "Data urodzenia",
+        "ru": "Дата рождения",
+    },
+    "PROFILE_FIELD_REGION": {
+        "uk": "Область",
+        "en": "Region",
+        "de": "Region",
+        "pl": "Obwód",
+        "ru": "Область",
+    },
+    "PROFILE_FIELD_PHONE": {
+        "uk": "Телефон",
+        "en": "Phone",
+        "de": "Telefon",
+        "pl": "Telefon",
+        "ru": "Телефон",
+    },
+    "PROFILE_FIELD_TG_ID": {
+        "uk": "Telegram ID",
+        "en": "Telegram ID",
+        "de": "Telegram-ID",
+        "pl": "ID Telegram",
+        "ru": "Telegram ID",
+    },
+    "PROFILE_FIELD_TG_USERNAME": {
+        "uk": "Telegram юзер",
+        "en": "Telegram username",
+        "de": "Telegram-Benutzername",
+        "pl": "Nazwa w Telegramie",
+        "ru": "Имя в Telegram",
+    },
+    "PROFILE_FIELD_BSU": {
+        "uk": "BSU код",
+        "en": "BSU code",
+        "de": "BSU-Code",
+        "pl": "Kod BSU",
+        "ru": "BSU код",
+    },
+    "PROFILE_FIELD_PHOTO": {
+        "uk": "Фото профілю",
+        "en": "Profile photo",
+        "de": "Profilfoto",
+        "pl": "Zdjęcie profilu",
+        "ru": "Фото профиля",
+    },
+    "PROFILE_VALUE_MISSING": {
+        "uk": "—",
+        "en": "—",
+        "de": "—",
+        "pl": "—",
+        "ru": "—",
+    },
+    "PROFILE_PHOTO_STATUS_OK": {
+        "uk": "завантажено",
+        "en": "uploaded",
+        "de": "hochgeladen",
+        "pl": "dodano",
+        "ru": "загружено",
+    },
+    "PROFILE_PHOTO_STATUS_MISSING": {
+        "uk": "відсутнє",
+        "en": "missing",
+        "de": "fehlt",
+        "pl": "brak",
+        "ru": "отсутствует",
+    },
+    "PROFILE_PHOTO_STATUS_SKIPPED": {
+        "uk": "поки пропущено",
+        "en": "skipped for now",
+        "de": "vorerst übersprungen",
+        "pl": "pominięto",
+        "ru": "пропущено пока",
+    },
+    "PROFILE_PROMPT_LAST_NAME": {
+        "uk": "1. Вкажіть нове прізвище (лише літери).",
+        "en": "1. Enter the new last name (letters only).",
+        "de": "1. Geben Sie den neuen Nachnamen ein (nur Buchstaben).",
+        "pl": "1. Podaj nowe nazwisko (tylko litery).",
+        "ru": "1. Укажите новую фамилию (только буквы).",
+    },
+    "PROFILE_PROMPT_FIRST_NAME": {
+        "uk": "2. Вкажіть нове ім'я (лише літери).",
+        "en": "2. Enter the new first name (letters only).",
+        "de": "2. Geben Sie den neuen Vornamen ein (nur Buchstaben).",
+        "pl": "2. Podaj nowe imię (tylko litery).",
+        "ru": "2. Укажите новое имя (только буквы).",
+    },
+    "PROFILE_PROMPT_MIDDLE_NAME": {
+        "uk": "3. Введіть по батькові або напишіть «немає», щоб очистити поле.",
+        "en": "3. Provide a patronymic or type “none” to clear the field.",
+        "de": "3. Geben Sie den Vatersnamen an oder schreiben Sie „kein“, um das Feld zu leeren.",
+        "pl": "3. Podaj drugie imię lub wpisz „brak”, aby wyczyścić pole.",
+        "ru": "3. Введите отчество или напишите «нет», чтобы очистить поле.",
+    },
+    "PROFILE_PROMPT_BIRTHDATE": {
+        "uk": "4. Вкажіть дату народження у форматі ДД.ММ.РРРР.",
+        "en": "4. Enter the birth date in DD.MM.YYYY format.",
+        "de": "4. Geben Sie das Geburtsdatum im Format TT.MM.JJJJ ein.",
+        "pl": "4. Podaj datę urodzenia w formacie DD.MM.RRRR.",
+        "ru": "4. Укажите дату рождения в формате ДД.ММ.ГГГГ.",
+    },
+    "PROFILE_PROMPT_REGION": {
+        "uk": "5. Оберіть область проживання кнопкою нижче.",
+        "en": "5. Choose your region using the button below.",
+        "de": "5. Wählen Sie Ihre Region über die Schaltfläche unten.",
+        "pl": "5. Wybierz swój obwód za pomocą przycisku poniżej.",
+        "ru": "5. Выберите область проживания кнопкой ниже.",
+    },
+    "PROFILE_PROMPT_PHONE": {
+        "uk": "6. Надішліть номер телефону через кнопку «📱 Надіслати номер».",
+        "en": "6. Send your phone number via the “📱 Share phone number” button.",
+        "de": "6. Senden Sie Ihre Telefonnummer über die Schaltfläche „📱 Nummer senden“.",
+        "pl": "6. Wyślij numer telefonu przyciskiem „📱 Wyślij numer”.",
+        "ru": "6. Отправьте номер телефона кнопкой «📱 Отправить номер».",
+    },
+    "PROFILE_PROMPT_PHOTO": {
+        "uk": "7. Завантажте оновлене паспортне фото.\n━━━━━━━━━━━━━━━━━━\n• фронтальний ракурс\n• нейтральний фон\n• рівне освітлення",
+        "en": "7. Upload an updated passport-style photo.\n━━━━━━━━━━━━━━━━━━\n• frontal view\n• neutral background\n• even lighting",
+        "de": "7. Laden Sie ein aktualisiertes Passfoto hoch.\n━━━━━━━━━━━━━━━━━━\n• frontale Ansicht\n• neutraler Hintergrund\n• gleichmäßige Beleuchtung",
+        "pl": "7. Dodaj zaktualizowane zdjęcie paszportowe.\n━━━━━━━━━━━━━━━━━━\n• ujęcie frontalne\n• neutralne tło\n• równomierne oświetlenie",
+        "ru": "7. Загрузите обновлённое фото формата «на документы».\n━━━━━━━━━━━━━━━━━━\n• фронтальный ракурс\n• нейтральный фон\n• ровное освещение",
+    },
+    "PROFILE_UPDATE_SUCCESS": {
+        "uk": "✅ Дані оновлено",
+        "en": "✅ Data updated",
+        "de": "✅ Daten aktualisiert",
+        "pl": "✅ Dane zaktualizowano",
+        "ru": "✅ Данные обновлены",
+    },
+    "PROFILE_PHOTO_UPDATED": {
+        "uk": "🖼 Фото профілю збережено",
+        "en": "🖼 Profile photo saved",
+        "de": "🖼 Profilfoto gespeichert",
+        "pl": "🖼 Zdjęcie profilu zapisane",
+        "ru": "🖼 Фото профиля сохранено",
+    },
+    "PROFILE_PHOTO_REMOVED": {
+        "uk": "🗑 Фото профілю видалено",
+        "en": "🗑 Profile photo removed",
+        "de": "🗑 Profilfoto gelöscht",
+        "pl": "🗑 Zdjęcie profilu usunięto",
+        "ru": "🗑 Фото профиля удалено",
+    },
+    "PROFILE_POINTS_INLINE": {
+        "uk": "🏅 Балів: <b>{points}</b>",
+        "en": "🏅 Points: <b>{points}</b>",
+        "de": "🏅 Punkte: <b>{points}</b>",
+        "pl": "🏅 Punkty: <b>{points}</b>",
+        "ru": "🏅 Баллы: <b>{points}</b>",
+    },
+    "POINTS_SECTION_TITLE": {
+        "uk": "🏅 <b>Баланс балів</b>\n━━━━━━━━━━━━━━━━━━\nПоточний баланс: <b>{total}</b>",
+        "en": "🏅 <b>Points balance</b>\n━━━━━━━━━━━━━━━━━━\nCurrent balance: <b>{total}</b>",
+        "de": "🏅 <b>Punkteübersicht</b>\n━━━━━━━━━━━━━━━━━━\nAktueller Stand: <b>{total}</b>",
+        "pl": "🏅 <b>Saldo punktów</b>\n━━━━━━━━━━━━━━━━━━\nAktualny stan: <b>{total}</b>",
+        "ru": "🏅 <b>Баланс баллов</b>\n━━━━━━━━━━━━━━━━━━\nТекущий баланс: <b>{total}</b>",
+    },
+    "POINTS_HISTORY_EMPTY": {
+        "uk": "Історія нарахувань поки порожня.",
+        "en": "The points history is empty so far.",
+        "de": "Es sind noch keine Punktebuchungen vorhanden.",
+        "pl": "Historia punktów jest na razie pusta.",
+        "ru": "История начислений пока пуста.",
+    },
+    "POINTS_HISTORY_HINT": {
+        "uk": "Останні операції відображаються нижче (новіші зверху).",
+        "en": "Recent operations are listed below (newest first).",
+        "de": "Die letzten Vorgänge erscheinen unten (neueste zuerst).",
+        "pl": "Ostatnie operacje znajdziesz poniżej (najnowsze na górze).",
+        "ru": "Последние операции показаны ниже (сначала новые).",
+    },
+    "POINTS_ADMIN_HEADER": {
+        "uk": "🏅 <b>Нарахування балів</b>\n━━━━━━━━━━━━━━━━━━\nОберіть користувача зі списку, щоб видати йому бали.",
+        "en": "🏅 <b>Points management</b>\n━━━━━━━━━━━━━━━━━━\nPick a user from the list to grant points.",
+        "de": "🏅 <b>Punkteverwaltung</b>\n━━━━━━━━━━━━━━━━━━\nWählen Sie eine Person aus der Liste, um Punkte zu vergeben.",
+        "pl": "🏅 <b>Zarządzanie punktami</b>\n━━━━━━━━━━━━━━━━━━\nWybierz użytkownika z listy, aby przyznać punkty.",
+        "ru": "🏅 <b>Начисление баллов</b>\n━━━━━━━━━━━━━━━━━━\nВыберите пользователя из списка, чтобы начислить баллы.",
+    },
+    "POINTS_ADMIN_PROMPT_AMOUNT": {
+        "uk": "Вкажіть суму балів для {user} (можна дробове значення, наприклад 0.5).",
+        "en": "Enter the points amount for {user} (decimals allowed, e.g. 0.5).",
+        "de": "Geben Sie die Punktzahl für {user} ein (Kommazahlen möglich, z. B. 0,5).",
+        "pl": "Podaj liczbę punktów dla {user} (możliwe wartości dziesiętne, np. 0.5).",
+        "ru": "Укажите количество баллов для {user} (можно дробное значение, например 0.5).",
+    },
+    "POINTS_ADMIN_PROMPT_REASON": {
+        "uk": "Опишіть, за що нараховуються бали (це побачить користувач).",
+        "en": "Describe why the points are granted (the user will see this).",
+        "de": "Beschreiben Sie, wofür die Punkte vergeben werden (der Nutzer sieht den текст).",
+        "pl": "Opisz, za co przyznajesz punkty (użytkownik zobaczy ten tekst).",
+        "ru": "Опишите, за что начислены баллы (текст увидит пользователь).",
+    },
+    "POINTS_ADMIN_INVALID_AMOUNT": {
+        "uk": "Введіть коректне число (наприклад 1, 0.5 або -0.3).",
+        "en": "Please enter a valid number (e.g. 1, 0.5 or -0.3).",
+        "de": "Bitte geben Sie eine gültige Zahl ein (z. B. 1, 0,5 oder -0,3).",
+        "pl": "Podaj poprawną liczbę (np. 1, 0.5 lub -0.3).",
+        "ru": "Введите корректное число (например 1, 0.5 или -0.3).",
+    },
+    "POINTS_ADMIN_CONFIRM": {
+        "uk": "Підтвердити нарахування <b>{amount}</b> балів для {user}? Поточний баланс стане <b>{total}</b>.",
+        "en": "Confirm granting <b>{amount}</b> points to {user}? New balance will be <b>{total}</b>.",
+        "de": "<b>{amount}</b> Punkte an {user} vergeben? Neuer Stand: <b>{total}</b>.",
+        "pl": "Potwierdź przyznanie <b>{amount}</b> punktów dla {user}? Nowe saldo: <b>{total}</b>.",
+        "ru": "Подтвердить начисление <b>{amount}</b> баллов для {user}? Новый баланс: <b>{total}</b>.",
+    },
+    "POINTS_ADMIN_DONE": {
+        "uk": "✅ {user} отримав(ла) <b>{amount}</b> балів. Новий баланс: <b>{total}</b>.",
+        "en": "✅ {user} received <b>{amount}</b> points. New balance: <b>{total}</b>.",
+        "de": "✅ {user} hat <b>{amount}</b> Punkte erhalten. Neuer Stand: <b>{total}</b>.",
+        "pl": "✅ {user} otrzymał(a) <b>{amount}</b> punktów. Nowe saldo: <b>{total}</b>.",
+        "ru": "✅ {user} получил(а) <b>{amount}</b> баллов. Новый баланс: <b>{total}</b>.",
+    },
+    "POINTS_ADMIN_CANCELLED": {
+        "uk": "Нарахування балів скасовано.",
+        "en": "Point granting cancelled.",
+        "de": "Vergabe von Punkten abgebrochen.",
+        "pl": "Przyznawanie punktów anulowano.",
+        "ru": "Начисление баллов отменено.",
+    },
+    "POINTS_ADMIN_EDIT_REASON": {
+        "uk": "Змініть опис для бальної операції.",
+        "en": "Update the description for this points operation.",
+        "de": "Aktualisieren Sie die Beschreibung für diesen Punkteeintrag.",
+        "pl": "Zmień opis dla tej operacji punktowej.",
+        "ru": "Обновите описание для этой операции с баллами.",
+    },
+    "POINTS_ADMIN_CARD_LINE": {
+        "uk": "🏅 Баланс користувача: <b>{points}</b>",
+        "en": "🏅 User balance: <b>{points}</b>",
+        "de": "🏅 Punktestand des Nutzers: <b>{points}</b>",
+        "pl": "🏅 Saldo użytkownika: <b>{points}</b>",
+        "ru": "🏅 Баланс пользователя: <b>{points}</b>",
+    },
+    "POINTS_REASON_RECEIPT": {
+        "uk": "Завантаження чека {receipt} для проєкту {project}",
+        "en": "Receipt {receipt} uploaded for project {project}",
+        "de": "Beleg {receipt} für Projekt {project} hochgeladen",
+        "pl": "Paragon {receipt} dodany dla projektu {project}",
+        "ru": "Загружен чек {receipt} для проекта {project}",
+    },
+    "POINTS_REASON_PHOTO": {
+        "uk": "Завантажено фото для проєкту {project}",
+        "en": "Photo uploaded for project {project}",
+        "de": "Foto für Projekt {project} hochgeladen",
+        "pl": "Zdjęcie dodane для projektu {project}",
+        "ru": "Загружено фото для проекта {project}",
+    },
+    "POINTS_REASON_PARCEL": {
+        "uk": "Підтверджено отримання посилки TTN {ttn}",
+        "en": "Confirmed parcel receipt for TTN {ttn}",
+        "de": "Empfang der Sendung mit TTN {ttn} bestätigt",
+        "pl": "Potwierdzono odbiór przesyłki TTN {ttn}",
+        "ru": "Подтверждена посылка по ТТН {ttn}",
+    },
+    "POINTS_USER_NOTIFICATION": {
+        "uk": "🏅 Вам нараховано <b>{amount}</b> балів. Новий баланс: <b>{total}</b>. Причина: {reason}",
+        "en": "🏅 You received <b>{amount}</b> points. New balance: <b>{total}</b>. Reason: {reason}",
+        "de": "🏅 Sie haben <b>{amount}</b> Punkte erhalten. Neuer Stand: <b>{total}</b>. Grund: {reason}",
+        "pl": "🏅 Otrzymałeś(aś) <b>{amount}</b> punktów. Nowe saldo: <b>{total}</b>. Powód: {reason}",
+        "ru": "🏅 Вам начислено <b>{amount}</b> баллов. Новый баланс: <b>{total}</b>. Причина: {reason}",
+    },
+    "PROFILE_PHONE_SAVED": {
+        "uk": "📱 Телефон збережено",
+        "en": "📱 Phone saved",
+        "de": "📱 Telefon gespeichert",
+        "pl": "📱 Numer zapisano",
+        "ru": "📱 Телефон сохранён",
+    },
+    "PROFILE_CANCELLED": {
+        "uk": "❌ Редагування скасовано",
+        "en": "❌ Edit cancelled",
+        "de": "❌ Bearbeitung abgebrochen",
+        "pl": "❌ Edycję anulowano",
+        "ru": "❌ Редактирование отменено",
+    },
+    "PROFILE_NO_PHOTO": {
+        "uk": "📷 Фото профілю ще не завантажено.",
+        "en": "📷 A profile photo has not been uploaded yet.",
+        "de": "📷 Es wurde noch kein Profilfoto hochgeladen.",
+        "pl": "📷 Zdjęcie profilu nie zostało jeszcze dodane.",
+        "ru": "📷 Фото профиля ещё не загружено.",
     },
     "LANGUAGE_PROMPT": {
         "uk": "🌐 Оберіть мову спілкування з ботом:",
@@ -663,12 +1905,19 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "pl": "➡️ DALEJ",
         "ru": "➡️ ДАЛЕЕ",
     },
+    "BTN_SKIP": {
+        "uk": "⏭ Пропустити",
+        "en": "⏭ Skip",
+        "de": "⏭ Überspringen",
+        "pl": "⏭ Pomiń",
+        "ru": "⏭ Пропустить",
+    },
     "INTRO_GREETING_NEW": {
-        "uk": "👋 <b>Вітаю, колего!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі Bot.BSG. Тут зберігаємо чеки, оформлюємо виплати та тримаємо документи проєкту під рукою.\n\nНатисніть «ДАЛІ», щоб продовжити.",
-        "en": "👋 <b>Hello, teammate!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the Bot.BSG workspace. Here we store receipts, track payouts, and keep project documents handy.\n\nPress “NEXT” to continue.",
-        "de": "👋 <b>Hallo, Kollegin oder Kollege!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Bot.BSG-Arbeitsbereich. Hier speichern wir Belege, verwalten Auszahlungen und behalten Projektdokumente griffbereit.\n\nDrücken Sie „WEITER“, um fortzufahren.",
-        "pl": "👋 <b>Witaj, współpracowniku!</b>\n━━━━━━━━━━━━━━━━━━\nTo przestrzeń robocza Bot.BSG. Przechowujemy tu paragony, obsługujemy wypłaty i mamy dokumenty projektu pod ręką.\n\nKliknij „DALEJ”, aby kontynuować.",
-        "ru": "👋 <b>Привет, коллега!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве Bot.BSG. Здесь мы храним чеки, оформляем выплаты и держим документы проекта под рукой.\n\nНажмите «ДАЛЕЕ», чтобы продолжить.",
+        "uk": "👋 <b>Вітаю, колего!</b>\n━━━━━━━━━━━━━━━━━━\nВи у робочому просторі BSG › botSYSTEM. Тут зберігаємо чеки, оформлюємо виплати та тримаємо документи проєкту під рукою.\n\nНатисніть «ДАЛІ», щоб продовжити.",
+        "en": "👋 <b>Hello, teammate!</b>\n━━━━━━━━━━━━━━━━━━\nWelcome to the BSG › botSYSTEM workspace. Here we store receipts, track payouts, and keep project documents handy.\n\nPress “NEXT” to continue.",
+        "de": "👋 <b>Hallo, Kollegin oder Kollege!</b>\n━━━━━━━━━━━━━━━━━━\nWillkommen im Arbeitsbereich BSG › botSYSTEM. Hier speichern wir Belege, verwalten Auszahlungen und behalten Projektdokumente griffbereit.\n\nDrücken Sie „WEITER“, um fortzufahren.",
+        "pl": "👋 <b>Witaj, współpracowniku!</b>\n━━━━━━━━━━━━━━━━━━\nTo przestrzeń robocza BSG › botSYSTEM. Przechowujemy tu paragony, obsługujemy wypłaty i mamy dokumenty projektu pod ręką.\n\nKliknij „DALEJ”, aby kontynuować.",
+        "ru": "👋 <b>Привет, коллега!</b>\n━━━━━━━━━━━━━━━━━━\nВы в рабочем пространстве BSG › botSYSTEM. Здесь мы храним чеки, оформляем выплаты и держим документы проекта под рукой.\n\nНажмите «ДАЛЕЕ», чтобы продолжить.",
     },
     "INTRO_GREETING_REGISTERED": {
         "uk": "👋 <b>Радий вітати знову!</b>\n━━━━━━━━━━━━━━━━━━\nВи можете одразу перейти до головного меню, щоб працювати з розділами бота.\n\nНатисніть «ДАЛІ», аби перейти до основних дій.",
@@ -1069,13 +2318,66 @@ admins: set = set()
 active_project = {"name": None}
 alerts_poll_task: Optional[asyncio.Task] = None
 alerts_history_cache: Dict[str, Dict[str, Any]] = {}
+BOT_USERNAME_CACHE: Optional[str] = None
 
 
 # ========================== FSM ==========================
 class OnboardFSM(StatesGroup):
     language = State()
-    fullname = State()
+    membership = State()
+    welcome = State()
+    briefing = State()
+    instructions = State()
+    await_next = State()
+    last_name = State()
+    first_name = State()
+    middle_name = State()
+    birthdate = State()
+    region = State()
+    region_confirm = State()
     phone = State()
+    photo = State()
+
+
+class ProfileEditFSM(StatesGroup):
+    waiting_last_name = State()
+    waiting_first_name = State()
+    waiting_middle_name = State()
+    waiting_birthdate = State()
+    waiting_region = State()
+    region_confirm = State()
+    waiting_phone = State()
+    waiting_photo = State()
+
+
+class AdminProfileEditFSM(StatesGroup):
+    waiting_last_name = State()
+    waiting_first_name = State()
+    waiting_middle_name = State()
+    waiting_birthdate = State()
+    waiting_region = State()
+    region_confirm = State()
+    waiting_phone = State()
+    waiting_photo = State()
+
+
+class AdminPointsFSM(StatesGroup):
+    waiting_amount = State()
+    waiting_reason = State()
+    confirm = State()
+
+
+class AdminFinancePayFSM(StatesGroup):
+    waiting_amount = State()
+
+
+class UserPayoutRequestFSM(StatesGroup):
+    waiting_amount = State()
+
+
+class AdminRejectRequestFSM(StatesGroup):
+    waiting_reason = State()
+
 
 class ReceiptFSM(StatesGroup):
     waiting_photo = State()
@@ -1116,7 +2418,9 @@ def ensure_dirs():
     os.makedirs(BASE_PATH, exist_ok=True)
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
-    os.makedirs(ALERTS_STORAGE_DIR, exist_ok=True)
+    os.makedirs(POINTS_PATH, exist_ok=True)
+    os.makedirs(ALERTS_STORAGE_BASE, exist_ok=True)
+    os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -1221,6 +2525,7 @@ def _fraction_to_float(value: Any) -> Optional[float]:
             return float(num) / float(denom) if denom else None
         except Exception:
             return None
+    return None
 
 
 def _convert_to_degrees(values: Any) -> Optional[float]:
@@ -1413,6 +2718,7 @@ def ensure_project_structure(name: str):
                 "start_date": "", "end_date": "", "region": "", "code": generate_project_code(name, existing_codes),
                 "active": False, "pdf": [], "created": datetime.now().isoformat()}
         json.dump(info, open(proj_info_file(name), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    _alerts_ensure_storage(name)
 
 def list_projects() -> List[str]:
     ensure_dirs()
@@ -1491,12 +2797,49 @@ def set_active_project(name: Optional[str]):
 
 # ========================== USERS PERSIST ==========================
 def load_user(uid: int) -> Optional[dict]:
-    p = user_file(uid)
-    if not os.path.exists(p): return None
-    return json.load(open(p, "r", encoding="utf-8"))
+    path = user_file(uid)
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
 
 def save_user(profile: dict):
-    json.dump(profile, open(user_file(profile["user_id"]), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    ensure_dirs()
+    uid = profile.get("user_id")
+    completed = None
+    if uid is not None:
+        completed = registration_profile_completed(profile)
+        profile["profile_completed"] = completed
+        if completed:
+            completed_at = profile.get("registration_completed_at")
+            if not completed_at:
+                fallback = (
+                    profile.get("registration_completed_at")
+                    or profile.get("registered_at")
+                    or profile.get("updated_at")
+                )
+                profile["registration_completed_at"] = fallback or datetime.now(timezone.utc).isoformat()
+        else:
+            profile.pop("registration_completed_at", None)
+    if "points_total" not in profile:
+        profile["points_total"] = 0.0
+    path = user_file(profile["user_id"])
+    tmp_path = f"{path}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(profile, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+    if uid is not None:
+        registration_sync_runtime(uid, profile)
 
 
 def load_all_users() -> List[dict]:
@@ -1513,6 +2856,148 @@ def load_all_users() -> List[dict]:
         except Exception:
             continue
     return profiles
+
+
+def list_completed_user_ids() -> List[int]:
+    ensure_dirs()
+    ordered: List[Tuple[str, str, int]] = []
+    if not os.path.exists(USERS_PATH):
+        return []
+    for name in os.listdir(USERS_PATH):
+        if not name.endswith(".json"):
+            continue
+        try:
+            uid = int(os.path.splitext(name)[0])
+        except Exception:
+            continue
+        profile = load_user(uid) or {}
+        if not registration_profile_completed(profile):
+            continue
+        if not profile.get("registration_completed_at"):
+            profile["registration_completed_at"] = (
+                profile.get("updated_at") or datetime.now(timezone.utc).isoformat()
+            )
+            save_user(profile)
+            if not profile.get("registration_completed_at"):
+                continue
+        display_name = str(profile.get("fullname") or "").strip()
+        if not display_name:
+            tg_info = profile.get("tg") or {}
+            display_name = str(tg_info.get("first_name") or tg_info.get("username") or "").strip()
+        name_key = display_name.casefold() if display_name else ""
+        completed_at = str(profile.get("registration_completed_at") or "")
+        ordered.append((name_key, completed_at, uid))
+    ordered.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [item[2] for item in ordered]
+
+
+def user_points_file(uid: int) -> str:
+    return os.path.join(POINTS_PATH, f"{uid}.json")
+
+
+def _points_decimal(value: Any) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal("0")
+
+
+def round_points(value: Any) -> float:
+    quantized = _points_decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return float(quantized)
+
+
+def load_user_points(uid: int) -> dict:
+    ensure_dirs()
+    path = user_points_file(uid)
+    if not os.path.exists(path):
+        return {"total": 0.0, "history": []}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {"total": 0.0, "history": []}
+    total = round_points(data.get("total", 0.0))
+    history = data.get("history")
+    if not isinstance(history, list):
+        history = []
+    normalized_history: List[dict] = []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        normalized = dict(entry)
+        normalized["amount"] = round_points(normalized.get("amount", 0.0))
+        normalized["balance"] = round_points(normalized.get("balance", total))
+        normalized_history.append(normalized)
+    return {"total": total, "history": normalized_history}
+
+
+def save_user_points(uid: int, data: dict) -> None:
+    ensure_dirs()
+    atomic_write_json(user_points_file(uid), data)
+
+
+def points_total(uid: int) -> float:
+    payload = load_user_points(uid)
+    return round_points(payload.get("total", 0.0))
+
+
+def points_add(uid: int, amount: float, reason: str, *, source: str = "manual", meta: Optional[dict] = None) -> dict:
+    payload = load_user_points(uid)
+    history: List[dict] = list(payload.get("history") or [])
+    amount_value = round_points(amount)
+    current_total = round_points(payload.get("total", 0.0))
+    new_total = round_points(current_total + amount_value)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": f"PTS-{secrets.token_hex(4).upper()}",
+        "timestamp": timestamp,
+        "amount": amount_value,
+        "reason": reason,
+        "source": source,
+        "meta": meta or {},
+        "balance": new_total,
+    }
+    history.append(entry)
+    payload = {"total": new_total, "history": history}
+    save_user_points(uid, payload)
+    profile = load_user(uid)
+    if profile:
+        profile["points_total"] = new_total
+        profile["points_updated_at"] = timestamp
+        save_user(profile)
+    return entry
+
+
+async def points_auto_grant(
+    uid: int,
+    amount: float,
+    reason: str,
+    *,
+    source: str,
+    meta: Optional[dict] = None,
+    chat_id: Optional[int] = None,
+) -> Optional[dict]:
+    if round_points(amount) == 0:
+        return None
+    entry = points_add(uid, amount, reason, source=source, meta=dict(meta or {}))
+    profile = load_user(uid) or {"user_id": uid}
+    target_chat = chat_id or registration_chat_id(uid, profile)
+    await anchor_show_root(uid)
+    if target_chat:
+        note = tr(
+            uid,
+            "POINTS_USER_NOTIFICATION",
+            amount=fmt_points(amount),
+            total=fmt_points(entry.get("balance", 0.0)),
+            reason=h(reason or "—"),
+        )
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+        try:
+            await bot.send_message(target_chat, note, reply_markup=kb)
+        except Exception:
+            pass
+    return entry
 
 
 def normalize_bsu_code(code: str) -> Optional[str]:
@@ -1606,6 +3091,666 @@ def normalize_profile_receipts(profile: dict) -> bool:
                     changed = True
     return changed
 
+
+NAME_ALLOWED_CHARS = "A-Za-zА-Яа-яЁёЇїІіЄєҐґʼ'’\-\s"
+NAME_VALID_RE = re.compile(rf"^[{NAME_ALLOWED_CHARS}]+$")
+SKIP_KEYWORDS = {"нет", "немає", "нема", "no", "skip", "none", "n/a", "-"}
+
+
+def normalize_person_name(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    text = str(value)
+    text = text.replace("`", "'").replace("’", "'").replace("ʼ", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def beautify_name(value: Optional[str]) -> str:
+    text = normalize_person_name(value)
+    if not text:
+        return ""
+
+    def _capitalize(fragment: str) -> str:
+        if not fragment:
+            return fragment
+        return fragment[0].upper() + fragment[1:].lower()
+
+    words: List[str] = []
+    for word in text.split(" "):
+        if not word:
+            continue
+        parts: List[str] = []
+        for sub in re.split(r"([-'])", word):
+            if sub in ("-", "'"):
+                parts.append(sub)
+            elif sub:
+                parts.append(_capitalize(sub))
+        words.append("".join(parts))
+    return " ".join(words)
+
+
+def validate_name(value: str) -> bool:
+    if not value:
+        return False
+    text = normalize_person_name(value)
+    if len(text) < 2:
+        return False
+    return bool(NAME_VALID_RE.match(text))
+
+
+def compose_fullname(last_name: str, first_name: str, middle_name: Optional[str]) -> str:
+    parts = [last_name, first_name]
+    if middle_name:
+        parts.append(middle_name)
+    return " ".join(part for part in parts if part)
+
+
+def sanitize_phone_input(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    raw = text.strip()
+    digits = re.sub(r"\D+", "", raw)
+    if not digits:
+        return None
+    if raw.startswith("+"):
+        normalized = "+" + digits
+    elif len(digits) == 10 and digits.startswith("0"):
+        normalized = "+38" + digits
+    elif len(digits) >= 11 and digits.startswith("380"):
+        normalized = "+" + digits
+    elif len(digits) >= 10:
+        normalized = "+" + digits
+    else:
+        return None
+    if len(re.sub(r"\D", "", normalized)) < 10:
+        return None
+    return normalized
+
+
+def registration_profile_completed(profile: dict) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    last_name = (profile.get("last_name") or "").strip()
+    first_name = (profile.get("first_name") or "").strip()
+    phone = (profile.get("phone") or "").strip()
+    region = (profile.get("region") or "").strip()
+    birthdate = (profile.get("birthdate") or "").strip()
+    if not (last_name and first_name and phone and region and birthdate):
+        return False
+    if not registration_middle_name_completed(profile):
+        return False
+    return True
+
+
+def registration_photo_completed(profile: dict) -> bool:
+    photo = profile.get("photo") or {}
+    if not isinstance(photo, dict):
+        return False
+    if photo.get("status") == "skipped":
+        return True
+    return bool(photo.get("file_id") or photo.get("file_unique_id") or photo)
+
+
+def registration_middle_name_completed(snapshot: dict) -> bool:
+    status = (snapshot.get("middle_name_status") or "")
+    if status in {"skipped", "provided"}:
+        return True
+    middle = snapshot.get("middle_name") or ""
+    if middle.strip():
+        return True
+    return False
+
+
+def registration_build_snapshot(profile: dict, state_data: Optional[dict] = None) -> dict:
+    snapshot = dict(profile)
+    if state_data:
+        for key in ("last_name", "first_name", "middle_name", "birthdate", "region", "phone"):
+            if key in state_data and state_data[key] is not None:
+                snapshot[key] = state_data[key]
+        if state_data.get("middle_name_status"):
+            snapshot["middle_name_status"] = state_data["middle_name_status"]
+        photo_meta = state_data.get("photo_meta_override")
+        if photo_meta:
+            snapshot["photo"] = photo_meta
+        if state_data.get("photo_skipped"):
+            snapshot["photo"] = {"status": "skipped"}
+    return snapshot
+
+
+REGISTRATION_FLOW_FIELDS: Tuple[str, ...] = (
+    "first_name",
+    "last_name",
+    "middle_name",
+    "birthdate",
+    "region",
+    "phone",
+    "photo",
+)
+
+
+def registration_field_completed(snapshot: dict, field: str) -> bool:
+    if field == "middle_name":
+        return registration_middle_name_completed(snapshot)
+    if field == "photo":
+        return registration_photo_completed(snapshot)
+    return bool(snapshot.get(field))
+
+
+def registration_missing_steps(profile: dict, state_data: Optional[dict] = None) -> List[str]:
+    snapshot = registration_build_snapshot(profile, state_data)
+    missing: List[str] = []
+    for field in REGISTRATION_FLOW_FIELDS:
+        if not registration_field_completed(snapshot, field):
+            missing.append(field)
+    return missing
+
+
+def registration_next_pending_field(
+    snapshot: dict,
+    current_field: Optional[str] = None,
+) -> Optional[str]:
+    order = list(REGISTRATION_FLOW_FIELDS)
+    start_index = 0
+    if current_field and current_field in order:
+        start_index = order.index(current_field) + 1
+    for field in order[start_index:]:
+        if not registration_field_completed(snapshot, field):
+            return field
+    for field in order[:start_index]:
+        if not registration_field_completed(snapshot, field):
+            return field
+    return None
+
+
+async def registration_clear_ack(uid: int):
+    runtime = users_runtime.setdefault(uid, {})
+    info = runtime.pop("registration_ack", None)
+    if not info:
+        return
+    chat_id = info.get("chat_id") if isinstance(info, dict) else None
+    message_id = info.get("message_id") if isinstance(info, dict) else None
+    await _delete_message_safe(chat_id, message_id)
+
+
+async def registration_send_ack(
+    uid: int,
+    chat_id: int,
+    state: FSMContext,
+    profile: dict,
+    current_field: str,
+    text: str,
+    *,
+    remove_reply_keyboard: bool = False,
+) -> str:
+    await registration_clear_ack(uid)
+    data = await state.get_data()
+    snapshot = registration_build_snapshot(profile, data)
+    next_field = registration_next_pending_field(snapshot, current_field)
+    callback_target = next_field or "final"
+    markup = kb_registration_next(uid, f"reg_next:{callback_target}")
+
+    if remove_reply_keyboard:
+        ack = await bot.send_message(chat_id, text, reply_markup=ReplyKeyboardRemove())
+        try:
+            await bot.edit_message_reply_markup(chat_id, ack.message_id, reply_markup=markup)
+        except Exception:
+            await _delete_message_safe(chat_id, ack.message_id)
+            ack = await bot.send_message(chat_id, text, reply_markup=markup)
+    else:
+        ack = await bot.send_message(chat_id, text, reply_markup=markup)
+
+    flow_track(uid, ack)
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["registration_ack"] = {
+        "chat_id": ack.chat.id,
+        "message_id": ack.message_id,
+        "field": current_field,
+        "next": callback_target,
+    }
+    await state.update_data(await_next=callback_target)
+    await state.set_state(OnboardFSM.await_next.state)
+    return callback_target
+
+
+def registration_format_field_list(target: Any, fields: List[str]) -> str:
+    if not fields:
+        return ""
+    labels = [tr(target, f"REGISTER_FIELD_LABEL_{field.upper()}") for field in fields]
+    if len(labels) == 1:
+        return labels[0]
+    return f"{', '.join(labels[:-1])}{tr(target, 'REGISTER_LIST_AND')}{labels[-1]}"
+
+
+def registration_sync_runtime(uid: int, profile: Optional[dict]) -> bool:
+    profile = profile or {}
+    completed = registration_profile_completed(profile)
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["onboard_registered"] = completed
+    if not completed and runtime.get("anchor"):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            loop.create_task(anchor_clear(uid))
+    return completed
+
+
+def registration_gate_render_community() -> str:
+    chat_id, title_value, invite = required_community_settings()
+    raw_title = title_value or chat_id or "BSG workspace"
+    title = str(raw_title)
+    safe_title = html_escape(title)
+    if invite:
+        safe_invite = html_escape(invite, quote=True)
+        return f"<a href=\"{safe_invite}\">{safe_title}</a>"
+    return safe_title
+
+
+def registration_gate_log_attempt(uid: int, runtime: dict, allowed: bool, status: str, *, lang: Optional[str] = None):
+    ensure_dirs()
+    os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
+    record = {
+        "user_id": uid,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "allowed": bool(allowed),
+        "status": status,
+        "lang": lang,
+        "username": runtime.get("tg", {}).get("username"),
+        "first_name": runtime.get("tg", {}).get("first_name"),
+        "last_name": runtime.get("tg", {}).get("last_name"),
+        "chat_id": runtime.get("tg", {}).get("chat_id"),
+    }
+    existing: List[dict] = []
+    if os.path.exists(REGISTRATION_GATE_FILE):
+        try:
+            with open(REGISTRATION_GATE_FILE, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+                if isinstance(data, list):
+                    existing = data
+        except Exception:
+            existing = []
+    existing.append(record)
+    tmp_path = f"{REGISTRATION_GATE_FILE}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(existing, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, REGISTRATION_GATE_FILE)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+async def registration_notify_new_user(uid: int, profile: dict, runtime: dict) -> None:
+    if not REGISTRATION_NOTIFY_CHAT:
+        return
+    full_name = profile.get("fullname") or compose_fullname(
+        profile.get("last_name", ""),
+        profile.get("first_name", ""),
+        profile.get("middle_name"),
+    )
+    if not full_name:
+        full_name = runtime.get("tg", {}).get("first_name") or runtime.get("tg", {}).get("username") or f"ID {uid}"
+    bsu_code = profile.get("bsu") or "—"
+    timestamp = alerts_now().strftime("%d.%m.%Y %H:%M")
+    text = (
+        f"<b>Нова реєстрація в {h(WORKSPACE_BRAND)}</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"Користувач <b>{h(full_name)}</b> успішно зареєструвався у боті <b>{h(WORKSPACE_BRAND)}</b>.\n\n"
+        "<b>Тепер мій доступ — активовано</b>\n"
+        f"BSGID: <b>{h(bsu_code)}</b>\n\n"
+        f"Вітаю в робочому просторі <b>{h(WORKSPACE_BRAND)}</b> — усе в одному місці, без зайвих пошуків.\n"
+        "Це економить твій час і залишає більше простору для інших справ.\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"Telegram ID: {uid}\n"
+        f"Час: {timestamp}"
+    )
+    try:
+        await bot.send_message(
+            REGISTRATION_NOTIFY_CHAT,
+            text,
+            parse_mode=types.ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        pass
+
+
+async def registration_check_membership(uid: int) -> Tuple[bool, str]:
+    chat, _, _ = required_community_settings()
+    if not chat:
+        return True, "disabled"
+    try:
+        member = await bot.get_chat_member(chat, uid)
+    except BadRequest as exc:
+        detail = getattr(exc, "message", None) or getattr(exc, "text", None) or str(exc) or "bad_request"
+        return False, detail
+    except Exception as exc:
+        return False, exc.__class__.__name__
+
+    status = getattr(member, "status", None) or "unknown"
+    allowed_statuses = {"creator", "administrator", "member"}
+    allowed = False
+    if status in allowed_statuses:
+        allowed = True
+    elif status == "restricted":
+        allowed = bool(getattr(member, "is_member", False))
+    return allowed, status
+
+
+async def registration_guard(
+    uid: int,
+    *,
+    chat_id: Optional[int] = None,
+    state: Optional[FSMContext] = None,
+    remind: bool = True,
+) -> bool:
+    runtime = users_runtime.setdefault(uid, {})
+    profile = load_user(uid)
+    if not profile:
+        profile = ensure_user(uid, runtime.get("tg", {}))
+    registration_sync_runtime(uid, profile)
+    if registration_profile_completed(profile):
+        return True
+
+    chat_id = chat_id or runtime.get("tg", {}).get("chat_id")
+    if not chat_id:
+        return False
+
+    ctx = state or dp.current_state(chat=chat_id, user=uid)
+    current_state = await ctx.get_state() if ctx else None
+    if current_state and current_state.startswith(OnboardFSM.__name__):
+        return False
+
+    if ctx:
+        await ctx.finish()
+        ctx = dp.current_state(chat=chat_id, user=uid)
+
+    await flow_clear(uid)
+
+    if remind:
+        notice = await bot.send_message(chat_id, tr(uid, "REGISTER_BLOCKED_NOTICE"))
+        flow_track(uid, notice)
+
+    await registration_start_sequence(uid, chat_id, ctx)
+    return False
+
+
+def _resolve_private_chat_id(raw: Any) -> Optional[int]:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        chat_id = raw
+    elif isinstance(raw, str):
+        text = raw.strip()
+        if not text or not text.lstrip("-").isdigit():
+            return None
+        chat_id = int(text)
+    else:
+        return None
+    if chat_id <= 0:
+        return None
+    return chat_id
+
+
+def registration_chat_id(uid: int, profile: Optional[dict] = None) -> Optional[int]:
+    profile = profile or load_user(uid) or {}
+    if not registration_profile_completed(profile):
+        return None
+    runtime_chat = _resolve_private_chat_id(users_runtime.get(uid, {}).get("tg", {}).get("chat_id"))
+    if runtime_chat:
+        return runtime_chat
+    stored_chat = _resolve_private_chat_id((profile.get("tg") or {}).get("chat_id"))
+    if stored_chat:
+        return stored_chat
+    return None
+
+
+def registration_update(uid: int, **updates) -> dict:
+    runtime = users_runtime.setdefault(uid, {})
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    changed = False
+
+    if "middle_name" in updates and "middle_name_status" not in updates:
+        updates["middle_name_status"] = "provided" if updates["middle_name"] else "skipped"
+
+    for key, value in updates.items():
+        if key == "photo":
+            current = profile.get("photo")
+            if value is None and current:
+                profile["photo"] = {}
+                changed = True
+            elif value is not None and current != value:
+                profile["photo"] = value
+                changed = True
+            continue
+        if key == "middle_name_status":
+            if profile.get("middle_name_status") != value:
+                profile["middle_name_status"] = value
+                changed = True
+            continue
+        if value is None:
+            continue
+        if profile.get(key) != value:
+            profile[key] = value
+            changed = True
+
+    if any(field in updates for field in ("last_name", "first_name", "middle_name")):
+        fullname = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), profile.get("middle_name"))
+        if profile.get("fullname") != fullname:
+            profile["fullname"] = fullname
+            changed = True
+
+    if changed:
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    else:
+        registration_sync_runtime(uid, profile)
+    return profile
+
+
+async def registration_seed_state(state: FSMContext, profile: dict):
+    payload = {}
+    for field in ("last_name", "first_name", "birthdate", "region", "phone"):
+        value = profile.get(field)
+        if value:
+            payload[field] = value
+    if profile.get("middle_name_status"):
+        payload["middle_name_status"] = profile.get("middle_name_status")
+        payload["middle_name"] = profile.get("middle_name", "")
+    elif profile.get("middle_name"):
+        payload["middle_name"] = profile.get("middle_name")
+    if payload:
+        await state.update_data(**payload)
+
+
+async def registration_continue(
+    uid: int,
+    chat_id: int,
+    state: FSMContext,
+    profile: Optional[dict] = None,
+    reuse_message: Optional[Tuple[int, int]] = None,
+):
+    runtime = users_runtime.setdefault(uid, {})
+    profile = profile or ensure_user(uid, runtime.get("tg", {}))
+    data = await state.get_data()
+    snapshot = registration_build_snapshot(profile, data)
+
+    if not snapshot.get("first_name"):
+        await onboard_prompt_first_name(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("last_name"):
+        await onboard_prompt_last_name(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not registration_middle_name_completed(snapshot):
+        await onboard_prompt_middle_name(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("birthdate"):
+        await onboard_prompt_birthdate(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("region"):
+        await onboard_prompt_region(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not snapshot.get("phone"):
+        await onboard_prompt_phone(uid, chat_id, state, reuse=reuse_message)
+        return
+    if not registration_photo_completed(profile):
+        await onboard_prompt_photo(uid, chat_id, state, profile=profile, reuse=reuse_message)
+        return
+
+    await finalize_registration(uid, chat_id, state, photo_meta=None, skipped=False)
+
+
+async def registration_start_sequence(uid: int, chat_id: int, state: FSMContext):
+    runtime = users_runtime.setdefault(uid, {})
+    await anchor_clear(uid)
+    await registration_clear_ack(uid)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await state.reset_data()
+    await registration_seed_state(state, profile)
+    data = await state.get_data()
+    missing = registration_missing_steps(profile, data)
+    if missing:
+        note = await bot.send_message(chat_id, tr(uid, "REGISTER_RESUME_PROGRESS", fields=registration_format_field_list(uid, missing)))
+    else:
+        note = await bot.send_message(chat_id, tr(uid, "REGISTER_RESUME_READY"))
+    flow_track(uid, note)
+    await registration_continue(uid, chat_id, state, profile=profile)
+
+
+def parse_birthdate_text(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    raw = re.sub(r"\s+", "", str(value))
+    if not raw:
+        return None
+    normalized = raw.replace("/", ".").replace("-", ".")
+    parts = normalized.split(".")
+    try:
+        if len(parts) == 3:
+            day, month, year = parts
+            if len(year) == 2:
+                year = "19" + year if int(year) >= 50 else "20" + year
+            dt = datetime(int(year), int(month), int(day))
+        else:
+            dt = datetime.strptime(raw, "%Y%m%d")
+    except Exception:
+        return None
+    if dt.year < 1900:
+        return None
+    if dt.date() > datetime.now().date():
+        return None
+    return dt
+
+
+def compute_age(birthdate: datetime) -> Optional[int]:
+    if not birthdate:
+        return None
+    today = datetime.now().date()
+    years = today.year - birthdate.year
+    if (today.month, today.day) < (birthdate.month, birthdate.day):
+        years -= 1
+    return max(years, 0)
+
+
+def format_birthdate_display(birthdate_iso: Optional[str], lang: Optional[str] = None) -> str:
+    if not birthdate_iso:
+        return "—"
+    try:
+        dt = datetime.strptime(birthdate_iso, "%Y-%m-%d")
+    except Exception:
+        return birthdate_iso
+    age = compute_age(dt)
+    formatted = dt.strftime("%d.%m.%Y")
+    if age is None:
+        return formatted
+    lang = normalize_lang(lang)
+    suffix_map = {
+        "uk": "років",
+        "en": "yo",
+        "de": "J.",
+        "pl": "lat",
+        "ru": "лет",
+    }
+    suffix = suffix_map.get(lang, "yo")
+    return f"{formatted} ({age} {suffix})"
+
+
+def ensure_user_dir(uid: int) -> str:
+    path = os.path.join(USERS_PATH, str(uid))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def user_profile_photo_path(uid: int) -> str:
+    return os.path.join(ensure_user_dir(uid), "profile.jpg")
+
+
+async def store_profile_photo(uid: int, photo: types.PhotoSize) -> Optional[dict]:
+    if not photo:
+        return None
+    ensure_user_dir(uid)
+    dest = user_profile_photo_path(uid)
+    tmp_path = f"{dest}.tmp"
+    try:
+        await photo.download(destination_file=tmp_path)
+        with Image.open(tmp_path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = img.convert("RGB")
+            img.thumbnail((1280, 1280))
+            width, height = img.size
+            exif = img.getexif() if hasattr(img, "getexif") else None
+            taken_iso = None
+            if exif:
+                for tag, value in exif.items():
+                    name = ExifTags.TAGS.get(tag, tag)
+                    if name in ("DateTimeOriginal", "DateTimeDigitized", "DateTime"):
+                        text = _decode_exif_text(value)
+                        if text:
+                            for fmt in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                                try:
+                                    taken_iso = datetime.strptime(text, fmt).isoformat()
+                                    break
+                                except Exception:
+                                    continue
+                            if taken_iso:
+                                break
+            img.save(tmp_path, format="JPEG", quality=90)
+        os.replace(tmp_path, dest)
+        meta = {
+            "file_id": photo.file_id,
+            "file_unique_id": photo.file_unique_id,
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "width": width,
+            "height": height,
+        }
+        if taken_iso:
+            meta["taken_at"] = taken_iso
+        return meta
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        raise
+
+
+def remove_profile_photo(uid: int) -> None:
+    path = user_profile_photo_path(uid)
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
 def _safe_name(s: str) -> str:
     s = (s or "").strip()
     if not s: return "User"
@@ -1623,46 +3768,66 @@ def _sanitize_filename(name: str) -> str:
     base = re.sub(r"_+", "_", base).strip("_")
     return base or "file"
 
-def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str]=None, phone: Optional[str]=None,
-                lang: Optional[str]=None, lang_confirmed: Optional[bool]=None) -> dict:
+def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str] = None, phone: Optional[str] = None,
+                lang: Optional[str] = None, lang_confirmed: Optional[bool] = None) -> dict:
+    ensure_user_dir(uid)
     prof = load_user(uid)
+    now_iso = datetime.now(timezone.utc).isoformat()
     if not prof:
-        # генерируем BSU-код пользователя (четырёхзначный)
         bsu = f"BSU-{random.randint(1000, 9999)}"
         prof = {
             "user_id": uid,
+            "tg": dict(tg_payload),
+            "first_name": "",
+            "last_name": "",
+            "middle_name": "",
+            "middle_name_status": None,
             "fullname": fullname or tg_payload.get("first_name") or f"User{uid}",
             "phone": phone or "",
-            "tg": tg_payload,
-            "bsu": bsu,                 # УНИКАЛЬНЫЙ КОД ПОЛЬЗОВАТЕЛЯ
+            "region": "",
+            "birthdate": "",
+            "photo": {},
+            "bsu": bsu,
             "counters": {"receipt_seq": 0},
-            "receipts": {},             # {project: [ {date,time,sum,file,desc,paid,receipt_no} ]}
-            "payouts": [],              # ссылки на запросы выплат
+            "receipts": {},
+            "payouts": [],
+            "points_total": 0.0,
             "lang": normalize_lang(lang) if lang else DEFAULT_LANG,
             "lang_confirmed": bool(lang),
+            "profile_completed": False,
+            "created_at": now_iso,
+            "updated_at": now_iso,
         }
     else:
         prof["tg"] = {**prof.get("tg", {}), **tg_payload}
-        if fullname: prof["fullname"] = fullname
-        if phone: prof["phone"] = phone
+        prof.setdefault("first_name", "")
+        prof.setdefault("last_name", "")
+        prof.setdefault("middle_name", "")
+        prof.setdefault("middle_name_status", "provided" if prof.get("middle_name") else None)
+        prof.setdefault("fullname", fullname or prof.get("fullname") or tg_payload.get("first_name") or f"User{uid}")
+        prof.setdefault("phone", "")
+        prof.setdefault("region", "")
+        prof.setdefault("birthdate", "")
+        prof.setdefault("photo", {})
+        prof.setdefault("counters", {"receipt_seq": 0})
+        prof.setdefault("receipts", {})
+        prof.setdefault("payouts", [])
+        prof.setdefault("points_total", 0.0)
+        prof.setdefault("lang", DEFAULT_LANG)
+        prof.setdefault("lang_confirmed", bool(prof.get("lang") in LANG_CODES))
+        prof.setdefault("profile_completed", False)
+        prof.setdefault("created_at", now_iso)
+        if fullname:
+            prof["fullname"] = fullname
+        if phone:
+            prof["phone"] = phone
         if lang is not None:
             prof["lang"] = normalize_lang(lang)
-        elif "lang" not in prof:
-            prof["lang"] = DEFAULT_LANG
         if lang_confirmed is not None:
             prof["lang_confirmed"] = bool(lang_confirmed)
-        elif "lang_confirmed" not in prof:
-            prof["lang_confirmed"] = bool(prof.get("lang") in LANG_CODES)
         if "bsu" not in prof:
             prof["bsu"] = f"BSU-{random.randint(1000, 9999)}"
-        if "counters" not in prof:
-            prof["counters"] = {"receipt_seq": 0}
-        if "payouts" not in prof:
-            prof["payouts"] = []
-        if "lang" not in prof:
-            prof["lang"] = DEFAULT_LANG
-        if "lang_confirmed" not in prof:
-            prof["lang_confirmed"] = bool(prof.get("lang") in LANG_CODES)
+        prof["updated_at"] = now_iso
     if normalize_profile_receipts(prof):
         pass
     save_user(prof)
@@ -1725,10 +3890,7 @@ def user_project_stats(uid: int, project: str) -> Dict[str, float]:
     pending_sum = 0.0
     unspecified_sum = 0.0
     for r in recs:
-        try:
-            amount = float(r.get("sum", 0.0))
-        except (TypeError, ValueError):
-            amount = 0.0
+        amount = receipt_amount(r)
         total += amount
         paid_flag = r.get("paid")
         payout_status = (r.get("payout") or {}).get("status") if isinstance(r.get("payout"), dict) else None
@@ -1802,6 +3964,61 @@ def save_finance_data(project: str, data: dict):
     json.dump(data, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
 
+def ensure_finance_global() -> None:
+    os.makedirs(FIN_PATH, exist_ok=True)
+    if not os.path.exists(GLOBAL_FINANCE_FILE):
+        atomic_write_json(GLOBAL_FINANCE_FILE, {"requests": {}})
+
+
+def load_global_finance_data() -> dict:
+    ensure_finance_global()
+    try:
+        with open(GLOBAL_FINANCE_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh) or {}
+    except Exception:
+        data = {"requests": {}}
+    if not isinstance(data, dict):
+        data = {"requests": {}}
+    if not isinstance(data.get("requests"), dict):
+        data["requests"] = {}
+    return data
+
+
+def save_global_finance_data(data: dict) -> None:
+    ensure_finance_global()
+    atomic_write_json(GLOBAL_FINANCE_FILE, data)
+
+
+def finance_request_scope(obj: Optional[dict]) -> List[str]:
+    if not obj:
+        return []
+    scope = obj.get("scope") if isinstance(obj, dict) else []
+    if isinstance(scope, list) and scope:
+        cleaned = [str(x) for x in scope if x]
+        if cleaned:
+            return cleaned
+    project = obj.get("project") if isinstance(obj, dict) else None
+    return [project] if project else []
+
+
+def finance_scope_set_state(obj: dict, status: str) -> None:
+    user_id = obj.get("user_id")
+    if not user_id:
+        return
+    for name in finance_request_scope(obj):
+        if name:
+            fin_state_set(name, user_id, obj.get("id"), status)
+
+
+def finance_scope_clear_state(obj: dict) -> None:
+    user_id = obj.get("user_id")
+    if not user_id:
+        return
+    for name in finance_request_scope(obj):
+        if name:
+            fin_state_clear(name, user_id)
+
+
 def finance_generate_code() -> str:
     ensure_dirs()
     existing = set()
@@ -1822,47 +4039,81 @@ def finance_generate_code() -> str:
             code = payload.get("code")
             if code:
                 existing.add(code)
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     while True:
-        code = f"ID-BRD-{random.randint(0, 9999):04d}"
+        suffix = "".join(random.choice(alphabet) for _ in range(5))
+        code = f"FIN-{suffix}"
         if code not in existing:
             return code
 
 
-def finance_new_request(uid: int, project: str, receipts: List[dict]) -> dict:
+def finance_new_request(
+    uid: int,
+    project: Optional[str],
+    receipts: List[dict],
+    *,
+    scope: Optional[List[str]] = None,
+    amount_override: Optional[float] = None,
+    mode: str = "receipts",
+    scope_snapshot: Optional[Dict[str, dict]] = None,
+) -> dict:
     ensure_dirs()
-    data = load_finance_data(project)
+    now_iso = datetime.now().isoformat()
+    scope_list = [p for p in (scope or []) if p]
+    if not scope_list and project:
+        scope_list = [project]
+    elif not scope_list:
+        scope_list = []
+    unique_scope = []
+    for name in scope_list:
+        if name and name not in unique_scope:
+            unique_scope.append(name)
+    scope_list = unique_scope or ([project] if project else [])
+    is_multi = len(scope_list) > 1
+    storage = "project"
+    storage_key = project or (scope_list[0] if scope_list else None)
+    if is_multi or not storage_key:
+        storage = "global"
+    if storage == "project" and storage_key:
+        data = load_finance_data(storage_key)
+    else:
+        data = load_global_finance_data()
     ts = int(datetime.now().timestamp())
     req_id = f"req_{ts}_{uid}"
-    while req_id in data.get("requests", {}):
+    while req_id in (data.get("requests") or {}):
         ts += 1
         req_id = f"req_{ts}_{uid}"
     code = finance_generate_code()
     files: List[str] = []
     items: List[dict] = []
-    total = 0.0
-    now_iso = datetime.now().isoformat()
+    total_receipts = 0.0
     for rec in receipts:
         file_name = rec.get("file") or ""
-        files.append(file_name)
-        try:
-            amount = float(rec.get("sum", 0.0))
-        except (TypeError, ValueError):
-            amount = 0.0
-        total += amount
+        project_hint = rec.get("project") or storage_key
+        if file_name:
+            files.append(file_name)
+        amount = receipt_amount(rec)
+        total_receipts += amount
         items.append({
             "file": file_name,
+            "project": project_hint,
             "receipt_no": rec.get("receipt_no"),
             "amount": round(amount, 2),
             "desc": rec.get("desc"),
             "status": "pending",
             "updated_at": now_iso
         })
+    requested_sum = amount_override if amount_override is not None else total_receipts
     payload = {
         "id": req_id,
         "code": code,
         "user_id": uid,
-        "project": project,
-        "sum": round(float(total), 2),
+        "project": storage_key if storage == "project" else "__multi__",
+        "scope": scope_list,
+        "storage": storage,
+        "mode": mode,
+        "sum": round(float(requested_sum), 2),
+        "calc_sum": round(float(total_receipts), 2),
         "files": files,
         "items": items,
         "status": "pending",
@@ -1872,17 +4123,22 @@ def finance_new_request(uid: int, project: str, receipts: List[dict]) -> dict:
         "created_at": now_iso,
         "history": [{"status": "pending", "timestamp": now_iso}]
     }
+    if scope_snapshot:
+        payload["scope_snapshot"] = scope_snapshot
     data.setdefault("requests", {})[req_id] = payload
-    save_finance_data(project, data)
+    if storage == "project" and storage_key:
+        save_finance_data(storage_key, data)
+    else:
+        save_global_finance_data(data)
     prof = load_user(uid) or {}
     arr = prof.get("payouts", [])
-    entry = {"id": req_id, "project": project, "code": code}
+    entry = {"id": req_id, "project": payload.get("project"), "code": code, "scope": scope_list}
     if not any(isinstance(x, dict) and x.get("id") == req_id for x in arr):
         arr.append(entry)
         prof["payouts"] = arr
         save_user(prof)
-    fin_state_set(project, uid, req_id, "pending")
-    update_receipts_for_request(uid, project, files, "pending", payload)
+    finance_scope_set_state(payload, "pending")
+    update_receipts_for_request(uid, payload.get("project"), files, "pending", payload)
     return finance_request_defaults(payload)
 
 
@@ -1892,6 +4148,12 @@ def finance_load_request(req_id: str, project_hint: Optional[str]=None) -> Optio
         projects = [project_hint]
     else:
         projects = list_projects()
+    global_data = load_global_finance_data().get("requests", {})
+    obj = global_data.get(req_id)
+    if obj:
+        obj.setdefault("storage", "global")
+        obj.setdefault("scope", finance_request_scope(obj))
+        return finance_request_defaults(obj)
     for name in projects:
         if not name:
             continue
@@ -1900,7 +4162,10 @@ def finance_load_request(req_id: str, project_hint: Optional[str]=None) -> Optio
         if obj:
             if not obj.get("project"):
                 obj["project"] = name
+                obj.setdefault("scope", [name])
                 finance_save_request(obj)
+            obj.setdefault("storage", "project")
+            obj.setdefault("scope", finance_request_scope(obj))
             return finance_request_defaults(obj)
     if project_hint:
         return finance_load_request(req_id, None)
@@ -1924,10 +4189,17 @@ def finance_load_request(req_id: str, project_hint: Optional[str]=None) -> Optio
 
 
 def finance_save_request(obj: dict):
-    project = obj.get("project")
+    obj = finance_request_defaults(obj) or obj
+    storage = obj.get("storage")
+    scope = finance_request_scope(obj)
+    if storage == "global" or (not obj.get("project") and len(scope) > 1):
+        data = load_global_finance_data()
+        data.setdefault("requests", {})[obj["id"]] = obj
+        save_global_finance_data(data)
+        return
+    project = obj.get("project") or (scope[0] if scope else None)
     if not project:
         return
-    obj = finance_request_defaults(obj) or obj
     data = load_finance_data(project)
     data.setdefault("requests", {})[obj["id"]] = obj
     save_finance_data(project, data)
@@ -1936,6 +4208,12 @@ def finance_save_request(obj: dict):
 def finance_list(filter_status: Optional[str]=None) -> List[dict]:
     ensure_dirs()
     out = []
+    global_data = load_global_finance_data().get("requests", {})
+    for req in global_data.values():
+        if (filter_status is None) or (req.get("status") == filter_status):
+            req.setdefault("storage", "global")
+            req.setdefault("scope", finance_request_scope(req))
+            out.append(finance_request_defaults(req) or req)
     for project in list_projects():
         data = load_finance_data(project)
         for req in data.get("requests", {}).values():
@@ -1943,6 +4221,8 @@ def finance_list(filter_status: Optional[str]=None) -> List[dict]:
                 req["project"] = project
                 finance_save_request(req)
             if (filter_status is None) or (req.get("status") == filter_status):
+                req.setdefault("storage", "project")
+                req.setdefault("scope", finance_request_scope(req))
                 out.append(finance_request_defaults(req) or req)
     out.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return out
@@ -2018,6 +4298,12 @@ def finance_request_defaults(obj: Optional[dict]) -> Optional[dict]:
         obj["history"] = []
     if not isinstance(obj.get("items"), list):
         obj["items"] = []
+    scope = obj.get("scope")
+    if not isinstance(scope, list) or not scope:
+        project = obj.get("project")
+        obj["scope"] = [project] if project else []
+    if not obj.get("storage"):
+        obj["storage"] = "project" if obj.get("project") and len(obj.get("scope") or []) <= 1 else "global"
     return obj
 
 
@@ -2043,72 +4329,83 @@ def finance_update_items_status(obj: dict, status: str, timestamp: Optional[str]
             item["updated_at"] = timestamp
 
 
-def update_receipts_for_request(uid: int, project: str, files: List[str], status: str, request: dict):
+def update_receipts_for_request(uid: int, project: Optional[str], files: List[str], status: str, request: dict):
     prof = load_user(uid) or {}
     recmap = prof.get("receipts", {})
-    recs = recmap.get(project, [])
-    if not isinstance(recs, list) or not recs:
+    if not isinstance(recmap, dict) or not files:
         return
     now_iso = datetime.now().isoformat()
     req_id = request.get("id")
     req_code = request.get("code") or req_id
     changed = False
-    for entry in recs:
-        if entry.get("file") not in files:
+    grouped: Dict[str, Set[str]] = {}
+    for item in request.get("items", []):
+        if not isinstance(item, dict):
             continue
-        history = entry.get("payout_history")
-        if not isinstance(history, list):
-            history = []
-            entry["payout_history"] = history
-        try:
-            amount_value = float(entry.get("sum", 0.0))
-        except (TypeError, ValueError):
-            amount_value = 0.0
-        history.append({
-            "status": status,
-            "timestamp": now_iso,
-            "request_id": req_id,
-            "code": req_code,
-            "project": project,
-            "amount": amount_value
-        })
-        payout = entry.get("payout") if isinstance(entry.get("payout"), dict) else {}
-        if status in ("pending", "approved"):
-            payout.update({
-                "request_id": req_id,
-                "code": req_code,
+        fname = item.get("file")
+        proj_name = item.get("project") or project
+        if not fname or fname not in files:
+            continue
+        grouped.setdefault(proj_name or "", set()).add(fname)
+    if not grouped and project and files:
+        grouped[project] = set(files)
+    for proj_name, file_set in grouped.items():
+        recs = recmap.get(proj_name, [])
+        if not isinstance(recs, list):
+            continue
+        for entry in recs:
+            if entry.get("file") not in file_set:
+                continue
+            history = entry.get("payout_history")
+            if not isinstance(history, list):
+                history = []
+                entry["payout_history"] = history
+            amount_value = receipt_amount(entry)
+            history.append({
                 "status": status,
-                "updated_at": now_iso
-            })
-            if status == "pending":
-                payout.setdefault("assigned_at", now_iso)
-            if status == "approved":
-                payout["approved_at"] = now_iso
-            entry["payout"] = payout
-        elif status == "confirmed":
-            payout.update({
+                "timestamp": now_iso,
                 "request_id": req_id,
                 "code": req_code,
-                "status": "confirmed",
-                "updated_at": now_iso,
-                "confirmed_at": now_iso,
-                "assigned_at": payout.get("assigned_at", now_iso),
-                "approved_at": payout.get("approved_at")
+                "project": proj_name,
+                "amount": amount_value
             })
-            entry["payout"] = payout
-            entry["paid"] = True
-            entry["paid_at"] = now_iso
-            entry["paid_request_id"] = req_id
-            entry["paid_request_code"] = req_code
-        elif status == "closed":
-            if entry.get("paid") is not True:
-                entry.pop("paid_request_id", None)
-                entry.pop("paid_request_code", None)
-                entry.pop("paid_at", None)
-            entry["payout"] = None
-        changed = True
+            payout = entry.get("payout") if isinstance(entry.get("payout"), dict) else {}
+            if status in ("pending", "approved"):
+                payout.update({
+                    "request_id": req_id,
+                    "code": req_code,
+                    "status": status,
+                    "updated_at": now_iso
+                })
+                if status == "pending":
+                    payout.setdefault("assigned_at", now_iso)
+                if status == "approved":
+                    payout["approved_at"] = now_iso
+                entry["payout"] = payout
+            elif status == "confirmed":
+                payout.update({
+                    "request_id": req_id,
+                    "code": req_code,
+                    "status": "confirmed",
+                    "updated_at": now_iso,
+                    "confirmed_at": now_iso,
+                    "assigned_at": payout.get("assigned_at", now_iso),
+                    "approved_at": payout.get("approved_at")
+                })
+                entry["payout"] = payout
+                entry["paid"] = True
+                entry["paid_at"] = now_iso
+                entry["paid_request_id"] = req_id
+                entry["paid_request_code"] = req_code
+            elif status in {"closed", "rejected"}:
+                if entry.get("paid") is not True:
+                    entry.pop("paid_request_id", None)
+                    entry.pop("paid_request_code", None)
+                    entry.pop("paid_at", None)
+                entry["payout"] = None
+            changed = True
+        recmap[proj_name] = recs
     if changed:
-        recmap[project] = recs
         prof["receipts"] = recmap
         save_user(prof)
 
@@ -2178,10 +4475,87 @@ def save_receipt(project: str, uid: int, amount: float, tmp_img: str, desc: str,
 def fmt_money(x: float) -> str: return f"{x:.2f}"
 
 
+AMOUNT_SANITIZE_RE = re.compile(r"[^0-9\-\.,]")
+
+
+def parse_amount(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    text = text.replace("\u202f", "").replace("\u00a0", "").replace(" ", "")
+    text = text.replace(",", ".")
+    text = AMOUNT_SANITIZE_RE.sub("", text)
+    if not text or text in {".", "-", "-."}:
+        return 0.0
+    sign = ""
+    if text.startswith("-"):
+        sign = "-"
+        text = text[1:]
+    if text.count(".") > 1:
+        parts = text.split(".")
+        integer = "".join(parts[:-1])
+        fraction = parts[-1]
+        text = f"{integer}.{fraction}" if fraction else integer
+    text = f"{sign}{text}" if text else sign
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def receipt_amount(entry: Any) -> float:
+    if isinstance(entry, dict):
+        for key in ("sum", "amount", "calc_sum", "value"):
+            if key in entry and entry[key] not in (None, ""):
+                amount_value = parse_amount(entry[key])
+                return amount_value if math.isfinite(amount_value) else 0.0
+        return 0.0
+    value = parse_amount(entry)
+    return value if math.isfinite(value) else 0.0
+
+
+def parse_amount_chain(*candidates: Any) -> float:
+    for candidate in candidates:
+        if candidate not in (None, ""):
+            return parse_amount(candidate)
+    return 0.0
+
+
+def fmt_points_value(value: float) -> float:
+    return round_points(value)
+
+
+def fmt_points(x: float) -> str:
+    raw = f"{fmt_points_value(x):.2f}"
+    if raw.endswith(".00"):
+        return raw[:-3]
+    if raw.endswith("0"):
+        return raw[:-1]
+    return raw
+
+
 def h(value: Any) -> str:
     if value is None:
         return ""
     return html_escape(str(value), quote=False)
+
+
+def format_username_link(username: Optional[str]) -> str:
+    """Render a Telegram username with a clickable link."""
+    if not username:
+        return "—"
+    plain = str(username).lstrip("@")
+    if not plain:
+        return "—"
+    safe_href = html_escape(plain, quote=True)
+    safe_text = h(f"@{plain}")
+    return f"<a href=\"https://t.me/{safe_href}\">{safe_text}</a>"
 
 
 def format_datetime_short(value: Optional[str]) -> str:
@@ -2825,10 +5199,7 @@ def format_receipt_caption(receipt: dict, project: Optional[str] = None) -> str:
     date_part = h(receipt.get("date", "—")) or "—"
     time_raw = receipt.get("time")
     date_line = f"📅 {date_part} {h(time_raw)}".strip() if time_raw else f"📅 {date_part}"
-    try:
-        amount = float(receipt.get("sum", 0.0))
-    except (TypeError, ValueError):
-        amount = 0.0
+    amount = receipt_amount(receipt)
     desc = receipt.get("desc")
     desc_text = h(desc) if desc else "—"
     file_name = receipt.get("file")
@@ -2939,10 +5310,7 @@ def format_receipt_stat_entry(index: int, receipt: dict) -> str:
     time_raw = receipt.get("time")
     if time_raw:
         date_text = f"{date_text} {h(time_raw)}"
-    try:
-        amount = float(receipt.get("sum", 0.0))
-    except (TypeError, ValueError):
-        amount = 0.0
+    amount = receipt_amount(receipt)
     desc = receipt.get("desc")
     desc_text = h(desc) if desc else "—"
     file_name = receipt.get("file")
@@ -3057,43 +5425,76 @@ async def send_receipt_card(chat_id: int, project: str, owner_uid: int, receipt:
     return await bot.send_message(chat_id, body, reply_markup=kb)
 
 
+def _finance_requests_amount(entries: List[dict]) -> float:
+    total = Decimal("0")
+    for item in entries:
+        try:
+            total += Decimal(str(item.get("sum") or 0))
+        except Exception:
+            continue
+    return float(total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def project_status_text(uid: int) -> str:
+    points_line = tr(uid, "ANCHOR_POINTS_LINE", points=fmt_points(points_total(uid)))
     if not active_project["name"]:
-        return tr(uid, "ANCHOR_NO_PROJECT", bot=h(BOT_NAME))
-    info = load_project_info(active_project["name"])
-    photo_total = project_photo_count(active_project["name"])
-    assignments = np_list_assignments(uid)
-    total_assigned = len(assignments)
-    pending_assigned = sum(1 for item in assignments if not item.get("delivered_at"))
-    delivered_count = max(0, total_assigned - pending_assigned)
-    bsg_section = tr(
-        uid,
-        "ANCHOR_PROJECT_BSG_SUMMARY",
-        total=total_assigned,
-        pending=pending_assigned,
-        delivered=delivered_count,
-    )
-    alerts_section = alerts_anchor_section(uid)
-    name = h(info.get("name", "—")) or "—"
-    region = h(info.get("region") or "—")
-    location = h(info.get("location", "—")) or "—"
-    start = h(info.get("start_date", "—")) or "—"
-    end = h(info.get("end_date", "—")) or "—"
-    code = h(info.get("code") or "—")
-    return tr(
-        uid,
-        "ANCHOR_PROJECT",
-        bot=h(BOT_NAME),
-        name=name,
-        code=code,
-        region=region,
-        location=location,
-        photos=photo_total,
-        start=start,
-        end=end,
-        bsg_section=bsg_section,
-        alerts_section=alerts_section,
-    )
+        base = tr(uid, "ANCHOR_NO_PROJECT", bot=h(BOT_NAME), points_line=points_line)
+        lines = [base]
+    else:
+        info = load_project_info(active_project["name"])
+        photo_total = project_photo_count(active_project["name"])
+        assignments = np_list_assignments(uid)
+        total_assigned = len(assignments)
+        pending_assigned = sum(1 for item in assignments if not item.get("delivered_at"))
+        delivered_count = max(0, total_assigned - pending_assigned)
+        bsg_section = tr(
+            uid,
+            "ANCHOR_PROJECT_BSG_SUMMARY",
+            total=total_assigned,
+            pending=pending_assigned,
+            delivered=delivered_count,
+        )
+        alerts_section = alerts_anchor_section(uid)
+        name = h(info.get("name", "—")) or "—"
+        region = h(info.get("region") or "—")
+        location = h(info.get("location", "—")) or "—"
+        start = h(info.get("start_date", "—")) or "—"
+        end = h(info.get("end_date", "—")) or "—"
+        code = h(info.get("code") or "—")
+        base = tr(
+            uid,
+            "ANCHOR_PROJECT",
+            bot=h(BOT_NAME),
+            points_line=points_line,
+            name=name,
+            code=code,
+            region=region,
+            location=location,
+            photos=photo_total,
+            start=start,
+            end=end,
+            bsg_section=bsg_section,
+            alerts_section=alerts_section,
+        )
+        lines = [base]
+
+    if uid in admins:
+        pending = finance_list("pending")
+        approved = finance_list("approved")
+        waiting_total = _finance_requests_amount(pending)
+        approved_total = _finance_requests_amount(approved)
+        if pending or approved:
+            lines.append("")
+            lines.append("💼 <b>Финансы (администратор)</b>")
+            if pending:
+                lines.append(
+                    f"📨 В ожидании: <b>{len(pending)}</b> — {fmt_money(waiting_total)} грн"
+                )
+            if approved:
+                lines.append(
+                    f"✅ Ожидают подтверждения: <b>{len(approved)}</b> — {fmt_money(approved_total)} грн"
+                )
+    return "\n".join(lines)
 
 
 
@@ -3114,16 +5515,192 @@ def kb_root(uid: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(tr(uid, "BTN_NOVA_POSHTA"), callback_data="menu_np"),
     )
     kb.add(InlineKeyboardButton(tr(uid, "BTN_SETTINGS"), callback_data="menu_settings"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE"), callback_data="menu_profile"))
     if uid in admins:
         kb.add(InlineKeyboardButton(tr(uid, "BTN_ADMIN"), callback_data="menu_admin"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_ABOUT"), callback_data="menu_about"))
     return kb
 
 
+def kb_profile_cancel(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_admin_edit_cancel(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def profile_has_photo(profile: dict) -> bool:
+    photo = profile.get("photo") or {}
+    if not isinstance(photo, dict):
+        return False
+    path = user_profile_photo_path(profile.get("user_id")) if profile.get("user_id") else None
+    return bool(path and os.path.exists(path) and photo.get("status") != "skipped")
+
+
+def profile_photo_status_label(uid: int, profile: dict) -> str:
+    photo = profile.get("photo") or {}
+    if not photo:
+        return tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+    status = photo.get("status")
+    if status == "skipped":
+        return tr(uid, "PROFILE_PHOTO_STATUS_SKIPPED")
+    if profile_has_photo(profile):
+        return tr(uid, "PROFILE_PHOTO_STATUS_OK")
+    return tr(uid, "PROFILE_PHOTO_STATUS_MISSING")
+
+
+def profile_summary_text(
+    uid: int,
+    profile: dict,
+    edit_mode: bool = False,
+    *,
+    points_owner: Optional[int] = None,
+) -> str:
+    missing = tr(uid, "PROFILE_VALUE_MISSING")
+    last_name = h(profile.get("last_name") or missing)
+    first_name = h(profile.get("first_name") or missing)
+    middle_name = h(profile.get("middle_name") or missing)
+    birthdate = format_birthdate_display(profile.get("birthdate"), resolve_lang(uid))
+    region = h(profile.get("region") or missing)
+    phone = h(profile.get("phone") or missing)
+    tg = profile.get("tg") or {}
+    tg_id = str(profile.get("user_id", "—"))
+    tg_username = tg.get("username")
+    username_disp = format_username_link(tg_username) if tg_username else h(missing)
+    bsu = h(profile.get("bsu") or missing)
+    photo_status = h(profile_photo_status_label(uid, profile))
+    lines = [
+        tr(uid, "PROFILE_HEADER"),
+        "━━━━━━━━━━━━━━━━━━",
+        f"{tr(uid, 'PROFILE_FIELD_LAST_NAME')}: <b>{last_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_FIRST_NAME')}: <b>{first_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_MIDDLE_NAME')}: <b>{middle_name}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_BIRTHDATE')}: <b>{h(birthdate)}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_REGION')}: <b>{region}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_PHONE')}: <b>{phone}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_BSU')}: <b>{bsu}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_TG_USERNAME')}: <b>{username_disp}</b>",
+        f"{tr(uid, 'PROFILE_FIELD_TG_ID')}: <code>{tg_id}</code>",
+        f"{tr(uid, 'PROFILE_FIELD_PHOTO')}: <b>{photo_status}</b>",
+    ]
+    if not edit_mode:
+        owner_uid = points_owner if points_owner is not None else profile.get("user_id") or uid
+        try:
+            owner_uid_int = int(owner_uid)
+        except (TypeError, ValueError):
+            owner_uid_int = uid
+        lines.append(
+            tr(
+                uid,
+                "PROFILE_POINTS_INLINE",
+                points=fmt_points(points_total(owner_uid_int)),
+            )
+        )
+    if edit_mode:
+        lines.append("")
+        lines.append(tr(uid, "PROFILE_EDIT_HINT"))
+    return "\n".join(lines)
+
+
+def kb_profile_menu(uid: int, profile: dict, edit_mode: bool = False, show_photo: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    has_photo = profile_has_photo(profile)
+    if edit_mode:
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_LAST"), callback_data="profile_edit_last"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_FIRST"), callback_data="profile_edit_first"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_MIDDLE"), callback_data="profile_edit_middle"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_BIRTHDATE"), callback_data="profile_edit_birthdate"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_REGION"), callback_data="profile_edit_region"),
+            InlineKeyboardButton(tr(uid, "BTN_PROFILE_FIELD_PHONE"), callback_data="profile_edit_phone"),
+        )
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_UPDATE_PHOTO"), callback_data="profile_edit_photo"))
+        if has_photo:
+            kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_REMOVE_PHOTO"), callback_data="profile_remove_photo"))
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_DONE"), callback_data="profile_done"))
+    else:
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_EDIT"), callback_data="profile_edit"))
+        if has_photo:
+            if show_photo:
+                kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_HIDE_PHOTO"), callback_data="profile_hide_photo"))
+            else:
+                kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_VIEW_PHOTO"), callback_data="profile_view_photo"))
+        kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_POINTS"), callback_data="profile_points"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    return kb
+
+
+def kb_profile_region_prompt(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_BUTTON"), callback_data="profile_region_open"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_region_picker(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"profile_region_pick:{idx}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_region_confirm(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(uid, "REGISTER_REGION_BACK"), callback_data="profile_region_back"),
+        InlineKeyboardButton(registration_button_label(uid), callback_data="profile_region_confirm"),
+    )
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="profile_cancel"))
+    return kb
+
+
+def kb_profile_phone_keyboard(uid: int) -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
+    kb.add(KeyboardButton(tr(uid, "BTN_PROFILE_CANCEL")))
+    return kb
+
+
+async def show_profile(uid: int, *, edit_mode: Optional[bool] = None, show_photo: Optional[bool] = None):
+    runtime = profile_runtime(uid)
+    if edit_mode is None or show_photo is None:
+        current_edit, current_photo = profile_get_flags(uid)
+        if edit_mode is None:
+            edit_mode = current_edit
+        if show_photo is None:
+            show_photo = current_photo
+    profile = load_user(uid) or ensure_user(uid, runtime.get("tg", {}))
+    profile.setdefault("user_id", uid)
+    has_photo = profile_has_photo(profile)
+    if show_photo and not has_photo:
+        await profile_send_notification(uid, tr(uid, "PROFILE_NO_PHOTO"))
+        show_photo = False
+    profile_set_flags(uid, edit_mode=edit_mode, show_photo=show_photo and has_photo)
+    caption = profile_summary_text(uid, profile, edit_mode=edit_mode, points_owner=profile.get("user_id", uid))
+    kb = kb_profile_menu(uid, profile, edit_mode=edit_mode, show_photo=show_photo and has_photo)
+    if show_photo and has_photo:
+        await anchor_replace_with_photo(uid, user_profile_photo_path(uid), caption, kb)
+    else:
+        profile_set_flags(uid, show_photo=False)
+        chat = profile_chat_id(uid)
+        if chat:
+            await anchor_upsert(uid, chat, caption, kb)
+
+
 def kb_alerts(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_OVERVIEW"), callback_data="alerts_overview"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_ACTIVE"), callback_data="alerts_active"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_HISTORY"), callback_data="alerts_history"))
     kb.add(InlineKeyboardButton(tr(uid, "ALERTS_BTN_SUBSCRIPTIONS"), callback_data="alerts_subscriptions"))
     kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
@@ -3230,17 +5807,6 @@ async def _photo_refresh_session_message(chat_id: int, uid: int, state: FSMConte
     await state.update_data(photo_session_message=(msg.chat.id, msg.message_id))
 
 
-def kb_finance_root(user_has_pending_confirm: bool=False) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup()
-    if user_has_pending_confirm:
-        kb.add(InlineKeyboardButton("✅ Подтвердить получение выплат", callback_data="fin_confirm_list"))
-    kb.add(InlineKeyboardButton("⏳ Неоплаченные чеки", callback_data="fin_unpaid_list"))
-    kb.add(InlineKeyboardButton("📨 Запросить выплату", callback_data="fin_request_payout"))
-    kb.add(InlineKeyboardButton("📚 История выплат", callback_data="fin_history"))
-    kb.add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
-    return kb
-
-
 def kb_novaposhta(uid: int) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(tr(uid, "BTN_NP_INTERFACE"), callback_data="np_interface"))
@@ -3318,6 +5884,7 @@ def kb_admin_root() -> InlineKeyboardMarkup:
     kb.add(InlineKeyboardButton("👥 Пользователи", callback_data="adm_users"))
     kb.add(InlineKeyboardButton("📂 Проекты", callback_data="adm_projects"))
     kb.add(InlineKeyboardButton("💵 Финансы", callback_data="adm_finance"))
+    kb.add(InlineKeyboardButton("🏅 Баллы", callback_data="adm_points"))
     kb.add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
     return kb
 
@@ -3329,6 +5896,163 @@ def kb_admin_projects() -> InlineKeyboardMarkup:
     kb.add(InlineKeyboardButton("🔄 Активировать", callback_data="proj_activate"))
     kb.add(InlineKeyboardButton("✅ Завершить", callback_data="proj_finish"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+    return kb
+
+
+def admin_collect_user_stats(profile: dict) -> dict:
+    receipts = profile.get("receipts") or {}
+    project_summaries: List[dict] = []
+    total_count = 0
+    total_sum = 0.0
+    paid_sum = 0.0
+    unpaid_sum = 0.0
+    pending_sum = 0.0
+    unspecified_sum = 0.0
+    user_id = profile.get("user_id")
+    if isinstance(receipts, dict):
+        for project in sorted(receipts.keys()):
+            stats = user_project_stats(user_id, project)
+            info = load_project_info(project)
+            project_summaries.append({"name": project, "info": info, "stats": stats})
+            total_count += stats.get("count", 0)
+            total_sum += stats.get("total", 0.0)
+            paid_sum += stats.get("paid", 0.0)
+            unpaid_sum += stats.get("unpaid", 0.0)
+            pending_sum += stats.get("pending", 0.0)
+            unspecified_sum += stats.get("unspecified", 0.0)
+    payouts = profile.get("payouts") or []
+    pending_payouts = [p for p in payouts if (p.get("status") not in {"confirmed", "closed"})]
+    confirmed_payouts = [p for p in payouts if p.get("status") in {"confirmed", "closed"}]
+    return {
+        "projects": project_summaries,
+        "total_count": total_count,
+        "total_sum": total_sum,
+        "paid_sum": paid_sum,
+        "unpaid_sum": unpaid_sum,
+        "pending_sum": pending_sum,
+        "unspecified_sum": unspecified_sum,
+        "pending_payouts": pending_payouts,
+        "confirmed_payouts": confirmed_payouts,
+    }
+
+
+def admin_user_photo_projects(uid: int) -> List[dict]:
+    summary: List[dict] = []
+    for name in sorted(list_projects()):
+        entries = [entry for entry in load_project_photos(name) if entry.get("uploader_id") == uid]
+        if not entries:
+            continue
+        info = load_project_info(name)
+        summary.append({"name": name, "info": info, "entries": entries})
+    return summary
+
+
+def admin_user_has_photos(uid: int) -> bool:
+    for payload in admin_user_photo_projects(uid):
+        if payload.get("entries"):
+            return True
+    return False
+
+
+def admin_finance_eligible_receipts(uid: int, project: str) -> List[dict]:
+    eligible: List[dict] = []
+    for entry in user_project_receipts(uid, project):
+        if entry.get("paid") is True:
+            continue
+        payout = entry.get("payout") if isinstance(entry.get("payout"), dict) else {}
+        if payout.get("status") in {"pending", "approved"}:
+            continue
+        clone = dict(entry)
+        clone.setdefault("project", project)
+        eligible.append(clone)
+    return eligible
+
+
+def _receipt_amount_cents(entry: dict) -> int:
+    value = receipt_amount(entry)
+    return int(round(value * 100))
+
+
+def admin_finance_receipts_total(receipts: List[dict]) -> float:
+    total_cents = sum(_receipt_amount_cents(entry) for entry in receipts)
+    return round(total_cents / 100.0, 2)
+
+
+def admin_finance_pick_receipts_for_amount(receipts: List[dict], target_amount: float) -> Optional[List[dict]]:
+    target_cents = int(round(target_amount * 100))
+    if target_cents <= 0:
+        return []
+    amounts = [_receipt_amount_cents(entry) for entry in receipts]
+    combos: Dict[int, List[int]] = {0: []}
+    for idx, amount in enumerate(amounts):
+        if amount <= 0:
+            continue
+        snapshot = list(combos.items())
+        for current_sum, selection in snapshot:
+            new_sum = current_sum + amount
+            if new_sum > target_cents:
+                continue
+            if new_sum in combos:
+                continue
+            combos[new_sum] = selection + [idx]
+        if target_cents in combos:
+            break
+    if target_cents not in combos:
+        return None
+    return [receipts[i] for i in combos[target_cents]]
+
+
+def admin_user_card_text(viewer_uid: int, profile: dict, *, edit_mode: bool = False) -> str:
+    target_uid = profile.get("user_id")
+    base = profile_summary_text(
+        viewer_uid,
+        profile,
+        edit_mode=False,
+        points_owner=target_uid if target_uid is not None else viewer_uid,
+    )
+    points_line = tr(
+        viewer_uid,
+        "POINTS_ADMIN_CARD_LINE",
+        points=fmt_points(points_total(target_uid or 0))
+    )
+    lines = [base, "", points_line]
+    if not edit_mode:
+        lines.append("")
+        lines.append("💡 Використовуйте розділ «💵 Фінанси», щоб переглянути статистику, чеки й запити на виплати.")
+    if edit_mode:
+        lines.append("")
+        lines.append(tr(viewer_uid, "PROFILE_EDIT_HINT"))
+    return "\n".join(lines)
+
+
+def kb_admin_user(viewer_uid: int, profile: dict, *, show_photo: bool = False, edit_mode: bool = False, has_photos: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if profile_has_photo(profile):
+        label = "📝 Повернути текст" if show_photo else "👁 Показати фото"
+        kb.add(InlineKeyboardButton(label, callback_data="adm_user_photo_toggle"))
+    if edit_mode:
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_LAST"), callback_data="adm_edit_last"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_FIRST"), callback_data="adm_edit_first"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_MIDDLE"), callback_data="adm_edit_middle"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_BIRTHDATE"), callback_data="adm_edit_birthdate"),
+        )
+        kb.row(
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_REGION"), callback_data="adm_edit_region"),
+            InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_FIELD_PHONE"), callback_data="adm_edit_phone"),
+        )
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_UPDATE_PHOTO"), callback_data="adm_edit_photo"))
+        if profile_has_photo(profile):
+            kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_REMOVE_PHOTO"), callback_data="adm_edit_remove_photo"))
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_DONE"), callback_data="adm_user_edit_done"))
+    else:
+        kb.add(InlineKeyboardButton(tr(viewer_uid, "BTN_PROFILE_EDIT"), callback_data="adm_user_edit"))
+        kb.add(InlineKeyboardButton("💵 Фінанси", callback_data="adm_user_finance"))
+        if has_photos:
+            kb.add(InlineKeyboardButton("🖼 Фотоархів", callback_data="adm_user_photos"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
     return kb
 
 
@@ -3432,6 +6156,17 @@ def inline_kb_signature(kb: Optional[InlineKeyboardMarkup]) -> Any:
 
 
 # ========================== ANCHOR ==========================
+async def anchor_clear(uid: int):
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id")
+    anchor_id = runtime.pop("anchor", None)
+    runtime.pop("last_anchor_text", None)
+    runtime.pop("last_anchor_kb", None)
+    runtime.pop("anchor_mode", None)
+    if anchor_id and chat_id:
+        await _delete_message_safe(chat_id, anchor_id)
+
+
 async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: Optional[InlineKeyboardMarkup] = None):
     if text is None: text = project_status_text(uid)
     if kb is None: kb = kb_root(uid)
@@ -3448,6 +6183,7 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
         try:
             await bot.edit_message_text(text, chat_id, anchor, reply_markup=kb)
             ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+            ur["anchor_mode"] = "text"
             return
         except MessageNotModified:
             return
@@ -3460,11 +6196,50 @@ async def anchor_upsert(uid: int, chat_id: int, text: Optional[str] = None, kb: 
     msg = await bot.send_message(chat_id, text, reply_markup=kb)
     ur["anchor"] = msg.message_id
     ur["last_anchor_text"] = text; ur["last_anchor_kb"] = kb_sign
+    ur["anchor_mode"] = "text"
 
 
 async def anchor_show_root(uid: int):
-    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-    if chat: await anchor_upsert(uid, chat, project_status_text(uid), kb_root(uid))
+    runtime = users_runtime.setdefault(uid, {})
+    profile = load_user(uid) or {}
+    if not registration_sync_runtime(uid, profile):
+        await anchor_clear(uid)
+        return
+    chat = runtime.get("tg", {}).get("chat_id")
+    if chat:
+        await anchor_upsert(uid, chat, project_status_text(uid), kb_root(uid))
+
+
+async def anchor_replace_with_photo(uid: int, photo_path: str, caption: str, kb: InlineKeyboardMarkup):
+    runtime = users_runtime.setdefault(uid, {})
+    chat = runtime.get("tg", {}).get("chat_id")
+    if not chat:
+        return
+    if not os.path.exists(photo_path):
+        await anchor_upsert(uid, chat, caption, kb)
+        return
+    anchor = runtime.get("anchor")
+    kb_sign = inline_kb_signature(kb)
+    media = types.InputMediaPhoto(InputFile(photo_path), caption=caption, parse_mode="HTML")
+    try:
+        if anchor:
+            await bot.edit_message_media(chat_id=chat, message_id=anchor, media=media, reply_markup=kb)
+        else:
+            msg = await bot.send_photo(chat, InputFile(photo_path), caption=caption, reply_markup=kb)
+            runtime["anchor"] = msg.message_id
+    except MessageNotModified:
+        pass
+    except Exception:
+        try:
+            if anchor:
+                await bot.delete_message(chat, anchor)
+        except Exception:
+            pass
+        msg = await bot.send_photo(chat, InputFile(photo_path), caption=caption, reply_markup=kb)
+        runtime["anchor"] = msg.message_id
+    runtime["last_anchor_text"] = caption
+    runtime["last_anchor_kb"] = kb_sign
+    runtime["anchor_mode"] = "photo"
 
 
 async def anchor_show_text(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -3477,26 +6252,199 @@ async def update_all_anchors():
         await anchor_show_root(uid)
 
 
+def profile_runtime(uid: int) -> dict:
+    return users_runtime.setdefault(uid, {})
+
+
+def profile_chat_id(uid: int) -> Optional[int]:
+    return profile_runtime(uid).get("tg", {}).get("chat_id")
+
+
+async def profile_clear_prompt(uid: int):
+    runtime = profile_runtime(uid)
+    prompt = runtime.pop("profile_prompt", None)
+    if isinstance(prompt, (list, tuple)) and len(prompt) == 2:
+        await _delete_message_safe(prompt[0], prompt[1])
+
+
+async def profile_send_prompt(uid: int, text: str, reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None):
+    chat = profile_chat_id(uid)
+    if not chat:
+        return None
+    await profile_clear_prompt(uid)
+    runtime = profile_runtime(uid)
+    if isinstance(reply_markup, ReplyKeyboardMarkup):
+        runtime["profile_reply_keyboard"] = True
+    else:
+        runtime.pop("profile_reply_keyboard", None)
+    msg = await bot.send_message(chat, text, reply_markup=reply_markup)
+    runtime["profile_prompt"] = (msg.chat.id, msg.message_id)
+    flow_track(uid, msg)
+    return msg
+
+
+def admin_edit_runtime(uid: int) -> dict:
+    runtime = users_runtime.setdefault(uid, {})
+    return runtime.setdefault("admin_edit", {})
+
+
+async def admin_edit_clear_prompt(uid: int):
+    runtime = admin_edit_runtime(uid)
+    prompt = runtime.pop("prompt", None)
+    if isinstance(prompt, (list, tuple)) and len(prompt) == 2:
+        await _delete_message_safe(prompt[0], prompt[1])
+
+
+async def admin_edit_send_prompt(
+    uid: int,
+    text: str,
+    reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None,
+):
+    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if not chat:
+        return None
+    await admin_edit_clear_prompt(uid)
+    runtime = admin_edit_runtime(uid)
+    if isinstance(reply_markup, ReplyKeyboardMarkup):
+        runtime["reply_keyboard"] = True
+    else:
+        runtime.pop("reply_keyboard", None)
+    msg = await bot.send_message(chat, text, reply_markup=reply_markup)
+    runtime["prompt"] = (msg.chat.id, msg.message_id)
+    flow_track(uid, msg)
+    return msg
+
+
+async def admin_edit_notify(uid: int, text: str, *, remove_keyboard: bool = False):
+    chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+    if not chat:
+        return
+    markup = ReplyKeyboardRemove() if remove_keyboard else None
+    msg = await bot.send_message(chat, text, reply_markup=markup)
+    flow_track(uid, msg)
+    schedule_auto_delete(msg.chat.id, msg.message_id, delay=8)
+
+
+async def profile_send_notification(uid: int, text: str, *, remove_keyboard: bool = False):
+    chat = profile_chat_id(uid)
+    if not chat:
+        return
+    markup = ReplyKeyboardRemove() if remove_keyboard else None
+    msg = await bot.send_message(chat, text, reply_markup=markup)
+    flow_track(uid, msg)
+    schedule_auto_delete(msg.chat.id, msg.message_id, delay=8)
+
+
+def profile_set_flags(uid: int, *, edit_mode: Optional[bool] = None, show_photo: Optional[bool] = None):
+    runtime = profile_runtime(uid)
+    if edit_mode is not None:
+        runtime["profile_edit_mode"] = bool(edit_mode)
+    if show_photo is not None:
+        runtime["profile_show_photo"] = bool(show_photo)
+
+
+def profile_get_flags(uid: int) -> Tuple[bool, bool]:
+    runtime = profile_runtime(uid)
+    return bool(runtime.get("profile_edit_mode")), bool(runtime.get("profile_show_photo"))
+
+
+async def profile_abort(uid: int, state: FSMContext, *, remove_keyboard: bool = False):
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=remove_keyboard)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
 # ========================== FLOW CLEANER ==========================
-def flow_track(uid: int, msg: types.Message):
-    users_runtime.setdefault(uid, {}).setdefault("flow_msgs", []).append((msg.chat.id, msg.message_id))
+def flow_track(uid: int, msg: Optional[types.Message], bucket: str = "flow_msgs"):
+    if not msg:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    runtime.setdefault(bucket, []).append((msg.chat.id, msg.message_id))
+
+
+def flow_track_warning(uid: int, msg: Optional[types.Message]):
+    if not msg:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    previous = runtime.get("flow_warns", [])
+    for chat_id, message_id in previous:
+        if not chat_id or not message_id:
+            continue
+        if chat_id == msg.chat.id and message_id == msg.message_id:
+            continue
+        asyncio.create_task(_delete_message_safe(chat_id, message_id))
+    runtime["flow_warns"] = [(msg.chat.id, msg.message_id)]
+
+
+async def flow_prepare_prompt(uid: int, reuse: Optional[Tuple[int, int]] = None) -> Optional[Tuple[int, int]]:
+    runtime = users_runtime.setdefault(uid, {})
+    current = runtime.get("flow_prompt")
+    if current and reuse and current == reuse:
+        return reuse
+    if current:
+        await _delete_message_safe(current[0], current[1])
+        runtime.pop("flow_prompt", None)
+    return reuse
+
+
+def flow_store_prompt(uid: int, msg: Optional[types.Message] = None, *, chat_id: Optional[int] = None, message_id: Optional[int] = None):
+    if msg:
+        chat_id = msg.chat.id
+        message_id = msg.message_id
+        flow_track(uid, msg)
+    if not chat_id or not message_id:
+        return
+    runtime = users_runtime.setdefault(uid, {})
+    runtime["flow_prompt"] = (chat_id, message_id)
+
+
+async def _flow_clear_bucket(uid: int, bucket: str):
+    runtime = users_runtime.setdefault(uid, {})
+    tracked = list(runtime.get(bucket, []))
+    runtime[bucket] = []
+    if not tracked:
+        return
+    await asyncio.gather(*[
+        _delete_message_safe(chat_id, mid)
+        for chat_id, mid in tracked
+        if chat_id and mid
+    ], return_exceptions=True)
+
+
+async def flow_clear_warnings(uid: int):
+    await _flow_clear_bucket(uid, "flow_warns")
 
 
 async def flow_clear(uid: int):
     runtime = users_runtime.setdefault(uid, {})
-    tracked = list(runtime.get("flow_msgs", []))
-    runtime["flow_msgs"] = []
-    tasks = [
-        _delete_message_safe(chat_id, mid)
-        for chat_id, mid in tracked
-        if chat_id and mid
-    ]
+    await _flow_clear_bucket(uid, "flow_msgs")
+    await _flow_clear_bucket(uid, "flow_warns")
+    runtime.pop("flow_prompt", None)
     last_card = runtime.pop("np_last_card", None)
     if isinstance(last_card, (list, tuple)) and len(last_card) == 2:
-        tasks.append(_delete_message_safe(last_card[0], last_card[1]))
+        await _delete_message_safe(last_card[0], last_card[1])
     runtime.pop("alerts_cards", None)
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def flow_delete_message(uid: int, message: Optional[types.Message]):
+    if not message:
+        return
+    if is_anchor_message(uid, message.message_id):
+        return
+    await _delete_message_safe(message.chat.id, message.message_id)
+
+
+def schedule_auto_delete(chat_id: int, message_id: int, delay: int = 10):
+    async def _delayed():
+        try:
+            await asyncio.sleep(delay)
+        except Exception:
+            return
+        await _delete_message_safe(chat_id, message_id)
+
+    asyncio.create_task(_delayed())
 
 
 async def clear_then_anchor(uid: int, text: str, kb: InlineKeyboardMarkup):
@@ -3624,7 +6572,7 @@ async def admin_send_receipt_photos(admin_uid: int, chat_id: int, target_uid: in
         if r:
             caption_parts.append(f"🆔 Номер: <b>{h(r.get('receipt_no','—'))}</b>")
             caption_parts.append(f"📅 {h(r.get('date','—'))} {h(r.get('time',''))}")
-            amount = float(r.get('sum') or 0.0)
+            amount = receipt_amount(r)
             caption_parts.append(f"💰 {fmt_money(amount)} грн")
             caption_parts.append(f"📝 {h(desc) if desc else '—'}")
             caption_parts.append(f"🔖 {status_txt}")
@@ -3646,30 +6594,147 @@ def kb_language_picker(prefix: str = "lang_select") -> InlineKeyboardMarkup:
     return kb
 
 
-async def launch_intro(uid: int, chat_id: int, registered: bool):
-    runtime = users_runtime.setdefault(uid, {})
-    previous_intro = runtime.get("intro_flow", {}).get("message")
-    if previous_intro and isinstance(previous_intro, (list, tuple)) and len(previous_intro) == 2:
-        await _delete_message_safe(previous_intro[0], previous_intro[1])
-    text_key = "INTRO_GREETING_REGISTERED" if registered else "INTRO_GREETING_NEW"
-    msg = await bot.send_message(chat_id, tr(uid, text_key), reply_markup=kb_next_step(uid, "intro_next:1"))
-    runtime["intro_flow"] = {
-        "registered": registered,
-        "chat_id": chat_id,
-        "message": (msg.chat.id, msg.message_id),
+def registration_button_label(target: Any) -> str:
+    lang = resolve_lang(target)
+    labels = {
+        "uk": "🤖 Далі",
+        "en": "🤖 DALL·E",
+        "de": "🤖 Weiter",
+        "pl": "🤖 Dalej",
+        "ru": "🤖 Дальше",
     }
+    return labels.get(lang, labels.get(DEFAULT_LANG, "▶️ Next"))
+
+
+def registration_button_plain_label(target: Any) -> str:
+    label = registration_button_label(target)
+    cleaned = label.strip()
+    if cleaned.startswith("🤖"):
+        cleaned = cleaned[1:].strip()
+    return cleaned or label.strip()
+
+
+def kb_registration_next(target: Any, callback_data: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(registration_button_label(target), callback_data=callback_data))
+    return kb
+
+
+def kb_registration_gate_blocked(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_GATE_RETRY"), callback_data="onboard_stage:membership"))
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_GATE_CLOSE"), callback_data="reg_gate_close"))
+    return kb
+
+
+def kb_region_prompt(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(target, "REGISTER_REGION_BUTTON"), callback_data="reg_region_open"))
+    return kb
+
+
+def kb_region_confirm(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(target, "REGISTER_REGION_BACK"), callback_data="reg_region_back"),
+        InlineKeyboardButton(registration_button_label(target), callback_data="reg_region_confirm"),
+    )
+    return kb
+
+
+def kb_admin_edit_region_prompt(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "REGISTER_REGION_BUTTON"), callback_data="adm_reg_open"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def kb_region_picker(target: Any) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"reg_region_pick:{idx}"))
+    return kb
+
+
+def kb_admin_edit_region_picker(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=2)
+    for idx, region in enumerate(UKRAINE_REGIONS):
+        kb.insert(InlineKeyboardButton(region, callback_data=f"adm_reg_pick:{idx}"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def kb_admin_edit_region_confirm(uid: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.row(
+        InlineKeyboardButton(tr(uid, "REGISTER_REGION_BACK"), callback_data="adm_reg_back"),
+        InlineKeyboardButton(registration_button_label(uid), callback_data="adm_reg_confirm"),
+    )
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
+
+
+def kb_phone_keyboard(target: Any) -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    kb.add(KeyboardButton(tr(target, "BTN_SEND_PHONE"), request_contact=True))
+    return kb
+
+
+def kb_photo_keyboard(target: Any, *, allow_keep: bool = False) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    buttons = [InlineKeyboardButton(tr(target, "BTN_SKIP"), callback_data="reg_photo_skip")]
+    if allow_keep:
+        buttons.append(InlineKeyboardButton(registration_button_label(target), callback_data="reg_photo_keep"))
+    kb.row(*buttons)
+    return kb
+
+
+def kb_admin_edit_next(uid: int, callback_data: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(registration_button_label(uid), callback_data=callback_data))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE_CANCEL"), callback_data="adm_edit_cancel"))
+    return kb
 
 
 @dp.message_handler(commands=["start"], state="*")
+
+
 async def start_cmd(m: types.Message, state: FSMContext):
-    ensure_dirs(); sync_state()
+    global BOT_USERNAME_CACHE
+
+    ensure_dirs()
+    sync_state()
+    required_community_settings(force_reload=True)
     uid = m.from_user.id
     runtime = users_runtime.setdefault(uid, {})
 
-    current_state = await state.get_state()
-    if current_state:
-        await state.finish()
+    await state.finish()
     await flow_clear(uid)
+
+    chat_type = getattr(m.chat, "type", "private")
+    if chat_type in {"group", "supergroup"}:
+        display_name = m.from_user.first_name or m.from_user.username or f"ID {uid}"
+        text = tr(uid, "START_GROUP_REDIRECT", name=h(display_name), workspace=h(WORKSPACE_BRAND))
+        link: Optional[str] = None
+        try:
+            if BOT_USERNAME_CACHE is None:
+                me = await bot.get_me()
+                BOT_USERNAME_CACHE = me.username or ""
+            if BOT_USERNAME_CACHE:
+                link = f"https://t.me/{BOT_USERNAME_CACHE}?start=workspace"
+        except Exception:
+            BOT_USERNAME_CACHE = BOT_USERNAME_CACHE or ""
+        markup = None
+        if link:
+            markup = InlineKeyboardMarkup().add(
+                InlineKeyboardButton(tr(uid, "START_GROUP_OPEN_BOT"), url=link)
+            )
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        await bot.send_message(m.chat.id, text, reply_markup=markup)
+        return
 
     runtime["tg"] = {
         "user_id": uid,
@@ -3677,35 +6742,51 @@ async def start_cmd(m: types.Message, state: FSMContext):
         "username": m.from_user.username,
         "first_name": m.from_user.first_name,
         "last_name": m.from_user.last_name,
-        "last_seen": datetime.now().isoformat(),
+        "last_seen": datetime.now(timezone.utc).isoformat(),
     }
+
+    profile = ensure_user(uid, runtime["tg"], lang=m.from_user.language_code)
+    derived_completed = registration_profile_completed(profile)
+    if profile.get("profile_completed") != derived_completed:
+        profile["profile_completed"] = derived_completed
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    already_registered = registration_sync_runtime(uid, profile)
+    lang_confirmed = bool(profile.get("lang_confirmed"))
+
     try:
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
         pass
-    prof = ensure_user(uid, runtime["tg"])
-    registered = bool(prof.get("fullname") and prof.get("phone"))
 
-    if not prof.get("lang_confirmed"):
-        prompt = await m.answer(tr("uk", "LANGUAGE_PROMPT"), reply_markup=kb_language_picker("lang_select"))
-        runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
-        await OnboardFSM.language.set()
-        await state.update_data(after_language_registered=registered)
+    if already_registered and lang_confirmed:
+        runtime.pop("language_prompt", None)
+        runtime.pop("onboard_intro", None)
+        display_name = (
+            profile.get("first_name")
+            or profile.get("fullname")
+            or runtime["tg"].get("first_name")
+            or runtime["tg"].get("username")
+            or f"ID {uid}"
+        )
+        greet = await bot.send_message(m.chat.id, tr(uid, "START_WELCOME_BACK", name=h(display_name)))
+        schedule_auto_delete(greet.chat.id, greet.message_id, delay=12)
+        await anchor_show_root(uid)
         return
 
-    await launch_intro(uid, m.chat.id, registered)
+    await anchor_clear(uid)
+    prompt = await bot.send_message(m.chat.id, tr(uid, "LANGUAGE_PROMPT"), reply_markup=kb_language_picker())
+    runtime["language_prompt"] = (prompt.chat.id, prompt.message_id)
+    await OnboardFSM.language.set()
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("lang_select:"), state=OnboardFSM.language)
-async def language_selected(c: types.CallbackQuery, state: FSMContext):
+async def onboard_language_selected(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     code = c.data.split(":", 1)[1]
     if code not in LANG_CODES:
-        await c.answer("", show_alert=False)
+        await c.answer()
         return
-    data = await state.get_data()
-    registered = bool(data.get("after_language_registered"))
-    await state.finish()
 
     runtime = users_runtime.setdefault(uid, {})
     prompt = runtime.pop("language_prompt", None)
@@ -3713,114 +6794,933 @@ async def language_selected(c: types.CallbackQuery, state: FSMContext):
         await _delete_message_safe(prompt[0], prompt[1])
 
     set_user_lang(uid, code, confirmed=True)
-    await c.answer()
+    profile = load_user(uid) or {}
+    registration_sync_runtime(uid, profile)
 
     chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
-    confirm = await bot.send_message(chat_id, tr(uid, "LANGUAGE_SELECTED", language=LANG_LABELS[code]))
-    flow_track(uid, confirm)
-    await launch_intro(uid, chat_id, registered)
+    confirm = await bot.send_message(
+        chat_id,
+        tr(uid, "ONBOARD_LANGUAGE_CONFIRMED", language=LANG_LABELS.get(code, code)),
+        reply_markup=kb_registration_next(uid, "onboard_stage:membership"),
+    )
+    runtime["onboard_intro"] = {"chat_id": confirm.chat.id, "message_id": confirm.message_id}
+    await state.set_state(OnboardFSM.membership.state)
+    await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("intro_next:"))
-async def intro_next(c: types.CallbackQuery, state: FSMContext):
+@dp.callback_query_handler(
+    lambda c: c.data.startswith("onboard_stage:"),
+    state=[OnboardFSM.membership, OnboardFSM.welcome, OnboardFSM.briefing, OnboardFSM.instructions],
+)
+async def onboard_stage_step(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     runtime = users_runtime.setdefault(uid, {})
-    info = runtime.get("intro_flow") or {}
-    registered = info.get("registered")
-    if registered is None:
-        prof = load_user(uid) or {}
-        registered = bool(prof.get("fullname") and prof.get("phone"))
+    info = runtime.get("onboard_intro") or {}
     chat_id = info.get("chat_id") or c.message.chat.id
+    message_id = info.get("message_id") or c.message.message_id
+    profile = load_user(uid) or {}
+    already_registered = registration_profile_completed(profile)
+    registration_sync_runtime(uid, profile)
+    display_name = (
+        profile.get("first_name")
+        or runtime.get("tg", {}).get("first_name")
+        or profile.get("fullname")
+        or runtime.get("tg", {}).get("username")
+        or f"ID {uid}"
+    )
+    stage = c.data.split(":", 1)[1]
 
-    try:
-        await bot.delete_message(c.message.chat.id, c.message.message_id)
-    except Exception:
-        pass
+    if stage == "membership":
+        await state.set_state(OnboardFSM.membership.state)
+        community = registration_gate_render_community()
+        checking_text = tr(uid, "REGISTER_GATE_CHECKING", community=community)
+        try:
+            await bot.edit_message_text(checking_text, chat_id, message_id)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, checking_text)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+            chat_id = msg.chat.id
+            message_id = msg.message_id
 
-    step_raw = c.data.split(":", 1)[1]
-    try:
-        step = int(step_raw)
-    except ValueError:
-        step = 0
-
-    if not registered:
-        if step == 1:
-            msg = await bot.send_message(chat_id, tr(uid, "INTRO_REG_STEPS"), reply_markup=kb_next_step(uid, "intro_next:2"))
-            runtime["intro_flow"] = {"registered": False, "chat_id": chat_id, "message": (msg.chat.id, msg.message_id)}
-        elif step == 2:
-            runtime.pop("intro_flow", None)
-            prompt_msg = await bot.send_message(chat_id, tr(uid, "INTRO_PROMPT_NAME"), reply_markup=ReplyKeyboardRemove())
-            await OnboardFSM.fullname.set()
-            await state.update_data(name_prompt_id=prompt_msg.message_id)
+        allowed, status = await registration_check_membership(uid)
+        registration_gate_log_attempt(uid, runtime, allowed, status, lang=resolve_lang(uid))
+        runtime["membership_allowed"] = allowed
+        if allowed:
+            text = tr(
+                uid,
+                "REGISTER_GATE_ALLOWED",
+                community=community,
+                workspace=h(WORKSPACE_BRAND),
+                next_plain=h(registration_button_plain_label(uid)),
+            )
+            markup = kb_registration_next(uid, "onboard_stage:welcome")
         else:
-            runtime.pop("intro_flow", None)
-    else:
-        if step == 1:
-            msg = await bot.send_message(chat_id, tr(uid, "INTRO_SECTIONS"), reply_markup=kb_next_step(uid, "intro_next:2"))
-            runtime["intro_flow"] = {"registered": True, "chat_id": chat_id, "message": (msg.chat.id, msg.message_id)}
-        elif step == 2:
-            runtime.pop("intro_flow", None)
+            text = tr(
+                uid,
+                "REGISTER_GATE_DENIED",
+                community=community,
+                contact_name=h(registration_gate_contact_display_name()),
+                contact_role=h(REGISTRATION_GATE_CONTACT_ROLE),
+                name=h(display_name),
+            )
+            markup = kb_registration_gate_blocked(uid)
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+        await c.answer()
+        return
+
+    if stage == "welcome":
+        display_name = profile.get("first_name") or runtime.get("tg", {}).get("first_name") or profile.get("fullname") or runtime.get("tg", {}).get("username") or f"ID {uid}"
+        text = tr(uid, "ONBOARD_WELCOME", name=h(display_name), bot=h(BOT_NAME))
+        kb = kb_registration_next(uid, "onboard_stage:briefing")
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+        await state.set_state(OnboardFSM.briefing.state)
+        await c.answer()
+        return
+
+    if stage == "briefing":
+        text = tr(uid, "ONBOARD_BRIEFING")
+        if already_registered:
+            text = f"{text}\n\n{tr(uid, 'ONBOARD_RETURNING_SHORTCUT')}"
+        kb = kb_registration_next(uid, "onboard_stage:instructions")
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": chat_id, "message_id": message_id}
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=kb)
+            runtime["onboard_intro"] = {"chat_id": msg.chat.id, "message_id": msg.message_id}
+        await state.set_state(OnboardFSM.instructions.state)
+        await c.answer()
+        return
+
+    if stage == "instructions":
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+        runtime.pop("onboard_intro", None)
+        await flow_clear(uid)
+        if already_registered:
+            await state.finish()
+            notice = await bot.send_message(chat_id, tr(uid, "ONBOARD_ALREADY_COMPLETED"))
+            schedule_auto_delete(notice.chat.id, notice.message_id, delay=12)
             await anchor_show_root(uid)
-        else:
-            runtime.pop("intro_flow", None)
-            await anchor_show_root(uid)
+            await c.answer()
+            return
+        intro = await bot.send_message(chat_id, tr(uid, "REGISTER_INTRO_PROMPT"))
+        flow_track(uid, intro)
+        await registration_start_sequence(uid, chat_id, state)
+        await c.answer()
+        return
 
     await c.answer()
 
 
-@dp.message_handler(state=OnboardFSM.fullname, content_types=ContentType.TEXT)
-async def onb_fullname(m: types.Message, state: FSMContext):
+@dp.callback_query_handler(lambda c: c.data == "reg_gate_close", state=OnboardFSM.membership)
+async def onboard_gate_close(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    info = runtime.pop("onboard_intro", None)
+    if info:
+        await _delete_message_safe(info.get("chat_id"), info.get("message_id"))
+    runtime.pop("membership_allowed", None)
+    await flow_clear(uid)
+    await state.finish()
+    await c.answer()
+
+
+async def onboard_prompt_first_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_FIRST_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.first_name.state)
+
+
+async def onboard_prompt_last_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_LAST_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.last_name.state)
+
+
+async def onboard_prompt_middle_name(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_MIDDLE_NAME_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.middle_name.state)
+
+
+async def onboard_prompt_birthdate(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_BIRTHDATE_PROMPT")
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1])
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.birthdate.state)
+
+
+async def onboard_prompt_region(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_REGION_PROMPT")
+    markup = kb_region_prompt(uid)
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1], reply_markup=markup)
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.region.state)
+
+
+async def onboard_prompt_phone(uid: int, chat_id: int, state: FSMContext, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_PHONE_PROMPT_NEW")
+    msg = await bot.send_message(chat_id, text, reply_markup=kb_phone_keyboard(uid))
+    flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.phone.state)
+
+
+async def onboard_prompt_photo(uid: int, chat_id: int, state: FSMContext, profile: Optional[dict] = None, reuse: Optional[Tuple[int, int]] = None):
+    await flow_clear_warnings(uid)
+    reuse = await flow_prepare_prompt(uid, reuse)
+    text = tr(uid, "REGISTER_PHOTO_PROMPT")
+    allow_keep = registration_photo_completed(profile or ensure_user(uid, users_runtime.get(uid, {}).get("tg", {})))
+    markup = kb_photo_keyboard(uid, allow_keep=allow_keep)
+    if reuse:
+        try:
+            await bot.edit_message_text(text, reuse[0], reuse[1], reply_markup=markup)
+            flow_store_prompt(uid, chat_id=reuse[0], message_id=reuse[1])
+        except MessageNotModified:
+            pass
+        except Exception:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            flow_store_prompt(uid, msg=msg)
+    else:
+        msg = await bot.send_message(chat_id, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.photo.state)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reg_next:"), state=OnboardFSM.await_next)
+async def onboard_ack_next(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    await registration_clear_ack(uid)
+    next_field = c.data.split(":", 1)[1]
+    await state.update_data(await_next=None)
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    if next_field == "final":
+        data = await state.get_data()
+        photo_meta = data.get("photo_meta_override")
+        skipped = bool(data.get("photo_skipped"))
+        await finalize_registration(uid, chat_id, state, photo_meta=photo_meta, skipped=skipped)
+    else:
+        await registration_continue(uid, chat_id, state)
+    await c.answer()
+
+
+@dp.message_handler(state=OnboardFSM.await_next, content_types=ContentType.ANY)
+async def onboard_waiting_next_input(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    full = (m.text or "").strip()
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    parts = full.split()
-    if len(parts) < 3:
-        x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_NAME_ERROR"))
-        flow_track(uid, x); return
+    await flow_delete_message(uid, m)
+
+
+@dp.message_handler(state=OnboardFSM.last_name, content_types=ContentType.TEXT)
+async def onboard_last_name(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not validate_name(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    cleaned = beautify_name(raw)
+    await state.update_data(last_name=cleaned)
+    profile = registration_update(uid, last_name=cleaned)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "last_name",
+        tr(uid, "REGISTER_LAST_NAME_OK", value=h(cleaned)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.first_name, content_types=ContentType.TEXT)
+async def onboard_first_name(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not validate_name(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    cleaned = beautify_name(raw)
+    await state.update_data(first_name=cleaned)
+    profile = registration_update(uid, first_name=cleaned)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "first_name",
+        tr(uid, "REGISTER_FIRST_NAME_OK", value=h(cleaned)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.middle_name, content_types=ContentType.TEXT)
+async def onboard_middle_name(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if raw.lower() in SKIP_KEYWORDS:
+        await flow_clear_warnings(uid)
+        await state.update_data(middle_name="", middle_name_status="skipped")
+        profile = registration_update(uid, middle_name="", middle_name_status="skipped")
+        await flow_prepare_prompt(uid)
+        await registration_send_ack(
+            uid,
+            m.chat.id,
+            state,
+            profile,
+            "middle_name",
+            tr(uid, "REGISTER_MIDDLE_NAME_SKIPPED"),
+        )
+        return
+    if not validate_name(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    cleaned = beautify_name(raw)
+    await state.update_data(middle_name=cleaned, middle_name_status="provided")
+    profile = registration_update(uid, middle_name=cleaned, middle_name_status="provided")
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "middle_name",
+        tr(uid, "REGISTER_MIDDLE_NAME_OK", value=h(cleaned)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.birthdate, content_types=ContentType.TEXT)
+async def onboard_birthdate(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    parsed = parse_birthdate_text(m.text)
+    if not parsed:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    iso = parsed.strftime("%Y-%m-%d")
+    await state.update_data(birthdate=iso)
+    profile = registration_update(uid, birthdate=iso)
+    display = format_birthdate_display(iso, resolve_lang(uid))
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "birthdate",
+        tr(uid, "REGISTER_BIRTHDATE_OK", value=h(display)),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.region, content_types=ContentType.ANY)
+async def onboard_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_region_open", state=OnboardFSM.region)
+async def onboard_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id
+    message_id = c.message.message_id
+    text = tr(uid, "REGISTER_REGION_PICK")
+    markup = kb_region_picker(uid)
+    try:
+        await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        flow_store_prompt(uid, chat_id=chat_id, message_id=message_id)
+    except MessageNotModified:
+        pass
+    except Exception:
+        runtime = users_runtime.setdefault(uid, {})
+        fallback_chat = runtime.get("tg", {}).get("chat_id") or chat_id
+        msg = await bot.send_message(fallback_chat, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("reg_region_pick:"), state=OnboardFSM.region)
+async def onboard_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    parts = c.data.split(":", 1)
+    try:
+        idx = int(parts[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        await c.answer()
+        return
+    await state.update_data(region=region)
+    await flow_clear_warnings(uid)
+    chat_id = c.message.chat.id
+    message_id = c.message.message_id
+    text = tr(uid, "REGISTER_REGION_SELECTED", region=h(region))
+    markup = kb_region_confirm(uid)
+    try:
+        await bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
+        flow_store_prompt(uid, chat_id=chat_id, message_id=message_id)
+    except MessageNotModified:
+        pass
+    except Exception:
+        runtime = users_runtime.setdefault(uid, {})
+        fallback_chat = runtime.get("tg", {}).get("chat_id") or chat_id
+        msg = await bot.send_message(fallback_chat, text, reply_markup=markup)
+        flow_store_prompt(uid, msg=msg)
+    await state.set_state(OnboardFSM.region_confirm.state)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_region_back", state=OnboardFSM.region_confirm)
+async def onboard_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.set_state(OnboardFSM.region.state)
+    await onboard_region_open(c, state)
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_region_confirm", state=OnboardFSM.region_confirm)
+async def onboard_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
     data = await state.get_data()
-    prompt_id = data.get("name_prompt_id")
-    if prompt_id:
-        try: await bot.delete_message(m.chat.id, prompt_id)
-        except Exception: pass
-    await state.update_data(fullname=full, name_prompt_id=None)
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
-    x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_PROMPT"), reply_markup=kb)
-    flow_track(uid, x)
-    await OnboardFSM.phone.set()
+    region = data.get("region")
+    if region:
+        await state.update_data(region=region)
+        profile = registration_update(uid, region=region)
+        await flow_clear_warnings(uid)
+        await flow_prepare_prompt(uid)
+        await registration_send_ack(
+            uid,
+            chat_id,
+            state,
+            profile,
+            "region",
+            tr(uid, "REGISTER_REGION_OK", value=h(region)),
+        )
+    else:
+        await flow_prepare_prompt(uid)
+        await registration_send_ack(
+            uid,
+            chat_id,
+            state,
+            ensure_user(uid, runtime.get("tg", {})),
+            "region",
+            tr(uid, "REGISTER_REGION_OK", value="—"),
+        )
+    await c.answer()
 
 
 @dp.message_handler(content_types=ContentType.CONTACT, state=OnboardFSM.phone)
-async def onb_phone_contact(m: types.Message, state: FSMContext):
+async def onboard_phone_contact(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    phone = (m.contact.phone_number if m.contact else "").strip()
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    if not phone:
-        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_ERROR"))
-        flow_track(uid, warn); return
-    data = await state.get_data()
-    prof = ensure_user(uid, users_runtime[uid]["tg"], fullname=data.get("fullname"), phone=phone)
-    save_user(prof)
-    await state.finish()
-    ok = await bot.send_message(m.chat.id, tr(uid, "START_PROFILE_SAVED", code=h(prof['bsu'])), reply_markup=ReplyKeyboardRemove())
-    flow_track(uid, ok)
-    await anchor_show_root(uid)
-    await flow_clear(uid)
+    phone_raw = (m.contact.phone_number if m.contact else "").strip()
+    normalized = sanitize_phone_input(phone_raw)
+    if not normalized:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_WARN"), reply_markup=kb_phone_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    await state.update_data(phone=normalized)
+    profile = registration_update(uid, phone=normalized)
+    if m.contact and m.contact.user_id:
+        profile.setdefault("tg", {})["contact_user_id"] = m.contact.user_id
+        profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+        save_user(profile)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "phone",
+        tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
+        remove_reply_keyboard=True,
+    )
+    await flow_delete_message(uid, m)
 
 
 @dp.message_handler(state=OnboardFSM.phone, content_types=ContentType.TEXT)
-async def onb_phone_text_wrong(m: types.Message, state: FSMContext):
+async def onboard_phone_text(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    kb.add(KeyboardButton(tr(uid, "BTN_SEND_PHONE"), request_contact=True))
-    x = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_PROMPT"), reply_markup=kb)
-    flow_track(uid, x)
+    await flow_delete_message(uid, m)
+    normalized = sanitize_phone_input(m.text)
+    if not normalized:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"), reply_markup=kb_phone_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    await state.update_data(phone=normalized)
+    profile = registration_update(uid, phone=normalized)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "phone",
+        tr(uid, "REGISTER_PHONE_OK", value=h(normalized)),
+        remove_reply_keyboard=True,
+    )
 
 
+@dp.callback_query_handler(lambda c: c.data == "reg_photo_skip", state=OnboardFSM.photo)
+async def onboard_photo_skip(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    await flow_prepare_prompt(uid)
+    await state.update_data(photo_meta_override=None, photo_skipped=True)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await registration_send_ack(
+        uid,
+        chat_id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_SKIP_CONFIRM"),
+    )
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "reg_photo_keep", state=OnboardFSM.photo)
+async def onboard_photo_keep(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = users_runtime.setdefault(uid, {})
+    chat_id = runtime.get("tg", {}).get("chat_id") or c.message.chat.id
+    await flow_prepare_prompt(uid)
+    await state.update_data(photo_meta_override=None, photo_skipped=False)
+    profile = ensure_user(uid, runtime.get("tg", {}))
+    await registration_send_ack(
+        uid,
+        chat_id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_KEEP_CONFIRM"),
+    )
+    await c.answer()
+
+
+@dp.message_handler(content_types=ContentType.PHOTO, state=OnboardFSM.photo)
+async def onboard_photo_received(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    photo = m.photo[-1] if m.photo else None
+    if not photo:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"), reply_markup=kb_photo_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    try:
+        meta = await store_profile_photo(uid, photo)
+    except Exception:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"), reply_markup=kb_photo_keyboard(uid))
+        flow_track_warning(uid, warn)
+        return
+    await flow_clear_warnings(uid)
+    await state.update_data(photo_meta_override=meta, photo_skipped=False)
+    profile = registration_update(uid, photo=meta)
+    await flow_prepare_prompt(uid)
+    await registration_send_ack(
+        uid,
+        m.chat.id,
+        state,
+        profile,
+        "photo",
+        tr(uid, "REGISTER_PHOTO_RECEIVED"),
+    )
+
+
+@dp.message_handler(state=OnboardFSM.photo, content_types=ContentType.ANY)
+async def onboard_photo_other(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if m.content_type == ContentType.PHOTO:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"), reply_markup=kb_photo_keyboard(uid))
+    flow_track_warning(uid, warn)
+
+
+async def finalize_registration(uid: int, chat_id: int, state: FSMContext, photo_meta: Optional[dict], skipped: bool):
+    data = await state.get_data()
+    last_name = data.get("last_name", "")
+    first_name = data.get("first_name", "")
+    middle_name = data.get("middle_name", "")
+    birthdate = data.get("birthdate", "")
+    region = data.get("region", "")
+    phone = data.get("phone", "")
+
+    runtime = users_runtime.setdefault(uid, {})
+    current_profile = ensure_user(uid, runtime.get("tg", {}))
+    was_completed = registration_profile_completed(current_profile)
+    updates = {
+        "last_name": last_name,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "birthdate": birthdate,
+        "region": region,
+        "phone": phone,
+    }
+    middle_status = data.get("middle_name_status")
+    if middle_status is not None:
+        updates["middle_name_status"] = middle_status
+    if photo_meta is not None:
+        updates["photo"] = photo_meta
+    elif skipped and not registration_photo_completed(current_profile):
+        updates["photo"] = {"status": "skipped", "updated_at": datetime.now(timezone.utc).isoformat()}
+
+    profile = registration_update(uid, **updates)
+    now_completed = registration_profile_completed(profile)
+
+    if now_completed and not was_completed and not profile.get("registration_completed_at"):
+        profile["registration_completed_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    if now_completed and not was_completed:
+        await registration_notify_new_user(uid, profile, runtime)
+
+    await registration_clear_ack(uid)
+    await state.finish()
+    await flow_clear(uid)
+    registration_sync_runtime(uid, profile)
+    runtime.pop("onboard_intro", None)
+
+    confirm = await bot.send_message(chat_id, tr(uid, "REGISTER_FINISH_CONFIRM", code=h(profile.get("bsu", "—"))))
+    schedule_auto_delete(confirm.chat.id, confirm.message_id, delay=20)
+    await anchor_show_root(uid)
+
+
+# ========================== PROFILE EDIT HANDLERS ==========================
+@dp.message_handler(state=ProfileEditFSM.waiting_last_name, content_types=ContentType.TEXT)
+async def profile_last_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if not raw or not NAME_VALID_RE.match(raw):
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["last_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile["last_name"], profile.get("first_name", ""), profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_first_name, content_types=ContentType.TEXT)
+async def profile_first_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if not raw or not NAME_VALID_RE.match(raw):
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["first_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile["first_name"], profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_middle_name, content_types=ContentType.TEXT)
+async def profile_middle_name_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    raw = normalize_person_name(m.text)
+    if raw and raw.lower() in SKIP_KEYWORDS:
+        cleaned = ""
+    else:
+        if raw and NAME_VALID_RE.match(raw):
+            cleaned = beautify_name(raw)
+        else:
+            await flow_delete_message(uid, m)
+            warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+            flow_track_warning(uid, warn)
+            return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["middle_name"] = cleaned
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), cleaned)
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_birthdate, content_types=ContentType.TEXT)
+async def profile_birthdate_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    dt = parse_birthdate_text(m.text)
+    if not dt:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["birthdate"] = dt.strftime("%Y-%m-%d")
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_region, content_types=ContentType.TEXT)
+async def profile_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_profile_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_open", state=ProfileEditFSM.waiting_region)
+async def profile_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_profile_region_picker(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("profile_region_pick:"), state=ProfileEditFSM.waiting_region)
+async def profile_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    try:
+        idx = int(c.data.split(":", 1)[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+        return
+    await state.update_data(profile_region=region)
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_SELECTED", region=h(region)), reply_markup=kb_profile_region_confirm(uid))
+    await ProfileEditFSM.region_confirm.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_confirm", state=ProfileEditFSM.region_confirm)
+async def profile_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    region = data.get("profile_region")
+    if not region:
+        await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+        return
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["region"] = region
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_region_back", state=ProfileEditFSM.region_confirm)
+async def profile_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await ProfileEditFSM.waiting_region.set()
+    await profile_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_profile_region_picker(uid))
+    await c.answer()
+
+
+@dp.message_handler(content_types=ContentType.CONTACT, state=ProfileEditFSM.waiting_phone)
+async def profile_phone_contact(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    contact = m.contact
+    if not contact or not contact.phone_number:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["phone"] = contact.phone_number
+    profile.setdefault("tg", {})["contact_user_id"] = contact.user_id
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    runtime = profile_runtime(uid)
+    runtime.pop("profile_reply_keyboard", None)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHONE_SAVED"), remove_keyboard=True)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_phone, content_types=ContentType.TEXT)
+async def profile_phone_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    text = (m.text or "").strip()
+    cancel_label = tr(uid, "BTN_PROFILE_CANCEL")
+    if text == cancel_label:
+        runtime = profile_runtime(uid)
+        runtime.pop("profile_reply_keyboard", None)
+        await flow_delete_message(uid, m)
+        await profile_abort(uid, state, remove_keyboard=True)
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_photo, content_types=ContentType.PHOTO)
+async def profile_photo_received(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    try:
+        meta = await store_profile_photo(uid, m.photo[-1])
+    except Exception:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    profile["photo"] = meta or {"status": "uploaded", "updated_at": datetime.now(timezone.utc).isoformat()}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.finish()
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHOTO_UPDATED"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+
+
+@dp.message_handler(state=ProfileEditFSM.waiting_photo, content_types=ContentType.ANY)
+async def profile_photo_invalid(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_remove_photo")
+async def profile_remove_photo_cb(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    profile = ensure_user(uid, users_runtime.get(uid, {}).get("tg", {}))
+    remove_profile_photo(uid)
+    profile["photo"] = {}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await flow_clear_warnings(uid)
+    await profile_send_notification(uid, tr(uid, "PROFILE_PHOTO_REMOVED"))
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+# ========================== ADMIN PROMOTE ==========================
 # ========================== ADMIN PROMOTE ==========================
 @dp.message_handler(lambda m: m.text and m.text.strip() == ADMIN_CODE)
 async def become_admin(m: types.Message):
@@ -3839,6 +7739,9 @@ async def become_admin(m: types.Message):
 @dp.message_handler(content_types=ContentType.ANY, state=None)
 async def fallback_message(m: types.Message, state: FSMContext):
     uid = m.from_user.id
+    current_state = await state.get_state()
+    if current_state:
+        return
     text = m.text or ""
     if text.startswith("/"):
         return
@@ -3854,6 +7757,9 @@ async def fallback_message(m: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_about")
 async def menu_about(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     prof = load_user(uid) or {}
     about_text = (
         f"🤖 <b>{h(BOT_NAME)}</b>\n"
@@ -3879,7 +7785,14 @@ async def menu_about(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_alerts")
 async def menu_alerts(c: types.CallbackQuery):
     uid = c.from_user.id
-    await clear_then_anchor(uid, tr(uid, "ALERTS_MENU_INTRO"), kb_alerts(uid))
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
+    intro = tr(uid, "ALERTS_MENU_INTRO")
+    count = alerts_active_oblast_count()
+    if count:
+        intro = f"{intro}\n\n{alerts_active_summary_line(uid)}"
+    await clear_then_anchor(uid, intro, kb_alerts(uid))
     await c.answer()
 
 
@@ -3897,11 +7810,34 @@ async def alerts_active_view(c: types.CallbackQuery):
         await c.answer()
         return
     lang = resolve_lang(uid)
-    lines = [tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events))]
-    for idx, event in enumerate(events[:10], start=1):
-        region_display = event.get("region_display") or event.get("region") or "—"
-        summary = alerts_summarize_event(event, lang)
-        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+    labels = alerts_field_labels(lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    divider = tr(uid, "ALERTS_ACTIVE_DIVIDER")
+    lines = [
+        tr(uid, "ALERTS_ACTIVE_HEADER", count=len(events)),
+        divider,
+    ]
+    for event in events[:10]:
+        region_display = alerts_display_region_name(
+            event.get("region") or event.get("region_display") or "",
+            lang,
+            short=True,
+        )
+        type_text = alerts_type_label(event, lang)
+        severity_text = alerts_severity_label(event, lang)
+        summary_text = type_text or status_labels.get("alert", "")
+        if severity_text:
+            summary_text = f"{summary_text} • {severity_text}" if summary_text else severity_text
+        lines.append(f"🔴 {h(region_display)} — {h(summary_text)}")
+        started_display = alerts_format_datetime_display(event.get("started_at"))
+        if not started_display:
+            started_display = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+        lines.append(f"⏱ {h(started_display)}")
+    lines.append(divider)
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_TOTAL", count=len(events)))
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_USER"))
+    lines.append(tr(uid, "ALERTS_ACTIVE_SUMMARY_PROJECT"))
     await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
     await alerts_send_card(uid, c.message.chat.id, events, "active", index=0)
     await c.answer()
@@ -3929,11 +7865,26 @@ async def alerts_history_view(c: types.CallbackQuery):
         await c.answer()
         return
     lang = resolve_lang(uid)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    labels = alerts_field_labels(lang)
+    indent = "&nbsp;&nbsp;&nbsp;"
     lines = [tr(uid, "ALERTS_HISTORY_HEADER", count=len(events))]
     for idx, event in enumerate(events[:10], start=1):
-        region_display = event.get("region_display") or event.get("region") or "—"
-        summary = alerts_summarize_event(event, lang)
-        lines.append(f"{idx}. <b>{h(region_display)}</b> — {h(summary)}")
+        region_display = alerts_display_region_name(event.get("region") or event.get("region_display") or "", lang)
+        start_text = alerts_format_timestamp(event.get("started_at")) or labels["status_unknown"]
+        end_text = alerts_format_timestamp(event.get("ended_at")) if event.get("ended_at") else labels["status_active"]
+        type_text = alerts_type_label(event, lang)
+        severity_text = alerts_severity_label(event, lang)
+        ended = bool(event.get("ended_at"))
+        status_key = "standdown" if ended else "alert"
+        status_icon = "🟡" if ended else "🔴"
+        summary_parts = [status_labels[status_key], type_text]
+        if severity_text:
+            summary_parts.append(severity_text)
+        lines.append(f"{idx}. {status_icon} <b>{h(region_display)}</b> — {h(' • '.join(summary_parts))}")
+        lines.append(f"{indent}⏱ {h(labels['started'])}: {h(start_text)}")
+        if ended:
+            lines.append(f"{indent}🛑 {h(labels['ended'])}: {h(end_text)}")
     await clear_then_anchor(uid, "\n".join(lines), kb_alerts(uid))
     await alerts_send_card(uid, c.message.chat.id, events, "history", index=0)
     await c.answer()
@@ -4050,29 +8001,229 @@ async def alerts_close_card(c: types.CallbackQuery):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data == "alerts_close_push")
-async def alerts_close_push(c: types.CallbackQuery):
-    try:
-        await bot.delete_message(c.message.chat.id, c.message.message_id)
-    except Exception:
-        pass
+@dp.callback_query_handler(lambda c: c.data.startswith("alerts_push:"))
+async def alerts_push_actions(c: types.CallbackQuery):
+    uid = c.from_user.id
+    parts = c.data.split(":", 2)
+    if len(parts) != 3:
+        await c.answer()
+        return
+    action, token = parts[1], parts[2]
+    entry = alerts_push_get(uid, token)
+    if not entry:
+        await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
+        return
+    event_id = entry.get("event_id")
+    event = _alerts_get_event(event_id) if event_id else None
+    if action in {"expand", "collapse"}:
+        if not event:
+            await c.answer(tr(uid, "ALERTS_NO_ACTIVE"), show_alert=True)
+            return
+        expanded = action == "expand"
+        kind = entry.get("kind") or ("end" if event.get("ended_at") else "start")
+        entry["kind"] = kind
+        entry["expanded"] = expanded
+        text = alerts_push_render(uid, event, kind, expanded=expanded)
+        kb = alerts_push_keyboard(uid, token, expanded)
+        try:
+            await bot.edit_message_text(
+                text,
+                c.message.chat.id,
+                c.message.message_id,
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+        except MessageNotModified:
+            pass
+        except MessageCantBeEdited:
+            pass
+        alerts_push_store(uid, token, entry)
+        await c.answer()
+        return
+    if action == "delete":
+        alerts_push_remove(uid, token)
+        try:
+            await bot.delete_message(c.message.chat.id, c.message.message_id)
+        except Exception:
+            pass
+        await c.answer()
+        return
     await c.answer()
 
 
 @dp.callback_query_handler(lambda c: c.data == "back_root")
 async def back_root(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, project_status_text(uid), kb_root(uid))
     await c.answer()
 
 
 # ========================== ALERTS STORAGE ==========================
-ALERTS_STORAGE_DIR = os.path.join("data", "alerts")
-ALERTS_DATA_FILE = os.path.join(ALERTS_STORAGE_DIR, "events.json")
-ALERTS_USERS_FILE = os.path.join(ALERTS_STORAGE_DIR, "users.json")
-ALERTS_MAX_HISTORY = 100
-_alerts_state_cache: Optional[Dict[str, Any]] = None
-_alerts_user_cache: Optional[Dict[str, Any]] = None
+ALERTS_STORAGE_BASE = os.path.join("data", ALERTS_DIRNAME)
+_alerts_state_cache: Dict[str, Dict[str, Any]] = {}
+_alerts_user_cache: Dict[str, Dict[str, Any]] = {}
+
+
+def _alerts_resolve_project(project: Optional[str] = None) -> Optional[str]:
+    if project:
+        return project
+    return None
+
+
+def _alerts_context_key(project: Optional[str] = None) -> str:
+    resolved = _alerts_resolve_project(project)
+    return resolved or "__global__"
+
+
+def alerts_storage_root(project: Optional[str] = None) -> str:
+    base = ALERTS_STORAGE_BASE
+    os.makedirs(base, exist_ok=True)
+
+    def _ensure_flattened() -> None:
+        legacy_global = os.path.join(base, "__global__")
+        if os.path.isdir(legacy_global):
+            for name in (ALERTS_STATE_FILENAME, ALERTS_USERS_FILENAME):
+                src = os.path.join(legacy_global, name)
+                dst = os.path.join(base, name)
+                if os.path.exists(src) and not os.path.exists(dst):
+                    os.replace(src, dst)
+            legacy_history = os.path.join(legacy_global, ALERTS_HISTORY_DIRNAME)
+            if os.path.isdir(legacy_history):
+                target_history = os.path.join(base, ALERTS_HISTORY_DIRNAME)
+                os.makedirs(target_history, exist_ok=True)
+                for entry in os.listdir(legacy_history):
+                    src = os.path.join(legacy_history, entry)
+                    dst = os.path.join(target_history, entry)
+                    if os.path.exists(src) and not os.path.exists(dst):
+                        os.replace(src, dst)
+            try:
+                if not os.listdir(legacy_global):
+                    os.rmdir(legacy_global)
+            except Exception:
+                pass
+
+    _ensure_flattened()
+
+    if project and project not in {"", "__global__"}:
+        legacy_path = os.path.join(base, project)
+        if os.path.isdir(legacy_path):
+            return legacy_path
+    return base
+
+
+def alerts_state_file(project: Optional[str] = None) -> str:
+    return os.path.join(alerts_storage_root(project), ALERTS_STATE_FILENAME)
+
+
+def alerts_history_dir(project: Optional[str] = None) -> str:
+    path = os.path.join(alerts_storage_root(project), ALERTS_HISTORY_DIRNAME)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def alerts_history_file(project: Optional[str] = None, day_key: Optional[str] = None) -> str:
+    day = day_key or alerts_today_key()
+    return os.path.join(alerts_history_dir(project), f"{day}.json")
+
+
+def alerts_users_file(project: Optional[str] = None) -> str:
+    return os.path.join(alerts_storage_root(project), ALERTS_USERS_FILENAME)
+
+
+def _alerts_save_timeline(project: Optional[str], timeline: List[Dict[str, Any]], day_key: Optional[str] = None) -> None:
+    path = alerts_history_file(project, day_key)
+    tmp_file = f"{path}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(timeline, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, path)
+
+
+def _alerts_load_timeline(project: Optional[str], day_key: Optional[str] = None) -> List[Dict[str, Any]]:
+    path = alerts_history_file(project, day_key)
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if isinstance(payload, list):
+            return payload
+    except Exception:
+        pass
+    return []
+
+
+def _alerts_write_state_payload(project: Optional[str], payload: Dict[str, Any]) -> None:
+    timeline = list(payload.get(ALERTS_TIMELINE_KEY) or [])
+    day_key = payload.get("_timeline_day") or alerts_today_key()
+    state_copy = dict(payload)
+    state_copy.pop(ALERTS_TIMELINE_KEY, None)
+    state_copy.pop("_timeline_day", None)
+    state_copy.pop("_context_project", None)
+    path = alerts_state_file(project)
+    tmp_file = f"{path}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as fh:
+        json.dump(state_copy, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_file, path)
+    _alerts_save_timeline(project, timeline, day_key)
+
+
+def _alerts_migrate_legacy(project: Optional[str]) -> None:
+    if not project:
+        return
+    legacy_root = os.path.join(proj_path(project), ALERTS_DIRNAME)
+    if not os.path.isdir(legacy_root):
+        return
+    state_path = alerts_state_file(project)
+    subs_path = alerts_users_file(project)
+    migrated = False
+    if not os.path.exists(state_path):
+        legacy_history = os.path.join(legacy_root, ALERTS_LEGACY_HISTORY_FILENAME)
+        if os.path.exists(legacy_history):
+            try:
+                with open(legacy_history, "r", encoding="utf-8") as fh:
+                    legacy_payload = json.load(fh)
+                if not isinstance(legacy_payload, dict):
+                    raise ValueError("Invalid legacy alerts state")
+            except Exception:
+                legacy_payload = _alerts_blank_state()
+            payload = _alerts_blank_state()
+            payload.update({
+                "events": legacy_payload.get("events", {}),
+                "regions": legacy_payload.get("regions", {}),
+                "last_fetch": legacy_payload.get("last_fetch"),
+            })
+            timeline = legacy_payload.get(ALERTS_TIMELINE_KEY)
+            if isinstance(timeline, list):
+                payload[ALERTS_TIMELINE_KEY] = timeline
+            payload["_timeline_day"] = alerts_today_key()
+            payload["_context_project"] = project
+            _alerts_write_state_payload(project, payload)
+            migrated = True
+    if not os.path.exists(subs_path):
+        legacy_subs = os.path.join(legacy_root, ALERTS_USERS_FILENAME)
+        if os.path.exists(legacy_subs):
+            try:
+                with open(legacy_subs, "r", encoding="utf-8") as fh:
+                    subs_payload = json.load(fh)
+                if isinstance(subs_payload, dict):
+                    tmp_file = f"{subs_path}.tmp"
+                    with open(tmp_file, "w", encoding="utf-8") as fh:
+                        json.dump(subs_payload, fh, ensure_ascii=False, indent=2)
+                    os.replace(tmp_file, subs_path)
+                    migrated = True
+            except Exception:
+                pass
+    if migrated:
+        try:
+            legacy_marker = os.path.join(legacy_root, "migrated.txt")
+            with open(legacy_marker, "w", encoding="utf-8") as fh:
+                fh.write(alerts_now().isoformat())
+        except Exception:
+            pass
+
 
 if ZoneInfo:
     try:
@@ -4091,8 +8242,16 @@ ALERTS_REGION_EQUIVALENTS: Dict[str, List[str]] = {
     "Закарпатская область": ["Закарпатська область", "Zakarpatska oblast", "Zakarpattia region"],
     "Запорожская область": ["Запорізька область", "Zaporizka oblast", "Zaporizhzhia region"],
     "Ивано-Франковская область": ["Івано-Франківська область", "Ivano-Frankivska oblast", "Ivano-Frankivsk region"],
-    "Киевская область": ["Київська область", "Kyivska oblast", "Kyiv region"],
-    "г. Киев": ["м. Київ", "Київ", "Kyiv", "Kiev"],
+    "Киевская область": [
+        "Київська область",
+        "Kyivska oblast",
+        "Kyiv region",
+        "м. Київ",
+        "Київ",
+        "Kyiv",
+        "Kiev",
+        "Kyiv City",
+    ],
     "Кировоградская область": ["Кіровоградська область", "Kirovohradska oblast", "Kirovohrad region"],
     "Луганская область": ["Луганська область", "Luhanska oblast", "Luhansk region"],
     "Львовская область": ["Львівська область", "Lvivska oblast", "Lviv region"],
@@ -4110,24 +8269,196 @@ ALERTS_REGION_EQUIVALENTS: Dict[str, List[str]] = {
     "Черновицкая область": ["Чернівецька область", "Chernivetska oblast", "Chernivtsi region"],
 }
 
+ALERTS_REGION_SHORT_NAMES: Dict[str, Dict[str, str]] = {
+    "Винницкая область": {
+        "uk": "Вінниця",
+        "ru": "Винница",
+        "en": "Vinnytsia",
+        "de": "Winnyzja",
+        "pl": "Winnica",
+    },
+    "Волынская область": {
+        "uk": "Волинь",
+        "ru": "Волынь",
+        "en": "Volyn",
+        "de": "Wolhynien",
+        "pl": "Wołyń",
+    },
+    "Днепропетровская область": {
+        "uk": "Дніпро",
+        "ru": "Днепр",
+        "en": "Dnipro",
+        "de": "Dnipro",
+        "pl": "Dnipro",
+    },
+    "Донецкая область": {
+        "uk": "Донецьк",
+        "ru": "Донецк",
+        "en": "Donetsk",
+        "de": "Donezk",
+        "pl": "Donieck",
+    },
+    "Житомирская область": {
+        "uk": "Житомир",
+        "ru": "Житомир",
+        "en": "Zhytomyr",
+        "de": "Schytomyr",
+        "pl": "Żytomierz",
+    },
+    "Закарпатская область": {
+        "uk": "Закарпаття",
+        "ru": "Закарпатье",
+        "en": "Zakarpattia",
+        "de": "Transkarpatien",
+        "pl": "Zakarpacie",
+    },
+    "Запорожская область": {
+        "uk": "Запоріжжя",
+        "ru": "Запорожье",
+        "en": "Zaporizhzhia",
+        "de": "Saporischschja",
+        "pl": "Zaporoże",
+    },
+    "Ивано-Франковская область": {
+        "uk": "Івано-Франківськ",
+        "ru": "Ивано-Франковск",
+        "en": "Ivano-Frankivsk",
+        "de": "Iwano-Frankiwsk",
+        "pl": "Iwano-Frankiwsk",
+    },
+    "Киевская область": {
+        "uk": "Київ",
+        "ru": "Киев",
+        "en": "Kyiv",
+        "de": "Kyjiw",
+        "pl": "Kijów",
+    },
+    "Кировоградская область": {
+        "uk": "Кропивницький",
+        "ru": "Кропивницкий",
+        "en": "Kropyvnytskyi",
+        "de": "Kropywnyzkyj",
+        "pl": "Kropywnycki",
+    },
+    "Луганская область": {
+        "uk": "Луганськ",
+        "ru": "Луганск",
+        "en": "Luhansk",
+        "de": "Luhansk",
+        "pl": "Ługańsk",
+    },
+    "Львовская область": {
+        "uk": "Львів",
+        "ru": "Львов",
+        "en": "Lviv",
+        "de": "Lwiw",
+        "pl": "Lwów",
+    },
+    "Николаевская область": {
+        "uk": "Миколаїв",
+        "ru": "Николаев",
+        "en": "Mykolaiv",
+        "de": "Mykolajiw",
+        "pl": "Mikołajów",
+    },
+    "Одесская область": {
+        "uk": "Одеса",
+        "ru": "Одесса",
+        "en": "Odesa",
+        "de": "Odessa",
+        "pl": "Odessa",
+    },
+    "Полтавская область": {
+        "uk": "Полтава",
+        "ru": "Полтава",
+        "en": "Poltava",
+        "de": "Poltawa",
+        "pl": "Połtawa",
+    },
+    "Ровенская область": {
+        "uk": "Рівне",
+        "ru": "Ровно",
+        "en": "Rivne",
+        "de": "Riwne",
+        "pl": "Równe",
+    },
+    "Сумская область": {
+        "uk": "Суми",
+        "ru": "Сумы",
+        "en": "Sumy",
+        "de": "Sumy",
+        "pl": "Sumy",
+    },
+    "Тернопольская область": {
+        "uk": "Тернопіль",
+        "ru": "Тернополь",
+        "en": "Ternopil",
+        "de": "Ternopil",
+        "pl": "Tarnopol",
+    },
+    "Харьковская область": {
+        "uk": "Харків",
+        "ru": "Харьков",
+        "en": "Kharkiv",
+        "de": "Charkiw",
+        "pl": "Charków",
+    },
+    "Херсонская область": {
+        "uk": "Херсон",
+        "ru": "Херсон",
+        "en": "Kherson",
+        "de": "Cherson",
+        "pl": "Chersoń",
+    },
+    "Хмельницкая область": {
+        "uk": "Хмельницький",
+        "ru": "Хмельницкий",
+        "en": "Khmelnytskyi",
+        "de": "Chmelnyzkyj",
+        "pl": "Chmielnicki",
+    },
+    "Черкасская область": {
+        "uk": "Черкаси",
+        "ru": "Черкассы",
+        "en": "Cherkasy",
+        "de": "Tscherkassy",
+        "pl": "Czerkasy",
+    },
+    "Черниговская область": {
+        "uk": "Чернігів",
+        "ru": "Чернигов",
+        "en": "Chernihiv",
+        "de": "Tschernihiw",
+        "pl": "Czernihów",
+    },
+    "Черновицкая область": {
+        "uk": "Чернівці",
+        "ru": "Черновцы",
+        "en": "Chernivtsi",
+        "de": "Tscherniwzi",
+        "pl": "Czerniowce",
+    },
+}
+
 ALERTS_TYPE_ALIASES: Dict[str, str] = {
     "air_raid": "air_raid",
     "air-raid": "air_raid",
     "airalert": "air_raid",
     "air alert": "air_raid",
     "air_raid_alert": "air_raid",
-    "artillery": "artillery",
-    "artillery_shelling": "artillery",
-    "shelling": "artillery",
-    "missile": "missile",
-    "missile_attack": "missile",
-    "rocket": "missile",
-    "rocket_attack": "missile",
-    "ballistic": "missile",
-    "ballistic_missile": "missile",
-    "drone": "drone",
-    "drone_attack": "drone",
-    "uav": "drone",
+    "artillery": "artillery_shelling",
+    "artillery_shelling": "artillery_shelling",
+    "shelling": "artillery_shelling",
+    "missile": "missile_strike",
+    "missile_attack": "missile_strike",
+    "missile_strike": "missile_strike",
+    "rocket": "missile_strike",
+    "rocket_attack": "missile_strike",
+    "ballistic": "missile_strike",
+    "ballistic_missile": "missile_strike",
+    "drone": "drone_attack",
+    "drone_attack": "drone_attack",
+    "uav": "drone_attack",
     "nuclear": "nuclear",
     "nuclear_threat": "nuclear",
     "chemical": "chemical",
@@ -4140,9 +8471,9 @@ ALERTS_TYPE_ALIASES: Dict[str, str] = {
 
 ALERTS_DEFAULT_SEVERITY: Dict[str, str] = {
     "air_raid": "high",
-    "artillery": "high",
-    "missile": "critical",
-    "drone": "medium",
+    "artillery_shelling": "high",
+    "missile_strike": "critical",
+    "drone_attack": "medium",
     "nuclear": "critical",
     "chemical": "critical",
     "urban_fights": "high",
@@ -4189,47 +8520,47 @@ ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
         "pl": "Alarm lotniczy",
         "ru": "Воздушная тревога",
     },
-    "artillery": {
-        "uk": "Артобстріл",
+    "artillery_shelling": {
+        "uk": "Артилерійський обстріл",
         "en": "Artillery shelling",
         "de": "Artilleriebeschuss",
         "pl": "Ostrzał artyleryjski",
-        "ru": "Артобстрел",
+        "ru": "Артиллерийский обстрел",
     },
-    "missile": {
-        "uk": "Ракетна небезпека",
+    "missile_strike": {
+        "uk": "Ракетна загроза",
         "en": "Missile threat",
         "de": "Raketenbedrohung",
         "pl": "Zagrożenie rakietowe",
-        "ru": "Ракетная опасность",
+        "ru": "Ракетная угроза",
     },
-    "drone": {
-        "uk": "Небезпека БпЛА",
-        "en": "UAV threat",
-        "de": "Drohnengefahr",
-        "pl": "Zagrożenie dronami",
-        "ru": "Опасность БПЛА",
+    "drone_attack": {
+        "uk": "Атака дронів",
+        "en": "Drone attack",
+        "de": "Drohnenangriff",
+        "pl": "Atak dronów",
+        "ru": "Атака дронов",
     },
     "nuclear": {
-        "uk": "Ядерна небезпека",
+        "uk": "Ядерна загроза",
         "en": "Nuclear threat",
         "de": "Atomare Gefahr",
         "pl": "Zagrożenie nuklearne",
-        "ru": "Ядерная опасность",
+        "ru": "Ядерная угроза",
     },
     "chemical": {
-        "uk": "Хімічна небезпека",
+        "uk": "Хімічна загроза",
         "en": "Chemical threat",
         "de": "Chemische Gefahr",
         "pl": "Zagrożenie chemiczne",
-        "ru": "Химическая опасность",
+        "ru": "Химическая угроза",
     },
     "urban_fights": {
-        "uk": "Вуличні бої",
+        "uk": "Бої в місті",
         "en": "Urban fights",
         "de": "Straßenkämpfe",
-        "pl": "Walki uliczne",
-        "ru": "Уличные бои",
+        "pl": "Walki w mieście",
+        "ru": "Бои в городе",
     },
     "unknown": {
         "uk": "Тривога",
@@ -4240,38 +8571,215 @@ ALERTS_TYPE_LABELS: Dict[str, Dict[str, str]] = {
     },
 }
 
+ALERTS_TYPE_ICONS: Dict[str, str] = {
+    "air_raid": "📡",
+    "missile_strike": "🚀",
+    "drone_attack": "🛩",
+    "artillery_shelling": "💥",
+    "urban_fights": "⚔️",
+    "nuclear": "☢",
+    "chemical": "☣",
+    "unknown": "🚨",
+}
+
 ALERTS_SEVERITY_LABELS: Dict[str, Dict[str, str]] = {
     "low": {
         "icon": "🟢",
-        "uk": "Низький (увага)",
-        "en": "Low (attention)",
-        "de": "Niedrig (Achtung)",
-        "pl": "Niski (uwaga)",
-        "ru": "Низкий (внимание)",
+        "uk": "Низький",
+        "en": "Low",
+        "de": "Niedrig",
+        "pl": "Niski",
+        "ru": "Низкий",
     },
     "medium": {
-        "icon": "🟠",
-        "uk": "Середній (підвищена готовність)",
-        "en": "Medium (heightened readiness)",
-        "de": "Mittel (erhöhte Bereitschaft)",
-        "pl": "Średni (podwyższona gotowość)",
-        "ru": "Средний (повышенная готовность)",
+        "icon": "🟡",
+        "uk": "Серйозний",
+        "en": "Serious",
+        "de": "Ernst",
+        "pl": "Poważny",
+        "ru": "Серьёзный",
     },
     "high": {
-        "icon": "🔴",
-        "uk": "Високий (серйозна небезпека)",
-        "en": "High (serious danger)",
-        "de": "Hoch (ernste Gefahr)",
-        "pl": "Wysoki (poważne zagrożenie)",
-        "ru": "Высокий (серьёзная опасность)",
+        "icon": "🟠",
+        "uk": "Високий",
+        "en": "High",
+        "de": "Hoch",
+        "pl": "Wysoki",
+        "ru": "Высокий",
     },
     "critical": {
-        "icon": "🟣",
-        "uk": "Критичний (максимальна небезпека)",
-        "en": "Critical (extreme danger)",
-        "de": "Kritisch (äußerste Gefahr)",
-        "pl": "Krytyczny (skrajne zagrożenie)",
-        "ru": "Критический (крайняя опасность)",
+        "icon": "🔴",
+        "uk": "Небезпечний",
+        "en": "Critical",
+        "de": "Kritisch",
+        "pl": "Krytyczny",
+        "ru": "Опасный",
+    },
+}
+
+ALERTS_STATUS_TEXT: Dict[str, Dict[str, str]] = {
+    "uk": {
+        "alert": "Тривога",
+        "standdown": "Відбій тривоги",
+        "calm": "Відбій тривоги",
+    },
+    "en": {
+        "alert": "Alert",
+        "standdown": "Alert cleared",
+        "calm": "Alert cleared",
+    },
+    "de": {
+        "alert": "Alarm",
+        "standdown": "Alarm beendet",
+        "calm": "Alarm aufgehoben",
+    },
+    "pl": {
+        "alert": "Alarm",
+        "standdown": "Alarm odwołano",
+        "calm": "Alarm odwołano",
+    },
+    "ru": {
+        "alert": "Тревога",
+        "standdown": "Отбой тревоги",
+        "calm": "Отбой тревоги",
+    },
+}
+
+ALERTS_DURATION_FORMS: Dict[str, Dict[str, Tuple[str, ...]]] = {
+    "uk": {
+        "hour": ("год", "год", "год"),
+        "minute": ("хв", "хв", "хв"),
+        "alarm": ("тривога", "тривоги", "тривог"),
+    },
+    "ru": {
+        "hour": ("ч", "ч", "ч"),
+        "minute": ("мин", "мин", "мин"),
+        "alarm": ("тревога", "тревоги", "тревог"),
+    },
+    "pl": {
+        "hour": ("godz", "godz", "godz"),
+        "minute": ("min", "min", "min"),
+        "alarm": ("alarm", "alarmy", "alarmów"),
+    },
+    "de": {
+        "hour": ("Std", "Std"),
+        "minute": ("Min", "Min"),
+        "alarm": ("Alarm", "Alarme"),
+    },
+    "en": {
+        "hour": ("hr", "hrs"),
+        "minute": ("min", "min"),
+        "alarm": ("alert", "alerts"),
+    },
+}
+
+ALERTS_RECOMMENDATIONS: Dict[str, Dict[str, List[str]]] = {
+    "default": {
+        "uk": [
+            "— Прямуйте в укриття",
+            "— Зачиніть двері та вікна",
+            "— Тримайтеся подалі від вікон і вітрин",
+        ],
+        "en": [
+            "— Move to shelter",
+            "— Close doors and windows",
+            "— Stay away from windows and glass",
+        ],
+        "de": [
+            "— Begeben Sie sich in einen Schutzraum",
+            "— Schließen Sie Türen und Fenster",
+            "— Halten Sie Abstand von Fenstern und Glasflächen",
+        ],
+        "pl": [
+            "— Udać się do schronu",
+            "— Zamknij drzwi i okna",
+            "— Trzymaj się z dala od okien i witryn",
+        ],
+        "ru": [
+            "— Следуйте в укрытие",
+            "— Закройте двери и окна",
+            "— Избегайте окон и витрин",
+        ],
+    }
+}
+
+ALERTS_OVERVIEW_STATUS_TEXT: Dict[str, Dict[str, str]] = {
+    "uk": {
+        "alert": "Тривога",
+        "standdown": "Відбій",
+        "calm": "Відбій",
+    },
+    "en": {
+        "alert": "Alert",
+        "standdown": "Cleared",
+        "calm": "Cleared",
+    },
+    "de": {
+        "alert": "Alarm",
+        "standdown": "Entwarnung",
+        "calm": "Entwarnung",
+    },
+    "pl": {
+        "alert": "Alarm",
+        "standdown": "Odwołано",
+        "calm": "Odwołано",
+    },
+    "ru": {
+        "alert": "Тревога",
+        "standdown": "Отбой",
+        "calm": "Отбой",
+    },
+}
+
+ALERTS_LOCATION_TYPE_LABELS: Dict[str, Dict[str, str]] = {
+    "oblast": {
+        "uk": "Область",
+        "en": "Oblast",
+        "de": "Oblast",
+        "pl": "Obwód",
+        "ru": "Область",
+    },
+    "raion": {
+        "uk": "Район",
+        "en": "District",
+        "de": "Rajon",
+        "pl": "Rejon",
+        "ru": "Район",
+    },
+    "hromada": {
+        "uk": "Громада",
+        "en": "Community",
+        "de": "Gemeinde",
+        "pl": "Hromada",
+        "ru": "Громада",
+    },
+    "community": {
+        "uk": "Громада",
+        "en": "Community",
+        "de": "Gemeinschaft",
+        "pl": "Wspólnota",
+        "ru": "Сообщество",
+    },
+    "city": {
+        "uk": "Місто",
+        "en": "City",
+        "de": "Stadt",
+        "pl": "Miasto",
+        "ru": "Город",
+    },
+    "settlement": {
+        "uk": "Населений пункт",
+        "en": "Settlement",
+        "de": "Siedlung",
+        "pl": "Osada",
+        "ru": "Населённый пункт",
+    },
+    "village": {
+        "uk": "Село",
+        "en": "Village",
+        "de": "Dorf",
+        "pl": "Wieś",
+        "ru": "Деревня",
     },
 }
 
@@ -4280,13 +8788,16 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 УВАГА! ТРИВОГА 🚨",
         "header_ended": "🟢 ВІДБІЙ ТРИВОГИ",
         "type": "Тип",
-        "region": "Регіон",
+        "region": "Область",
         "location": "Локація",
+        "location_type": "Тип локації",
+        "coordinates": "Координати",
         "severity": "Рівень",
         "cause": "Причина",
         "details": "Деталі",
         "started": "Початок",
         "ended": "Відбій",
+        "duration": "Тривалість",
         "message": "Повідомлення",
         "source": "Джерело",
         "status_active": "ще триває",
@@ -4296,13 +8807,16 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 ALERT IN PROGRESS 🚨",
         "header_ended": "🟢 ALERT ENDED",
         "type": "Type",
-        "region": "Region",
+        "region": "Oblast",
         "location": "Location",
+        "location_type": "Location type",
+        "coordinates": "Coordinates",
         "severity": "Severity",
         "cause": "Cause",
         "details": "Details",
         "started": "Start",
         "ended": "End",
+        "duration": "Duration",
         "message": "Message",
         "source": "Source",
         "status_active": "still active",
@@ -4312,13 +8826,16 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 ALARM AKTIV 🚨",
         "header_ended": "🟢 ALARM BEENDET",
         "type": "Art",
-        "region": "Region",
+        "region": "Oblast",
         "location": "Ort",
+        "location_type": "Ortstyp",
+        "coordinates": "Koordinaten",
         "severity": "Stufe",
         "cause": "Ursache",
         "details": "Details",
         "started": "Beginn",
         "ended": "Ende",
+        "duration": "Dauer",
         "message": "Meldung",
         "source": "Quelle",
         "status_active": "läuft noch",
@@ -4328,13 +8845,16 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 TRWA ALARM 🚨",
         "header_ended": "🟢 ALARM ODWOŁANY",
         "type": "Typ",
-        "region": "Region",
+        "region": "Obwód",
         "location": "Lokalizacja",
+        "location_type": "Typ lokalizacji",
+        "coordinates": "Współrzędne",
         "severity": "Poziom",
         "cause": "Przyczyna",
         "details": "Szczegóły",
         "started": "Początek",
         "ended": "Zakończenie",
+        "duration": "Czas trwania",
         "message": "Komunikat",
         "source": "Źródło",
         "status_active": "wciąż trwa",
@@ -4344,13 +8864,16 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
         "header_active": "🚨 ТРЕВОГА! 🚨",
         "header_ended": "🟢 ОТБОЙ ТРЕВОГИ",
         "type": "Тип",
-        "region": "Регион",
+        "region": "Область",
         "location": "Локация",
+        "location_type": "Тип локации",
+        "coordinates": "Координаты",
         "severity": "Уровень",
         "cause": "Причина",
         "details": "Детали",
         "started": "Начало",
         "ended": "Отбой",
+        "duration": "Длительность",
         "message": "Сообщение",
         "source": "Источник",
         "status_active": "ещё продолжается",
@@ -4359,83 +8882,137 @@ ALERTS_FIELD_LABELS: Dict[str, Dict[str, str]] = {
 }
 
 
-def _alerts_ensure_storage() -> None:
-    os.makedirs(os.path.dirname(ALERTS_DATA_FILE), exist_ok=True)
+def _alerts_ensure_storage(project: Optional[str] = None) -> None:
+    alerts_storage_root(project)
+    _alerts_migrate_legacy(project)
 
 
 def _alerts_blank_state() -> Dict[str, Any]:
-    return {"events": {}, "regions": {}, "last_fetch": None}
+    return {
+        "events": {},
+        "regions": {},
+        "last_fetch": None,
+        ALERTS_TIMELINE_KEY: [],
+        "_timeline_day": alerts_today_key(),
+        "_context_project": None,
+    }
 
 
-def _alerts_load_state() -> Dict[str, Any]:
-    global _alerts_state_cache
-    if _alerts_state_cache is not None:
-        return _alerts_state_cache
-    _alerts_ensure_storage()
-    if not os.path.exists(ALERTS_DATA_FILE):
-        _alerts_state_cache = _alerts_blank_state()
-        _alerts_save_state()
-        return _alerts_state_cache
-    try:
-        with open(ALERTS_DATA_FILE, "r", encoding="utf-8") as fh:
-            payload = json.load(fh)
-        if not isinstance(payload, dict):
-            raise ValueError("Invalid alerts state")
-    except Exception:
+def _alerts_refresh_timeline_day(state: Dict[str, Any], project: Optional[str]) -> None:
+    expected_day = alerts_today_key()
+    current_day = state.get("_timeline_day")
+    if current_day == expected_day:
+        return
+    context_project = project if project is not None else state.get("_context_project")
+    timeline = _alerts_load_timeline(context_project, expected_day)
+    state[ALERTS_TIMELINE_KEY] = timeline
+    state["_timeline_day"] = expected_day
+
+
+def _alerts_load_state(project: Optional[str] = None) -> Dict[str, Any]:
+    key = _alerts_context_key(project)
+    cached = _alerts_state_cache.get(key)
+    resolved = _alerts_resolve_project(project)
+    if cached is not None:
+        _alerts_refresh_timeline_day(cached, resolved)
+        return cached
+    _alerts_ensure_storage(resolved)
+    path = alerts_state_file(resolved)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid alerts state")
+        except Exception:
+            payload = _alerts_blank_state()
+    else:
         payload = _alerts_blank_state()
     payload.setdefault("events", {})
     payload.setdefault("regions", {})
     payload.setdefault("last_fetch", None)
-    _alerts_state_cache = payload
-    return _alerts_state_cache
+    payload.setdefault("_timeline_day", alerts_today_key())
+    timeline_day = payload.get("_timeline_day") or alerts_today_key()
+    payload[ALERTS_TIMELINE_KEY] = _alerts_load_timeline(resolved, timeline_day)
+    _alerts_refresh_timeline_day(payload, resolved)
+    payload["_context_project"] = resolved
+    _alerts_state_cache[key] = payload
+    return payload
 
 
-def _alerts_save_state() -> None:
-    if _alerts_state_cache is None:
+def _alerts_save_state(project: Optional[str] = None) -> None:
+    def _write(target_key: str, payload: Dict[str, Any]) -> None:
+        if payload is None:
+            return
+        resolved = None if target_key == "__global__" else target_key
+        _alerts_refresh_timeline_day(payload, resolved)
+        _alerts_ensure_storage(resolved)
+        _alerts_write_state_payload(resolved, payload)
+
+    if project is None:
+        for key, payload in list(_alerts_state_cache.items()):
+            if payload is not None:
+                _write(key, payload)
         return
-    _alerts_ensure_storage()
-    tmp_file = f"{ALERTS_DATA_FILE}.tmp"
-    with open(tmp_file, "w", encoding="utf-8") as fh:
-        json.dump(_alerts_state_cache, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp_file, ALERTS_DATA_FILE)
+    key = _alerts_context_key(project)
+    payload = _alerts_state_cache.get(key)
+    if payload is None:
+        return
+    _write(key, payload)
 
 
 def _alerts_blank_user_state() -> Dict[str, Any]:
     return {}
 
 
-def _alerts_load_users() -> Dict[str, Any]:
-    global _alerts_user_cache
-    if _alerts_user_cache is not None:
-        return _alerts_user_cache
-    _alerts_ensure_storage()
-    if not os.path.exists(ALERTS_USERS_FILE):
-        _alerts_user_cache = _alerts_blank_user_state()
-        _alerts_save_users()
-        return _alerts_user_cache
+def _alerts_load_users(project: Optional[str] = None) -> Dict[str, Any]:
+    key = _alerts_context_key(project)
+    cached = _alerts_user_cache.get(key)
+    if cached is not None:
+        return cached
+    resolved = _alerts_resolve_project(project)
+    _alerts_ensure_storage(resolved)
+    path = alerts_users_file(resolved)
+    if not os.path.exists(path):
+        payload = _alerts_blank_user_state()
+        _alerts_user_cache[key] = payload
+        _alerts_save_users(project)
+        return payload
     try:
-        with open(ALERTS_USERS_FILE, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             payload = json.load(fh)
         if not isinstance(payload, dict):
             raise ValueError("Invalid alerts user state")
     except Exception:
         payload = _alerts_blank_user_state()
-    _alerts_user_cache = payload
-    return _alerts_user_cache
+    _alerts_user_cache[key] = payload
+    return payload
 
 
-def _alerts_save_users() -> None:
-    if _alerts_user_cache is None:
+def _alerts_save_users(project: Optional[str] = None) -> None:
+    def _write(target_key: str, payload: Dict[str, Any]) -> None:
+        resolved = None if target_key == "__global__" else target_key
+        _alerts_ensure_storage(resolved)
+        path = alerts_users_file(resolved)
+        tmp_file = f"{path}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, path)
+
+    if project is None:
+        for key, payload in list(_alerts_user_cache.items()):
+            if payload is not None:
+                _write(key, payload)
         return
-    _alerts_ensure_storage()
-    tmp_file = f"{ALERTS_USERS_FILE}.tmp"
-    with open(tmp_file, "w", encoding="utf-8") as fh:
-        json.dump(_alerts_user_cache, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp_file, ALERTS_USERS_FILE)
+    key = _alerts_context_key(project)
+    payload = _alerts_user_cache.get(key)
+    if payload is None:
+        return
+    _write(key, payload)
 
 
-def _alerts_user_entry(uid: int) -> Dict[str, Any]:
-    store = _alerts_load_users()
+def _alerts_user_entry(uid: int, project: Optional[str] = None) -> Dict[str, Any]:
+    store = _alerts_load_users(project)
     key = str(uid)
     created = key not in store
     entry = store.setdefault(key, {"regions": [], "last_seen": {}})
@@ -4444,7 +9021,7 @@ def _alerts_user_entry(uid: int) -> Dict[str, Any]:
     if not isinstance(entry.get("last_seen"), dict):
         entry["last_seen"] = {}
     if created:
-        _alerts_save_users()
+        _alerts_save_users(project)
     return entry
 
 
@@ -4470,6 +9047,21 @@ def alerts_canonical_region(name: Optional[str]) -> Optional[str]:
             if lower == alias.lower():
                 return canonical
     return cleaned
+
+
+def alerts_region_storage_keys(*candidates: Optional[str]) -> Set[str]:
+    keys: Set[str] = set()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        cleaned = str(candidate).strip()
+        if not cleaned:
+            continue
+        keys.add(cleaned)
+        canonical = alerts_canonical_region(cleaned)
+        if canonical:
+            keys.add(canonical)
+    return keys
 
 
 def alerts_sanitize_notes(notes: Any) -> List[Dict[str, str]]:
@@ -4560,7 +9152,7 @@ def alerts_normalize_severity(raw_severity: Optional[str], type_code: str) -> st
             return numeric_map[lowered]
         if lowered in roman_map:
             return roman_map[lowered]
-    return ALERTS_DEFAULT_SEVERITY.get(type_code, "high")
+    return ""
 
 
 def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -4602,14 +9194,11 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     notes_clean = alerts_sanitize_notes(payload.get("notes"))
     extra_payload = {
-        "location": location_title or region_original,
         "severity": severity_code,
         "cause": cause,
         "details": details,
         "severity_note": severity_note,
         "type_raw": raw_type,
-        "location_type": payload.get("location_type"),
-        "location_uid": payload.get("location_uid"),
         "oblast_uid": payload.get("location_oblast_uid") or payload.get("oblast_uid"),
         "oblast_title": oblast_title or region_original,
         "notes": notes_clean,
@@ -4617,9 +9206,6 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     clean_extra: Dict[str, Any] = {}
     for key, value in extra_payload.items():
-        if key == "severity":
-            clean_extra[key] = value
-            continue
         if key == "notes":
             if value:
                 clean_extra[key] = value
@@ -4629,7 +9215,8 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if value in (None, "", []):
             continue
         clean_extra[key] = value
-    clean_extra.setdefault("severity", severity_code)
+    if severity_code:
+        clean_extra.setdefault("severity", severity_code)
 
     return {
         "id": event_id,
@@ -4647,7 +9234,7 @@ def alerts_normalize_event(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def _alerts_user_agent() -> str:
-    base = "Bot.BSG-alerts/1.0 (+https://alerts.in.ua)"
+    base = "BSG-botSYSTEM-alerts/1.0 (+https://alerts.in.ua)"
     token = ALERTS_API_TOKEN or ""
     if len(token) >= 5:
         return f"{base} token:{token[:5]}"
@@ -4746,12 +9333,6 @@ def alerts_merge_extra(base: Optional[Dict[str, Any]], update: Optional[Dict[str
             if value:
                 merged[key] = value
             continue
-        if key == "severity":
-            if value:
-                merged[key] = value
-            elif "severity" not in merged:
-                merged[key] = value
-            continue
         if isinstance(value, str):
             value = value.strip()
         if value in (None, "", []):
@@ -4775,8 +9356,6 @@ def alerts_enrich_from_history(event: Dict[str, Any]) -> Optional[Dict[str, Any]
         if str(hist_event.get("id")) != event_id:
             continue
         merged_extra = alerts_merge_extra(event.get("extra"), hist_event.get("extra"))
-        if "severity" not in merged_extra:
-            merged_extra["severity"] = alerts_normalize_severity(None, hist_event.get("type") or event.get("type") or "unknown")
         return {
             "ended_at": hist_event.get("ended_at") or event.get("ended_at"),
             "message": hist_event.get("message") or event.get("message"),
@@ -4830,19 +9409,21 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
                 if event_id not in start_notify:
                     start_notify.append(event_id)
 
-        region_key = event.get("region") or ""
-        bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
-        history = bucket.setdefault("history", [])
-        active = bucket.setdefault("active", [])
-        if event_id not in history:
-            history.insert(0, event_id)
-        del history[ALERTS_MAX_HISTORY:]
-        if ended_now:
-            if event_id in active:
-                active.remove(event_id)
-        else:
-            if event_id not in active:
-                active.append(event_id)
+        region_keys = alerts_region_storage_keys(event.get("region"), event.get("region_display"))
+        if not region_keys:
+            region_keys = {""}
+        for region_key in region_keys:
+            bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+            history = bucket.setdefault("history", [])
+            active = bucket.setdefault("active", [])
+            if event_id not in history:
+                history.insert(0, event_id)
+            if ended_now:
+                if event_id in active:
+                    active.remove(event_id)
+            else:
+                if event_id not in active:
+                    active.append(event_id)
 
     missing_active = previous_active_ids - seen_ids
     if missing_active:
@@ -4862,16 +9443,19 @@ def alerts_refresh_once() -> Tuple[List[str], List[str]]:
             stored.setdefault("notified_end", False)
             if event_id not in end_notify:
                 end_notify.append(event_id)
-            region_key = stored.get("region") or ""
-            bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
-            active = bucket.setdefault("active", [])
-            if event_id in active:
-                active.remove(event_id)
+            region_keys = alerts_region_storage_keys(stored.get("region"), stored.get("region_display")) or {""}
+            for region_key in region_keys:
+                bucket = regions_map.setdefault(region_key, {"active": [], "history": []})
+                active = bucket.setdefault("active", [])
+                if event_id in active:
+                    active.remove(event_id)
 
     for region_key, bucket in regions_map.items():
         active = bucket.get("active", [])
         bucket["active"] = [eid for eid in active if not events_map.get(eid, {}).get("ended_at")]
 
+    alerts_record_timeline(state, start_notify, "start")
+    alerts_record_timeline(state, end_notify, "end")
     state["last_fetch"] = datetime.now(timezone.utc).isoformat()
     _alerts_save_state()
     return start_notify, end_notify
@@ -4895,6 +9479,57 @@ def _alerts_mark_notified(event_id: str, kind: str) -> None:
     elif kind == "end":
         payload["notified_end"] = True
     _alerts_save_state()
+
+
+def _alerts_timeline_bucket(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    timeline = state.setdefault(ALERTS_TIMELINE_KEY, [])
+    if isinstance(timeline, list):
+        return timeline
+    timeline = []
+    state[ALERTS_TIMELINE_KEY] = timeline
+    return timeline
+
+
+def alerts_record_timeline(state: Dict[str, Any], event_ids: List[str], kind: str) -> None:
+    if not event_ids:
+        return
+    _alerts_refresh_timeline_day(state, state.get("_context_project"))
+    events_map = state.get("events", {})
+    timeline = _alerts_timeline_bucket(state)
+    recorded_at = alerts_now().isoformat()
+    for event_id in event_ids:
+        event = events_map.get(event_id)
+        if not event:
+            continue
+        started_at = event.get("started_at")
+        ended_at = event.get("ended_at")
+        if kind == "start" and not started_at:
+            started_at = recorded_at
+            event["started_at"] = started_at
+        if kind == "end":
+            if not started_at:
+                started_at = recorded_at
+                event.setdefault("started_at", started_at)
+            if not ended_at:
+                ended_at = recorded_at
+                event["ended_at"] = ended_at
+        canonical = alerts_canonical_region(event.get("region") or event.get("region_display"))
+        region_value = canonical or event.get("region") or event.get("region_display") or ""
+        extra = event.get("extra") or {}
+        entry = {
+            "event_id": event_id,
+            "kind": kind,
+            "region": region_value,
+            "type": event.get("type") or "",
+            "severity": extra.get("severity") or "",
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "cause": extra.get("cause") or "",
+            "details": extra.get("details") or "",
+            "message": event.get("message") or "",
+            "recorded_at": recorded_at,
+        }
+        timeline.append(entry)
 
 
 def alerts_parse_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -4925,11 +9560,147 @@ def alerts_parse_datetime(value: Optional[str]) -> Optional[datetime]:
         return dt
 
 
+def alerts_now() -> datetime:
+    try:
+        tz = ALERTS_TIMEZONE  # type: ignore[name-defined]
+    except Exception:
+        tz = timezone.utc
+    return datetime.now(tz)
+
+
+def alerts_today_key() -> str:
+    return alerts_now().strftime("%Y-%m-%d")
+
+
 def alerts_format_timestamp(value: Optional[str]) -> str:
     dt = alerts_parse_datetime(value)
     if not dt:
         return value or ""
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def alerts_format_datetime_display(value: Optional[str]) -> str:
+    date, clock = alerts_format_push_date_pair(value)
+    if date and clock:
+        return f"{date} • {clock}"
+    if date:
+        return date
+    if clock:
+        return clock
+    return ""
+
+
+def alerts_format_clock(value: Optional[str]) -> str:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return ""
+    return dt.strftime("%H:%M")
+
+
+def alerts_type_icon(event: Dict[str, Any]) -> str:
+    type_code = event.get("type") or ""
+    return ALERTS_TYPE_ICONS.get(type_code, ALERTS_TYPE_ICONS["unknown"])
+
+
+def alerts_select_form(value: int, forms: Tuple[str, ...]) -> str:
+    if len(forms) == 2:
+        return forms[0] if abs(value) == 1 else forms[1]
+    n = abs(value) % 100
+    if 11 <= n <= 14:
+        return forms[2]
+    n = abs(value) % 10
+    if n == 1:
+        return forms[0]
+    if 2 <= n <= 4:
+        return forms[1]
+    return forms[2]
+
+
+def alerts_unit_form(lang: str, unit: str, value: int) -> str:
+    forms_map = ALERTS_DURATION_FORMS.get(lang) or ALERTS_DURATION_FORMS.get(DEFAULT_LANG) or {}
+    forms = forms_map.get(unit)
+    if not forms:
+        # fallback to english plural rules
+        forms = (unit, f"{unit}s")
+    return alerts_select_form(value, forms)
+
+
+def alerts_format_duration_value(seconds: int, lang: str) -> str:
+    if seconds <= 0:
+        return tr(lang, "ALERTS_DURATION_LESS_MINUTE")
+    total_minutes = max(1, seconds // 60)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    parts: List[str] = []
+    if hours:
+        unit = alerts_unit_form(lang, "hour", hours)
+        parts.append(f"{hours} {unit}")
+    if minutes:
+        unit = alerts_unit_form(lang, "minute", minutes)
+        parts.append(f"{minutes} {unit}")
+    if not parts:
+        unit = alerts_unit_form(lang, "minute", 1)
+        parts.append(f"1 {unit}")
+    return " ".join(parts)
+
+
+def alerts_duration_seconds(start: Optional[str], end: Optional[str] = None) -> int:
+    start_dt = alerts_parse_datetime(start)
+    if not start_dt:
+        return 0
+    end_dt = alerts_parse_datetime(end) if end else alerts_now()
+    if not end_dt:
+        end_dt = alerts_now()
+    delta = end_dt - start_dt
+    return max(0, int(delta.total_seconds()))
+
+
+def alerts_duration_phrase(start: Optional[str], end: Optional[str], lang: str, ongoing: bool) -> str:
+    seconds = alerts_duration_seconds(start, end)
+    value = alerts_format_duration_value(seconds, lang)
+    key = "ALERTS_DURATION_RUNNING" if ongoing else "ALERTS_DURATION_COMPLETED"
+    return tr(lang, key, duration=value)
+
+
+def alerts_format_push_timestamp(value: Optional[str]) -> str:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return ""
+    return dt.strftime("%d.%m.%Y %H:%M")
+
+
+def alerts_format_push_date_pair(value: Optional[str]) -> Tuple[str, str]:
+    dt = alerts_parse_datetime(value)
+    if not dt:
+        return "", ""
+    return dt.strftime("%d.%m.%Y"), dt.strftime("%H:%M")
+
+
+def alerts_country_count_label(count: int, lang: str) -> str:
+    unit = alerts_unit_form(lang, "alarm", count)
+    return f"{count} {unit}"
+
+
+def alerts_region_active_value(count: int, lang: str) -> str:
+    if count <= 0:
+        return ""
+    if lang == "uk":
+        return f"активна {count}" if count == 1 else f"активні {count}"
+    if lang == "ru":
+        return f"активна {count}" if count == 1 else f"активны {count}"
+    if lang == "pl":
+        return f"aktywna {count}" if count == 1 else f"aktywne {count}"
+    if lang == "de":
+        return f"aktiv {count}"
+    return f"active {count}"
+
+
+def alerts_recommendation_block(event: Dict[str, Any], lang: str) -> str:
+    mapping = ALERTS_RECOMMENDATIONS.get(event.get("type"))
+    if not mapping:
+        mapping = ALERTS_RECOMMENDATIONS.get("default", {})
+    lines = mapping.get(lang) or mapping.get(DEFAULT_LANG) or []
+    return "\n".join(lines)
 
 
 def alerts_type_label(event: Dict[str, Any], lang: str) -> str:
@@ -4939,9 +9710,11 @@ def alerts_type_label(event: Dict[str, Any], lang: str) -> str:
 
 def alerts_severity_label(event: Dict[str, Any], lang: str) -> str:
     severity = (event.get("extra") or {}).get("severity") or ""
+    if not severity:
+        return ""
     mapping = ALERTS_SEVERITY_LABELS.get(severity)
     if not mapping:
-        return severity.capitalize() if severity else "—"
+        return severity.capitalize()
     icon = mapping.get("icon", "")
     text = mapping.get(lang) or mapping.get(DEFAULT_LANG) or severity
     return f"{icon} {text}" if icon else text
@@ -4965,39 +9738,38 @@ def alerts_format_row(icon: str, label: str, value: str) -> List[str]:
 
 def alerts_format_card(event: Dict[str, Any], lang: str, index: Optional[int] = None, total: Optional[int] = None) -> str:
     labels = alerts_field_labels(lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
     ended = bool(event.get("ended_at"))
-    header = labels["header_ended"] if ended else labels["header_active"]
-    lines: List[str] = [header, "━━━━━━━━━━━━━━━━━━━"]
+    region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
+    status_label = status_labels["standdown" if ended else "alert"].upper()
+    header_icon = "🟢" if ended else "🚨"
+    lines: List[str] = [f"{header_icon} {status_label} — {region_display}", "━━━━━━━━━━━━━━━━━━"]
     type_label = alerts_type_label(event, lang)
-    lines.extend(alerts_format_row("🌐", labels["type"], type_label))
-    region_display = event.get("region_display") or event.get("region") or "—"
-    lines.extend(alerts_format_row("📍", labels["region"], region_display))
-    location = (event.get("extra") or {}).get("location") or ""
-    lines.extend(alerts_format_row("🏙️", labels["location"], location))
-    lines.extend(alerts_format_row("🔴", labels["severity"], alerts_severity_label(event, lang)))
-    cause = (event.get("extra") or {}).get("cause") or ""
+    type_icon = alerts_type_icon(event)
+    lines.extend(alerts_format_row(type_icon, labels["type"], type_label))
+    severity_value = alerts_severity_label(event, lang)
+    if severity_value:
+        lines.extend(alerts_format_row("⚠️", labels["severity"], severity_value))
+    extra = event.get("extra") or {}
+    cause = extra.get("cause") or ""
     lines.extend(alerts_format_row("🎯", labels["cause"], cause))
-    details = (event.get("extra") or {}).get("details") or ""
+    details = extra.get("details") or ""
     lines.extend(alerts_format_row("🔎", labels["details"], details))
-    lines.extend(alerts_format_row("⏱️", labels["started"], alerts_format_timestamp(event.get("started_at"))))
-    end_value = alerts_format_timestamp(event.get("ended_at")) if ended else labels["status_active"]
-    lines.extend(alerts_format_row("🛑", labels["ended"], end_value))
+    started_display = alerts_format_datetime_display(event.get("started_at")) or labels["status_unknown"]
+    lines.extend(alerts_format_row("🕒", labels["started"], started_display))
+    if ended:
+        end_display = alerts_format_datetime_display(event.get("ended_at")) or labels["status_unknown"]
+    else:
+        end_display = labels["status_active"]
+    lines.extend(alerts_format_row("✅", labels["ended"], end_display))
+    duration_seconds = alerts_duration_seconds(event.get("started_at"), event.get("ended_at") if ended else None)
+    duration_value = alerts_format_duration_value(duration_seconds, lang)
+    lines.extend(alerts_format_row("⏱️", labels["duration"], duration_value))
     lines.extend(alerts_format_row("📢", labels["message"], event.get("message") or ""))
-    lines.extend(alerts_format_row("🏛️", labels["source"], event.get("source") or ""))
     if index is not None and total:
-        lines.append("━━━━━━━━━━━━━━━━━━━")
+        lines.append("━━━━━━━━━━━━━━━━━━")
         lines.append(tr(lang, "ALERTS_CARD_INDEX", index=index + 1, total=total))
     return "\n".join(line for line in lines if line)
-
-
-def alerts_summarize_event(event: Dict[str, Any], lang: str) -> str:
-    started = alerts_format_timestamp(event.get("started_at"))
-    ended = alerts_format_timestamp(event.get("ended_at")) if event.get("ended_at") else ""
-    parts = [part for part in [started, alerts_type_label(event, lang), alerts_severity_label(event, lang)] if part]
-    summary = " • ".join(parts)
-    if ended:
-        summary += f" → {ended}"
-    return summary
 
 
 def alerts_profile_block(profile: dict) -> dict:
@@ -5050,76 +9822,236 @@ def alerts_user_regions(uid: int) -> List[str]:
     return regions
 
 
-def alerts_display_region_name(region: str, lang: str) -> str:
+def alerts_shorten_region_label(name: str, lang: str) -> str:
+    text = str(name or "").strip()
+    lowered = text.lower()
+    suffix_map = [
+        ("область", "обл."),
+        ("oblast", "obl."),
+        ("region", "reg."),
+        ("obwód", "obw."),
+        ("obwod", "obw."),
+    ]
+    for suffix, replacement in suffix_map:
+        if lowered.endswith(suffix):
+            base = text[: -len(suffix)].rstrip(" -")
+            if not base:
+                return text
+            return f"{base} {replacement}".strip()
+    return text
+
+
+def alerts_display_region_name(region: str, lang: str, short: bool = False) -> str:
     canonical = alerts_canonical_region(region) or region
     aliases = ALERTS_REGION_EQUIVALENTS.get(canonical)
     if not aliases:
-        return canonical
-    if lang == "ru":
-        return canonical
-    if lang == "en":
+        result = canonical
+    elif lang == "ru":
+        result = canonical
+    elif lang == "en":
         for alias in aliases:
             if re.search(r"[A-Za-z]", alias):
-                return alias
-        return aliases[-1]
-    return aliases[0]
+                result = alias
+                break
+        else:
+            result = aliases[-1]
+    else:
+        result = aliases[0]
+    if short:
+        return alerts_shorten_region_label(result, lang)
+    return result
+
+
+def alerts_trim_region_suffix(name: str) -> str:
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    suffixes = (
+        " область",
+        "область",
+        " обл.",
+        " oblast",
+        " region",
+        " obwód",
+        " obwod",
+        " obw.",
+        " reg.",
+    )
+    for suffix in suffixes:
+        suffix_clean = suffix.strip()
+        if not suffix_clean:
+            continue
+        if lowered.endswith(suffix_clean):
+            candidate = text[: -len(suffix_clean)].rstrip(" -–—,.;:")
+            if candidate:
+                return candidate
+    return text
+
+
+def alerts_overview_region_label(region: str, lang: str) -> str:
+    canonical = alerts_canonical_region(region) or region
+    mapping = ALERTS_REGION_SHORT_NAMES.get(canonical)
+    if mapping:
+        label = mapping.get(lang) or mapping.get(DEFAULT_LANG)
+        if label:
+            return label
+    display = alerts_display_region_name(canonical, lang)
+    trimmed = alerts_trim_region_suffix(display)
+    return trimmed or display
+
+
+def alerts_display_width(text: str) -> int:
+    """Estimate visual column width for aligning overview rows."""
+    if not text:
+        return 0
+    width = 0
+    for char in str(text):
+        if unicodedata.combining(char):
+            continue
+        if char in ("\u00A0", "\u202F", "\u2007"):
+            width += 1
+            continue
+        east_asian = unicodedata.east_asian_width(char)
+        if east_asian in ("F", "W"):
+            width += 2
+        else:
+            width += 1
+    return width
 
 
 def alerts_regions_overview_text(uid: int) -> str:
     lang = resolve_lang(uid)
-    state = _alerts_load_state()
-    events_map = state.get("events", {})
-    regions_map = state.get("regions", {})
-    lines: List[str] = [tr(uid, "ALERTS_OVERVIEW_HEADER")]
-    for raw_region in UKRAINE_REGIONS:
-        canonical = alerts_canonical_region(raw_region) or raw_region
-        bucket = regions_map.get(canonical) or regions_map.get(raw_region) or {}
-        active_ids = []
-        for event_id in bucket.get("active", []):
-            payload = events_map.get(event_id)
-            if payload and not payload.get("ended_at"):
-                active_ids.append(payload)
-        display_name = alerts_display_region_name(canonical, lang)
-        if active_ids:
-            active_ids.sort(key=lambda ev: ev.get("started_at") or "")
-            started = alerts_format_timestamp(active_ids[0].get("started_at"))
-            if started:
-                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE", region=h(display_name), start=h(started)))
-            else:
-                lines.append(tr(uid, "ALERTS_OVERVIEW_ACTIVE_UNKNOWN", region=h(display_name)))
+    status_labels = ALERTS_OVERVIEW_STATUS_TEXT.get(lang) or {}
+    default_status_labels = ALERTS_OVERVIEW_STATUS_TEXT.get(DEFAULT_LANG) or {}
+
+    def get_status_label(key: str) -> str:
+        return status_labels.get(key) or default_status_labels.get(key) or ""
+
+    header = tr(uid, "ALERTS_OVERVIEW_HEADER")
+    entries: List[Dict[str, Any]] = []
+    max_name_width = 0
+    for index, raw_region in enumerate(UKRAINE_REGIONS, start=1):
+        canonical, active_event, last_event = alerts_region_snapshot(raw_region)
+        display_name = alerts_overview_region_label(canonical, lang)
+        name_width = alerts_display_width(display_name)
+        max_name_width = max(max_name_width, name_width)
+        if active_event:
+            status_text = get_status_label("alert")
+            time_text = alerts_format_clock(active_event.get("started_at")) or "--:--"
+            icon = "🔴"
         else:
-            lines.append(tr(uid, "ALERTS_OVERVIEW_CALM", region=h(display_name)))
-    return "\n".join(lines)
+            icon = "🟢"
+            status_text = get_status_label("standdown") or get_status_label("calm")
+            end_clock = ""
+            if last_event and last_event.get("ended_at"):
+                end_clock = alerts_format_clock(last_event.get("ended_at"))
+            time_text = end_clock or "--:--"
+        entries.append(
+            {
+                "index": index,
+                "icon": icon,
+                "name": display_name,
+                "name_width": name_width,
+                "status": status_text,
+                "time": time_text,
+            }
+        )
+
+    lines: List[str] = [h(header), ""]
+    for entry in entries:
+        stored_width = entry.get("name_width")
+        if stored_width is None:
+            stored_width = alerts_display_width(entry["name"])
+        name_padding = max_name_width - stored_width
+        padded_name = f"{entry['name']}{' ' * max(name_padding, 0)}"
+        number = f"{entry['index']:2d}"
+        status_text = h(entry["status"])
+        time_text = h(entry["time"])
+        lines.append(
+            f"{number}. {entry['icon']} {h(padded_name)} — {status_text} • {time_text}"
+        )
+        lines.append("")
+
+    while len(lines) > 2 and lines[-1] == "":
+        lines.pop()
+
+    updated_clock = alerts_now().strftime("%H:%M")
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━")
+    updated_line = tr(uid, "ALERTS_OVERVIEW_UPDATED").format(time=updated_clock)
+    lines.append(h(updated_line))
+    lines.append("")
+    lines.append(h(tr(uid, "ALERTS_OVERVIEW_GUIDE")))
+    body = "\n".join(lines)
+    return f"<pre>{body}</pre>"
 
 
 def alerts_collect_active_for_user(uid: int) -> List[Dict[str, Any]]:
     state = _alerts_load_state()
     events_map = state.get("events", {})
-    collected: List[Dict[str, Any]] = []
+    lang = resolve_lang(uid)
+    aggregated: Dict[str, Dict[str, Any]] = {}
     for region in alerts_user_regions(uid):
         bucket = state.get("regions", {}).get(region) or {}
         for event_id in bucket.get("active", []):
             event = events_map.get(event_id)
-            if event and not event.get("ended_at"):
-                collected.append(dict(event))
-    collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
-    return collected
+            if not event or event.get("ended_at"):
+                continue
+            canonical = alerts_canonical_region(event.get("region") or event.get("region_display") or region) or region
+            stored = aggregated.get(canonical)
+            started_at = event.get("started_at") or ""
+            if not stored or (started_at > (stored.get("started_at") or "")):
+                copy = dict(event)
+                copy["region"] = canonical
+                copy["region_display"] = alerts_display_region_name(canonical, lang)
+                aggregated[canonical] = copy
+    events = list(aggregated.values())
+    events.sort(key=lambda item: alerts_display_region_name(item.get("region") or item.get("region_display") or "", lang))
+    return events
 
 
-def alerts_collect_history_for_user(uid: int, limit: int = 20) -> List[Dict[str, Any]]:
+def alerts_collect_history_for_user(uid: int, limit: int = 40) -> List[Dict[str, Any]]:
     state = _alerts_load_state()
     events_map = state.get("events", {})
+    regions_selected = {alerts_canonical_region(r) or r for r in alerts_user_regions(uid)}
     seen: Set[str] = set()
     collected: List[Dict[str, Any]] = []
-    for region in alerts_user_regions(uid):
-        bucket = state.get("regions", {}).get(region) or {}
-        for event_id in bucket.get("history", []):
-            if event_id in seen:
+    timeline = list(_alerts_timeline_bucket(state))
+    if timeline:
+        for entry in reversed(timeline):
+            event_id = str(entry.get("event_id") or "")
+            if not event_id or event_id in seen:
+                continue
+            region_value = alerts_canonical_region(entry.get("region")) or entry.get("region") or ""
+            if regions_selected and region_value and region_value not in regions_selected:
                 continue
             event = events_map.get(event_id)
-            if event:
-                collected.append(dict(event))
-                seen.add(event_id)
+            if not event:
+                continue
+            copy = dict(event)
+            if region_value:
+                copy.setdefault("region", region_value)
+            collected.append(copy)
+            seen.add(event_id)
+            if len(collected) >= limit:
+                break
+    if not collected:
+        fallback_regions = alerts_user_regions(uid)
+        for region in fallback_regions:
+            canonical = alerts_canonical_region(region) or region
+            bucket = state.get("regions", {}).get(canonical) or state.get("regions", {}).get(region) or {}
+            for event_id in bucket.get("history", []):
+                if event_id in seen:
+                    continue
+                event = events_map.get(event_id)
+                if event:
+                    collected.append(dict(event))
+                    seen.add(event_id)
+                if len(collected) >= limit:
+                    break
+            if len(collected) >= limit:
+                break
     collected.sort(key=lambda item: item.get("started_at") or "", reverse=True)
     return collected[:limit]
 
@@ -5133,13 +10065,28 @@ def alerts_subscription_view(uid: int, page: int = 0) -> Tuple[str, InlineKeyboa
         project_region = info.get("region") or ""
     canonical_project = alerts_canonical_region(project_region)
     selected = alerts_user_regions(uid)
-    selected_display = ", ".join(selected) if selected else "—"
-    lines = [tr(uid, "ALERTS_SUBS_HEADER")]
+    lang = resolve_lang(uid)
+    lines = [tr(uid, "ALERTS_SUBS_HEADER"), tr(uid, "ALERTS_SUBS_DIVIDER")]
     if canonical_project:
-        lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(canonical_project)))
+        project_label = alerts_display_region_name(canonical_project, lang, short=False)
+        lines.append(tr(uid, "ALERTS_SUBS_NOTE_HAS_PROJECT", region=h(project_label)))
     else:
         lines.append(tr(uid, "ALERTS_SUBS_NOTE_NO_PROJECT"))
-    lines.append(tr(uid, "ALERTS_SUBS_SELECTED", items=h(selected_display)))
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_SUBS_LIST_TITLE"))
+    if selected:
+        labels = []
+        for name in selected:
+            full_label = alerts_display_region_name(name, lang, short=False)
+            trimmed = alerts_trim_region_suffix(full_label)
+            labels.append(h(trimmed or full_label))
+        chunk_size = 4
+        for idx in range(0, len(labels), chunk_size):
+            lines.append(" • ".join(labels[idx:idx + chunk_size]))
+    else:
+        lines.append(tr(uid, "ALERTS_SUBS_LIST_EMPTY"))
+    lines.append("")
+    lines.append(tr(uid, "ALERTS_SUBS_DIVIDER"))
     lines.append(tr(uid, "ALERTS_SUBS_MANAGE"))
     kb = alerts_build_subscription_keyboard(uid, page, canonical_project, alerts)
     return "\n".join(lines), kb
@@ -5154,15 +10101,17 @@ def alerts_build_subscription_keyboard(uid: int, page: int, project_region: Opti
     chunk = UKRAINE_REGIONS[start:start + per_page]
     selected = {alerts_canonical_region(x) or x for x in alerts.get("regions", [])}
     kb = InlineKeyboardMarkup(row_width=2)
+    lang = resolve_lang(uid)
     for idx, region in enumerate(chunk):
         canonical = alerts_canonical_region(region) or region
+        label_text = alerts_display_region_name(canonical, lang, short=True)
         if project_region and canonical == alerts_canonical_region(project_region):
-            label = f"🔒 {canonical}"
+            label = f"🔒 {label_text}"
             callback = "alerts_locked"
         else:
             is_selected = canonical in selected
             prefix = "✅" if is_selected else "➕"
-            label = f"{prefix} {canonical}"
+            label = f"{prefix} {label_text}"
             callback = f"alerts_toggle:{page}:{start + idx}"
         kb.insert(InlineKeyboardButton(label, callback_data=callback))
     if total_pages > 1:
@@ -5219,6 +10168,16 @@ def alerts_card_keyboard(uid: int, context: str, total: int, index: int) -> Inli
     return kb
 
 
+def alerts_push_keyboard(uid: int, token: str, expanded: bool) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    if expanded:
+        kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_COLLAPSE"), callback_data=f"alerts_push:collapse:{token}"))
+    else:
+        kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_OPEN"), callback_data=f"alerts_push:expand:{token}"))
+    kb.add(InlineKeyboardButton(tr(uid, "ALERTS_PUSH_DELETE"), callback_data=f"alerts_push:delete:{token}"))
+    return kb
+
+
 async def alerts_send_card(uid: int, chat_id: int, events: List[Dict[str, Any]], context: str, index: int = 0) -> Optional[types.Message]:
     if not events:
         return None
@@ -5266,76 +10225,137 @@ def alerts_active_summary_line(uid: int) -> str:
     return tr(uid, "ANCHOR_ALERT_SUMMARY", count=count)
 
 
-def alerts_anchor_section(uid: int) -> str:
-    summary_line = alerts_active_summary_line(uid)
-    if not active_project.get("name"):
-        return summary_line
-    info = load_project_info(active_project["name"])
-    project_region = info.get("region") or ""
-    if not project_region:
-        return summary_line
-    canonical = alerts_canonical_region(project_region)
-    display_region = canonical or project_region
+def alerts_region_snapshot(region_key: str) -> Tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     state = _alerts_load_state()
-    bucket = state.get("regions", {}).get(canonical or project_region) or {}
     events_map = state.get("events", {})
-    lang = resolve_lang(uid)
-    region_text = ""
+    regions_map = state.get("regions", {})
+    canonical = alerts_canonical_region(region_key) or region_key
+    bucket = regions_map.get(canonical) or regions_map.get(region_key) or {}
+    active_event: Optional[Dict[str, Any]] = None
     for event_id in bucket.get("active", []):
-        event = events_map.get(event_id)
-        if not event or event.get("ended_at"):
-            continue
-        text = tr(
-            uid,
-            "ANCHOR_ALERT_ACTIVE",
-            region=h(display_region),
-            type=h(alerts_type_label(event, lang)),
-            start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
-            severity=h(alerts_severity_label(event, lang)),
-        )
-        extras: List[str] = []
-        cause = (event.get("extra") or {}).get("cause") or ""
-        details = (event.get("extra") or {}).get("details") or ""
-        if cause:
-            extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
+        payload = events_map.get(event_id)
+        if payload and not payload.get("ended_at"):
+            if not active_event or (payload.get("started_at") or "") > (active_event.get("started_at") or ""):
+                active_event = payload
+    last_event: Optional[Dict[str, Any]] = None
+    for event_id in bucket.get("history", []):
+        payload = events_map.get(event_id)
+        if payload:
+            if not last_event or (payload.get("ended_at") or "") > (last_event.get("ended_at") or ""):
+                last_event = payload
+    if not last_event or not last_event.get("ended_at"):
+        timeline = list(_alerts_timeline_bucket(state))
+        if timeline:
+            for entry in reversed(timeline):
+                region_value = alerts_canonical_region(entry.get("region")) or entry.get("region") or ""
+                if (region_value or "") != canonical:
+                    continue
+                if entry.get("kind") != "end":
+                    continue
+                event_id = str(entry.get("event_id") or "")
+                payload = dict(events_map.get(event_id) or {})
+                if not payload:
+                    payload = {"id": event_id or f"timeline|{canonical}|{entry.get('recorded_at') or ''}"}
+                payload.setdefault("region", canonical)
+                payload.setdefault("region_display", entry.get("region") or canonical)
+                if entry.get("started_at") and not payload.get("started_at"):
+                    payload["started_at"] = entry["started_at"]
+                end_value = entry.get("ended_at") or entry.get("recorded_at")
+                if end_value:
+                    payload["ended_at"] = end_value
+                last_event = payload
+                break
+    return canonical, active_event, last_event
+
+
+def alerts_region_active_total(region_key: str) -> int:
+    state = _alerts_load_state()
+    events_map = state.get("events", {})
+    regions_map = state.get("regions", {})
+    canonical = alerts_canonical_region(region_key) or region_key
+    bucket = regions_map.get(canonical) or {}
+    count = 0
+    for event_id in bucket.get("active", []):
+        payload = events_map.get(event_id)
+        if payload and not payload.get("ended_at"):
+            count += 1
+    return count
+
+
+def alerts_anchor_region_block(uid: int, region_key: str) -> Optional[str]:
+    lang = resolve_lang(uid)
+    canonical, active_event, last_event = alerts_region_snapshot(region_key)
+    display_region = alerts_display_region_name(canonical, lang)
+    status_labels = ALERTS_STATUS_TEXT.get(lang) or ALERTS_STATUS_TEXT[DEFAULT_LANG]
+    if active_event:
+        type_text = alerts_type_label(active_event, lang)
+        severity_text = alerts_severity_label(active_event, lang)
+        start_clock = alerts_format_clock(active_event.get("started_at"))
+        extra = active_event.get("extra") or {}
+        cause_text = extra.get("cause") or ""
+        details: List[str] = []
+        if type_text:
+            details.append(type_text)
+        if cause_text:
+            details.append(cause_text)
+        if severity_text:
+            details.append(severity_text)
+        if start_clock:
+            details.append(start_clock)
+        line = f"🔴 <b>{h(display_region)}</b> — {h(status_labels['alert'])}"
         if details:
-            extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
-        if extras:
-            text = "\n".join([text, *extras])
-        region_text = text
-        break
-    if not region_text:
-        for event_id in bucket.get("history", []):
-            event = events_map.get(event_id)
-            if not event:
-                continue
-            text = tr(
-                uid,
-                "ANCHOR_ALERT_RECENT",
-                region=h(display_region),
-                type=h(alerts_type_label(event, lang)),
-                start=h(alerts_format_timestamp(event.get("started_at")) or "—"),
-                end=h(alerts_format_timestamp(event.get("ended_at")) or "—"),
-            )
-            extras: List[str] = []
-            cause = (event.get("extra") or {}).get("cause") or ""
-            details = (event.get("extra") or {}).get("details") or ""
-            if cause:
-                extras.append(tr(uid, "ANCHOR_ALERT_CAUSE", cause=h(cause)))
+            line += " • " + " • ".join(h(part) for part in details if part)
+        return line
+    if last_event and last_event.get("ended_at"):
+        ended_dt = alerts_parse_datetime(last_event.get("ended_at"))
+        now_dt = alerts_now()
+        if ended_dt and (now_dt - ended_dt) <= timedelta(seconds=ALERTS_STANDDOWN_DISPLAY_WINDOW):
+            type_text = alerts_type_label(last_event, lang)
+            severity_text = alerts_severity_label(last_event, lang)
+            start_clock = alerts_format_clock(last_event.get("started_at"))
+            end_clock = alerts_format_clock(last_event.get("ended_at"))
+            extra = last_event.get("extra") or {}
+            cause_text = extra.get("cause") or ""
+            details: List[str] = []
+            if type_text:
+                details.append(type_text)
+            if cause_text:
+                details.append(cause_text)
+            if severity_text:
+                details.append(severity_text)
+            time_segment = ""
+            if start_clock and end_clock:
+                time_segment = f"{start_clock} → {end_clock}"
+            elif start_clock:
+                time_segment = start_clock
+            elif end_clock:
+                time_segment = end_clock
+            if time_segment:
+                details.append(time_segment)
+            line = f"🟡 <b>{h(display_region)}</b> — {h(status_labels['standdown'])}"
             if details:
-                extras.append(tr(uid, "ANCHOR_ALERT_DETAILS", details=h(details)))
-            if extras:
-                text = "\n".join([text, *extras])
-            region_text = text
-            break
-    if not region_text:
-        region_text = tr(uid, "ANCHOR_ALERT_CALM", region=h(display_region))
-    lines: List[str] = []
-    if summary_line:
-        lines.append(summary_line)
-    if region_text:
-        lines.append(region_text)
-    return "\n".join(lines)
+                line += " • " + " • ".join(h(part) for part in details if part)
+            return line
+    return ""
+
+
+def alerts_anchor_section(uid: int) -> str:
+    summary = alerts_active_summary_line(uid)
+    regions: List[str] = []
+    for region in alerts_user_regions(uid):
+        canonical = alerts_canonical_region(region) or region
+        if canonical and canonical not in regions:
+            regions.append(canonical)
+    lines: List[str] = [summary] if summary else []
+    for region in regions:
+        block = alerts_anchor_region_block(uid, region)
+        if block:
+            lines.append(block)
+    if not lines:
+        return ""
+    head = lines[0]
+    tail = lines[1:4]
+    return "\n".join([head] + tail)
 
 
 def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[str, Any]]]:
@@ -5347,6 +10367,8 @@ def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[s
         uid = profile.get("user_id")
         if not uid:
             continue
+        if not registration_profile_completed(profile):
+            continue
         regions = alerts_user_regions(uid)
         canonical_regions = {alerts_canonical_region(r) or r for r in regions}
         if target_region not in canonical_regions:
@@ -5355,9 +10377,148 @@ def alerts_recipients_for_event(event: Dict[str, Any]) -> List[Tuple[int, Dict[s
     return recipients
 
 
-def alerts_notification_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+def alerts_push_summary_text(uid: int, event: Dict[str, Any], kind: str) -> str:
     lang = resolve_lang(uid)
-    return alerts_format_card(event, lang)
+    ended = kind == "end" or bool(event.get("ended_at"))
+    region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
+    header_key = "ALERTS_PUSH_HEADER_STANDDOWN" if ended else "ALERTS_PUSH_HEADER_ALERT"
+    header = tr(uid, header_key, region=region_display)
+    lead_key = "ALERTS_PUSH_SUMMARY_LEAD_STANDDOWN" if ended else "ALERTS_PUSH_SUMMARY_LEAD_ALERT"
+    lead_line = tr(uid, lead_key)
+    type_label = alerts_type_label(event, lang)
+    type_icon = alerts_type_icon(event)
+    start_display = alerts_format_push_timestamp(event.get("started_at")) or "--:--"
+    if ended:
+        end_source = event.get("ended_at") or event.get("updated_at")
+        end_display = alerts_format_push_timestamp(end_source) or "—"
+        body = tr(
+            uid,
+            "ALERTS_PUSH_SUMMARY_ENDED",
+            icon=type_icon,
+            type=type_label,
+            start=start_display,
+            ended=end_display,
+        )
+    else:
+        progress = alerts_duration_phrase(event.get("started_at"), None, lang, True)
+        body = tr(
+            uid,
+            "ALERTS_PUSH_SUMMARY_RUNNING",
+            icon=type_icon,
+            type=type_label,
+            start=start_display,
+            progress=progress,
+        )
+    lines: List[str] = []
+    if ended and lead_line:
+        lines.append(lead_line)
+        lines.append("")
+    lines.append(header)
+    lines.append(body)
+    return "\n".join(lines).strip()
+
+
+def alerts_push_detail_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+    lang = resolve_lang(uid)
+    ended = kind == "end" or bool(event.get("ended_at"))
+    region_display = alerts_display_region_name(event.get("region_display") or event.get("region") or "", lang)
+    title_key = "ALERTS_PUSH_DETAIL_TITLE_STANDDOWN" if ended else "ALERTS_PUSH_DETAIL_TITLE_ALERT"
+    title = tr(uid, title_key, region=region_display)
+    type_label = alerts_type_label(event, lang)
+    type_icon = alerts_type_icon(event)
+    start_date, start_time = alerts_format_push_date_pair(event.get("started_at"))
+    end_source = event.get("ended_at") or event.get("updated_at")
+    end_date, end_time = alerts_format_push_date_pair(end_source) if ended else ("", "")
+    duration_seconds = alerts_duration_seconds(event.get("started_at"), end_source if ended else None)
+    duration_value = alerts_format_duration_value(duration_seconds, lang)
+    stats_country = alerts_country_count_label(alerts_active_oblast_count(), lang)
+    region_key = alerts_canonical_region(event.get("region") or event.get("region_display") or "") or event.get("region") or ""
+    region_active = alerts_region_active_total(region_key) if region_key else 0
+    if region_active:
+        value = alerts_region_active_value(region_active, lang)
+        stats_region = tr(uid, "ALERTS_PUSH_DETAIL_STATS_REGION_ACTIVE", value=value)
+    else:
+        stats_region = tr(uid, "ALERTS_PUSH_DETAIL_STATS_REGION_CLEAR")
+    recommendations = alerts_recommendation_block(event, lang)
+
+    lines: List[str] = [
+        title,
+        "━━━━━━━━━━━━━━━━━━",
+        "",
+        tr(uid, "ALERTS_PUSH_DETAIL_TYPE", icon=type_icon, value=type_label),
+        "",
+        tr(uid, "ALERTS_PUSH_DETAIL_START", date=start_date or "—", time=start_time or "--:--"),
+    ]
+    if ended:
+        lines.append(tr(uid, "ALERTS_PUSH_DETAIL_END_STANDDOWN", date=end_date or "—", time=end_time or "--:--"))
+    lines.append(tr(uid, "ALERTS_PUSH_DETAIL_DURATION", duration=duration_value))
+    lines.extend(
+        [
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            tr(uid, "ALERTS_PUSH_DETAIL_STATS_HEADER"),
+            tr(uid, "ALERTS_PUSH_DETAIL_STATS_COUNTRY", value=stats_country),
+            stats_region,
+        ]
+    )
+    if ended:
+        lines.extend(
+            [
+                "",
+                "━━━━━━━━━━━━━━━━━━",
+                tr(uid, "ALERTS_PUSH_DETAIL_STANDDOWN_HEADER"),
+                tr(uid, "ALERTS_PUSH_DETAIL_STANDDOWN_NOTE"),
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "━━━━━━━━━━━━━━━━━━",
+                tr(uid, "ALERTS_PUSH_DETAIL_RECOMMENDATIONS_HEADER"),
+            ]
+        )
+        if recommendations:
+            lines.append(recommendations)
+        lines.extend([
+            "",
+            "━━━━━━━━━━━━━━━━━━",
+            tr(uid, "ALERTS_PUSH_DETAIL_FOOTER"),
+        ])
+    return "\n".join(lines)
+
+
+def alerts_push_render(uid: int, event: Dict[str, Any], kind: str, expanded: bool = False) -> str:
+    if expanded:
+        return alerts_push_detail_text(uid, event, kind)
+    return alerts_push_summary_text(uid, event, kind)
+
+
+def alerts_push_store(uid: int, token: str, payload: Dict[str, Any]) -> None:
+    runtime = users_runtime.setdefault(uid, {})
+    registry = runtime.setdefault("alerts_pushes", {})
+    registry[token] = payload
+
+
+def alerts_push_get(uid: int, token: str) -> Optional[Dict[str, Any]]:
+    runtime = users_runtime.get(uid, {})
+    registry = runtime.get("alerts_pushes", {})
+    entry = registry.get(token)
+    if not isinstance(entry, dict):
+        return None
+    return entry
+
+
+def alerts_push_remove(uid: int, token: str) -> Optional[Dict[str, Any]]:
+    runtime = users_runtime.get(uid, {})
+    registry = runtime.get("alerts_pushes")
+    if isinstance(registry, dict):
+        return registry.pop(token, None)
+    return None
+
+
+def alerts_notification_text(uid: int, event: Dict[str, Any], kind: str) -> str:
+    return alerts_push_summary_text(uid, event, kind)
 
 
 async def alerts_broadcast(event_id: str, kind: str) -> None:
@@ -5373,17 +10534,27 @@ async def alerts_broadcast(event_id: str, kind: str) -> None:
         _alerts_mark_notified(event_id, kind)
         return
     for uid, profile in recipients:
-        chat_id = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
-        if not chat_id:
-            chat_id = (profile.get("tg") or {}).get("chat_id")
+        chat_id = registration_chat_id(uid, profile)
         if not chat_id:
             continue
         try:
-            text = alerts_notification_text(uid, event, kind)
-            kb = InlineKeyboardMarkup().add(
-                InlineKeyboardButton(tr(uid, "ALERTS_CLOSE_CARD"), callback_data="alerts_close_push")
+            text = alerts_push_summary_text(uid, event, kind)
+            token = secrets.token_hex(4)
+            while alerts_push_get(uid, token):
+                token = secrets.token_hex(4)
+            kb = alerts_push_keyboard(uid, token, expanded=False)
+            message = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+            alerts_push_store(
+                uid,
+                token,
+                {
+                    "event_id": event_id,
+                    "kind": kind,
+                    "message_id": message.message_id,
+                    "chat_id": message.chat.id,
+                    "expanded": False,
+                },
             )
-            await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
         except Exception:
             continue
     _alerts_mark_notified(event_id, kind)
@@ -5410,7 +10581,7 @@ async def alerts_dispatch_updates(start_ids: List[str], end_ids: List[str]) -> N
 async def alerts_poll_loop() -> None:
     global alerts_poll_task
     try:
-        await asyncio.sleep(5)
+        await asyncio.sleep(ALERTS_POLL_INTERVAL)
         while True:
             try:
                 start_ids, end_ids = await asyncio.to_thread(alerts_refresh_once)
@@ -5754,6 +10925,9 @@ def _np_trim_label(text: str, limit: int = 48) -> str:
 @dp.callback_query_handler(lambda c: c.data == "menu_np")
 async def menu_np(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "NP_MENU_TITLE"), kb_novaposhta(uid))
     await c.answer()
 
@@ -6116,9 +11290,25 @@ async def np_assigned_received_cb(c: types.CallbackQuery):
     except Exception:
         pass
 
+    reason = tr(uid, "POINTS_REASON_PARCEL", ttn=ttn)
+    await points_auto_grant(
+        uid,
+        POINTS_PARCEL_AWARD,
+        reason,
+        source="parcel_auto",
+        meta={"ttn": ttn},
+        chat_id=c.message.chat.id,
+    )
+
     for admin_id in admins:
-        chat_id = users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id") or (load_user(admin_id) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(admin_id) or {}
+        chat_id = (
+            users_runtime.get(admin_id, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if not chat_id:
+            continue
+        if not registration_profile_completed(admin_profile):
             continue
         admin_lang = resolve_lang(admin_id)
         alert = np_render_delivery_receipt(admin_lang, ttn, user_name, delivered_at)
@@ -6480,9 +11670,188 @@ async def np_cancel_flow(c: types.CallbackQuery, state: FSMContext):
     await c.answer(tr(uid, "NP_CANCELLED_TOAST"))
 
 # ========================== CHECKS ==========================
+@dp.callback_query_handler(lambda c: c.data == "menu_profile")
+async def menu_profile(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id, state=state):
+        return await c.answer()
+    await state.finish()
+    await flow_clear(uid)
+    profile_set_flags(uid, edit_mode=False, show_photo=False)
+    await show_profile(uid, edit_mode=False, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit")
+async def profile_enter_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.finish()
+    await flow_clear(uid)
+    profile_set_flags(uid, edit_mode=True, show_photo=False)
+    await show_profile(uid, edit_mode=True, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_done", state="*")
+async def profile_exit_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await profile_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    runtime = profile_runtime(uid)
+    remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+    await state.finish()
+    profile_set_flags(uid, edit_mode=False, show_photo=False)
+    if remove_keyboard:
+        await profile_send_notification(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=True)
+    await show_profile(uid, edit_mode=False, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_view_photo")
+async def profile_view_photo(c: types.CallbackQuery):
+    uid = c.from_user.id
+    profile_set_flags(uid, show_photo=True)
+    await show_profile(uid, show_photo=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_hide_photo")
+async def profile_hide_photo(c: types.CallbackQuery):
+    uid = c.from_user.id
+    profile_set_flags(uid, show_photo=False)
+    await show_profile(uid, show_photo=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_points")
+async def profile_points_overview(c: types.CallbackQuery):
+    uid = c.from_user.id
+    payload = load_user_points(uid)
+    total_value = fmt_points(payload.get("total", 0.0))
+    history: List[dict] = list(payload.get("history") or [])
+    lines = [tr(uid, "POINTS_SECTION_TITLE", total=total_value)]
+    if history:
+        lines.append("")
+        lines.append(tr(uid, "POINTS_HISTORY_HINT"))
+        lines.append("")
+        for entry in list(reversed(history[-20:])):
+            ts_raw = entry.get("timestamp")
+            timestamp = format_datetime_short(ts_raw) or (ts_raw or "—")
+            amount_value = float(entry.get("amount", 0.0))
+            sign = "＋" if amount_value >= 0 else "−"
+            amount_text = fmt_points(abs(amount_value))
+            reason = h(entry.get("reason") or "—")
+            meta = entry.get("meta") or {}
+            extra: List[str] = []
+            project = meta.get("project")
+            if project:
+                extra.append(h(project))
+            if meta.get("object"):
+                extra.append(h(str(meta.get("object"))))
+            details = f" ({', '.join(extra)})" if extra else ""
+            lines.append(f"• {h(timestamp)} — {sign}{amount_text} — {reason}{details}")
+    else:
+        lines.append("")
+        lines.append(tr(uid, "POINTS_HISTORY_EMPTY"))
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_PROFILE"), callback_data="menu_profile"))
+    kb.add(InlineKeyboardButton(tr(uid, "BTN_BACK_ROOT"), callback_data="back_root"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(
+    lambda c: c.data == "profile_cancel",
+    state=[
+        ProfileEditFSM.waiting_last_name,
+        ProfileEditFSM.waiting_first_name,
+        ProfileEditFSM.waiting_middle_name,
+        ProfileEditFSM.waiting_birthdate,
+        ProfileEditFSM.waiting_region,
+        ProfileEditFSM.region_confirm,
+        ProfileEditFSM.waiting_phone,
+        ProfileEditFSM.waiting_photo,
+    ]
+)
+async def profile_cancel_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = profile_runtime(uid)
+    remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+    await profile_abort(uid, state, remove_keyboard=remove_keyboard)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_last")
+async def profile_prompt_last(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_last_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_first")
+async def profile_prompt_first(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_first_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_middle")
+async def profile_prompt_middle(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_middle_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_birthdate")
+async def profile_prompt_birthdate(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_birthdate.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_region")
+async def profile_prompt_region(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_REGION"), reply_markup=kb_profile_region_prompt(uid))
+    await ProfileEditFSM.waiting_region.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_phone")
+async def profile_prompt_phone(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    kb = kb_profile_phone_keyboard(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHONE"), reply_markup=kb)
+    await ProfileEditFSM.waiting_phone.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "profile_edit_photo")
+async def profile_prompt_photo(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await flow_clear_warnings(uid)
+    await profile_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_profile_cancel(uid))
+    await ProfileEditFSM.waiting_photo.set()
+    await c.answer()
+
+
 @dp.callback_query_handler(lambda c: c.data == "menu_checks")
 async def menu_checks(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "CHECKS_MENU_INTRO"), kb_checks(uid))
     await c.answer()
 
@@ -6490,6 +11859,9 @@ async def menu_checks(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_settings")
 async def menu_settings(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "SETTINGS_TITLE"), kb_settings(uid))
     await c.answer()
 
@@ -6497,6 +11869,9 @@ async def menu_settings(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "settings_language")
 async def settings_language(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "LANGUAGE_PROMPT"), kb_language_settings(uid))
     await c.answer()
 
@@ -6504,6 +11879,9 @@ async def settings_language(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "settings_back")
 async def settings_back(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     await clear_then_anchor(uid, tr(uid, "SETTINGS_TITLE"), kb_settings(uid))
     await c.answer()
 
@@ -6511,6 +11889,9 @@ async def settings_back(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data.startswith("settings_lang:"))
 async def settings_lang_change(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     code = c.data.split(":", 1)[1]
     if code not in LANG_CODES:
         await c.answer(tr(uid, "INVALID_COMMAND"), show_alert=True)
@@ -6529,13 +11910,13 @@ async def check_stats(c: types.CallbackQuery):
     proj = active_project["name"]
     recs = user_project_receipts(uid, proj)
     cnt = len(recs)
-    total = round(sum(float(r.get("sum") or 0.0) for r in recs), 2)
+    total = round(sum(receipt_amount(r) for r in recs), 2)
     paid_recs = [r for r in recs if r.get("paid") is True]
     unpaid_recs = [r for r in recs if r.get("paid") is False]
     pending_recs = [r for r in recs if r.get("paid") is None]
-    paid_sum = round(sum(float(r.get("sum") or 0.0) for r in paid_recs), 2)
-    unpaid_sum = round(sum(float(r.get("sum") or 0.0) for r in unpaid_recs), 2)
-    pending_sum = round(sum(float(r.get("sum") or 0.0) for r in pending_recs), 2)
+    paid_sum = round(sum(receipt_amount(r) for r in paid_recs), 2)
+    unpaid_sum = round(sum(receipt_amount(r) for r in unpaid_recs), 2)
+    pending_sum = round(sum(receipt_amount(r) for r in pending_recs), 2)
     summary_lines = [
         "📊 <b>Личная статистика по чекам</b>",
         "━━━━━━━━━━━━━━━━━━",
@@ -6626,7 +12007,7 @@ async def check_list(c: types.CallbackQuery):
             fallback = (
                 f"{prefix}\n"
                 f"🆔 Номер: <b>{h(r.get('receipt_no', '—'))}</b>\n"
-                f"💰 {fmt_money(float(r.get('sum') or 0.0))} грн\n"
+            f"💰 {fmt_money(receipt_amount(r))} грн\n"
                 f"🔖 {receipt_status_text(r.get('paid'))}"
             )
             msg = await bot.send_message(chat_id, fallback, reply_markup=kb)
@@ -6667,10 +12048,7 @@ async def check_history(c: types.CallbackQuery):
         "",
     ]
     for r in display_recs:
-        try:
-            amount = float(r.get("sum", 0.0))
-        except (TypeError, ValueError):
-            amount = 0.0
+        amount = receipt_amount(r)
         base = f"• {h(r.get('receipt_no', '—'))} — {fmt_money(amount)} грн — {receipt_status_text(r.get('paid'))}"
         extra = ""
         payout = r.get("payout") if isinstance(r.get("payout"), dict) else None
@@ -6740,7 +12118,7 @@ async def userpaid_set(c: types.CallbackQuery):
                 "status": "manual_paid" if new_value else "manual_unpaid",
                 "timestamp": now_iso,
                 "project": proj,
-                "amount": float(r.get("sum") or 0.0)
+                "amount": receipt_amount(r)
             })
         r["payout"] = None if r.get("payout") else None
         changed = True
@@ -6803,6 +12181,15 @@ async def check_add(c: types.CallbackQuery, state: FSMContext):
 async def cancel_any(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     current_state = await state.get_state()
+    if current_state and current_state.startswith(ProfileEditFSM.__name__):
+        runtime = profile_runtime(uid)
+        remove_keyboard = bool(runtime.pop("profile_reply_keyboard", False))
+        await profile_abort(uid, state, remove_keyboard=remove_keyboard)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        return
     if current_state and current_state.startswith(ReceiptFSM.__name__):
         await remove_preview_message(state)
         await clear_edit_prompt(state)
@@ -7074,7 +12461,17 @@ async def rcp_preview_actions(c: types.CallbackQuery, state: FSMContext):
             await c.answer("❗ Нет активного проекта", show_alert=True); return
         if not data.get("tmp_img") or data.get("amount") is None:
             await c.answer("⚠️ Не хватает данных (фото/сумма).", show_alert=True); return
-        fname, path, now, rid = save_receipt(proj, uid, float(data["amount"]), data.get("tmp_img"), data.get("desc",""), data.get("paid"))
+        fname, path, now, rid = save_receipt(
+            proj,
+            uid,
+            float(data["amount"]),
+            data.get("tmp_img"),
+            data.get("desc", ""),
+            data.get("paid"),
+        )
+        proj_info = load_project_info(proj)
+        proj_name = proj_info.get("name") or proj
+        proj_code = proj_info.get("code") or proj
         await remove_preview_message(state)
         await clear_edit_prompt(state)
         await clear_step_prompt(state)
@@ -7097,6 +12494,15 @@ async def rcp_preview_actions(c: types.CallbackQuery, state: FSMContext):
         )
         await bot.send_photo(c.message.chat.id, InputFile(path), caption=caption, reply_markup=kb_saved_receipt())
         await anchor_show_text(uid, tr(uid, "CHECKS_SECTION_TITLE"), kb_checks(uid))
+        reason = tr(uid, "POINTS_REASON_RECEIPT", project=proj_name, receipt=rid)
+        await points_auto_grant(
+            uid,
+            POINTS_RECEIPT_AWARD,
+            reason,
+            source="receipt_auto",
+            meta={"project": proj_name, "object": proj_code, "receipt": rid},
+            chat_id=c.message.chat.id,
+        )
         return await c.answer("Сохранено.")
 
 
@@ -7104,6 +12510,9 @@ async def rcp_preview_actions(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "menu_photos")
 async def menu_photos(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     info = load_project_info(active_project["name"])
@@ -7233,6 +12642,17 @@ async def photo_collect_media(m: types.Message, state: FSMContext):
     await state.update_data(uploaded=uploaded)
     await _photo_refresh_session_message(m.chat.id, uid, state, info, uploaded, entry)
     await update_all_anchors()
+    project_display = info.get("name") or project
+    project_code = info.get("code") or project
+    reason = tr(uid, "POINTS_REASON_PHOTO", project=project_display)
+    await points_auto_grant(
+        uid,
+        POINTS_PHOTO_AWARD,
+        reason,
+        source="photo_auto",
+        meta={"project": project_display, "object": project_code, "photo": entry.get("id")},
+        chat_id=m.chat.id,
+    )
 
 
 @dp.message_handler(state=PhotoFSM.collecting, content_types=ContentType.TEXT)
@@ -7515,6 +12935,9 @@ async def photo_delete(c: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "menu_docs")
 async def menu_docs(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
@@ -7541,6 +12964,96 @@ async def menu_docs(c: types.CallbackQuery):
 
 
 # ========================== FINANCE (USER) ==========================
+def finance_runtime(uid: int) -> dict:
+    runtime = users_runtime.setdefault(uid, {})
+    return runtime.setdefault("finance", {})
+
+
+def finance_available_projects(uid: int) -> List[str]:
+    prof = load_user(uid) or {}
+    recmap = prof.get("receipts") or {}
+    names: List[str] = []
+
+    def add(name: Optional[str]):
+        if not name:
+            return
+        if name not in names:
+            names.append(name)
+
+    active_name = active_project.get("name") if isinstance(active_project, dict) else None
+    if active_name:
+        add(active_name)
+
+    if isinstance(recmap, dict):
+        for project_name, entries in recmap.items():
+            if not isinstance(entries, list) or not entries:
+                continue
+            add(project_name)
+
+    for ref in iter_user_payout_refs(prof):
+        add(ref.get("project"))
+
+    if active_name and active_name in names:
+        rest = [p for p in names if p != active_name]
+        rest.sort(key=lambda x: x.lower())
+        return [active_name] + rest
+
+    names.sort(key=lambda x: x.lower())
+    return names
+
+
+def finance_selected_project(uid: int, *, projects: Optional[List[str]] = None) -> Optional[str]:
+    runtime = finance_runtime(uid)
+    if projects is None:
+        projects = finance_available_projects(uid)
+    selected = runtime.get("selected_project")
+    if selected in projects:
+        return selected
+    active_name = active_project.get("name") if isinstance(active_project, dict) else None
+    if active_name and active_name in projects:
+        runtime["selected_project"] = active_name
+        return active_name
+    if projects:
+        runtime["selected_project"] = projects[0]
+        return projects[0]
+    runtime.pop("selected_project", None)
+    return None
+
+
+def finance_set_selected_project(uid: int, project: Optional[str]):
+    runtime = finance_runtime(uid)
+    if project:
+        runtime["selected_project"] = project
+    else:
+        runtime.pop("selected_project", None)
+
+
+def finance_context(uid: int) -> Tuple[Optional[str], List[str]]:
+    projects = finance_available_projects(uid)
+    project = finance_selected_project(uid, projects=projects)
+    return project, projects
+
+
+def kb_finance_root(
+    uid: int,
+    *,
+    project: Optional[str],
+    projects: List[str],
+    user_has_pending_confirm: bool = False,
+) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    if projects:
+        label = f"📂 Проект: {h(project)}" if project else "📂 Выбрать проект"
+        kb.add(InlineKeyboardButton(label, callback_data="fin_select_project"))
+    if user_has_pending_confirm:
+        kb.add(InlineKeyboardButton("✅ Подтвердить получение выплат", callback_data="fin_confirm_list"))
+    kb.add(InlineKeyboardButton("⏳ Неоплаченные чеки", callback_data="fin_unpaid_list"))
+    kb.add(InlineKeyboardButton("📨 Запросить выплату", callback_data="fin_request_payout"))
+    kb.add(InlineKeyboardButton("📚 История выплат", callback_data="fin_history"))
+    kb.add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
+    return kb
+
+
 def user_has_approved_not_confirmed(uid: int) -> bool:
     prof = load_user(uid) or {}
     for ref in iter_user_payout_refs(prof):
@@ -7550,51 +13063,173 @@ def user_has_approved_not_confirmed(uid: int) -> bool:
     return False
 
 
-@dp.callback_query_handler(lambda c: c.data == "menu_finance")
-async def finance_menu(c: types.CallbackQuery):
-    uid = c.from_user.id
-    if not active_project["name"]:
-        return await c.answer("❗ Нет активного проекта", show_alert=True)
-    proj = active_project["name"]
-    stats = user_project_stats(uid, proj)
+def finance_root_keyboard(uid: int) -> InlineKeyboardMarkup:
+    project, projects = finance_context(uid)
+    return kb_finance_root(
+        uid,
+        project=project,
+        projects=projects,
+        user_has_pending_confirm=user_has_approved_not_confirmed(uid),
+    )
+
+
+def finance_dashboard_view(uid: int) -> Tuple[str, InlineKeyboardMarkup, bool]:
+    project, projects = finance_context(uid)
+    if not project and not projects:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
+        text = (
+            "💵 <b>Финансовый раздел</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "Пока нет проектов с сохранёнными чеками или выплатами.\n"
+            "Загрузите чеки в разделах проектов, чтобы отслеживать задолженности и формировать запросы."
+        )
+        return text, kb, False
+
+    stats = (
+        user_project_stats(uid, project)
+        if project
+        else {"count": 0, "total": 0.0, "paid": 0.0, "unpaid": 0.0, "pending": 0.0, "unspecified": 0.0}
+    )
+    aggregate_unpaid = 0.0
+    aggregate_pending = 0.0
+    for proj_name in projects:
+        proj_stats = user_project_stats(uid, proj_name)
+        aggregate_unpaid += proj_stats.get("unpaid", 0.0)
+        aggregate_pending += proj_stats.get("pending", 0.0)
+    aggregate_due = aggregate_unpaid + aggregate_pending
+    company_due = stats["unpaid"] + stats["pending"]
+    pending_flag = user_has_approved_not_confirmed(uid)
+
     lines = [
         "💵 <b>Финансовый раздел</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"📂 Проект: <b>{h(proj)}</b>",
+        f"📂 Проект: <b>{h(project) if project else '—'}</b>",
         f"🧾 Загружено чеков: <b>{stats['count']}</b>",
-        f"💰 Общая сумма: <b>{fmt_money(stats['total'])} грн</b>",
-        f"✅ Оплачено фирмой: <b>{fmt_money(stats['paid'])} грн</b>",
-        f"❌ Ожидает оплаты: <b>{fmt_money(stats['unpaid'])} грн</b>"
+        f"💰 Общая сумма чеков: <b>{fmt_money(stats['total'])} грн</b>",
+        f"✅ Выплачено компанией: <b>{fmt_money(stats['paid'])} грн</b>",
+        f"🏦 Долг компании по объекту: <b>{fmt_money(company_due)} грн</b>",
+        f"   • Чеки без запроса: {fmt_money(stats['unpaid'])} грн",
     ]
     if stats["pending"]:
-        lines.append(f"⏳ Уже в запросах: <b>{fmt_money(stats['pending'])} грн</b>")
+        lines.append(f"   • В активных запросах: {fmt_money(stats['pending'])} грн")
     if stats["unspecified"]:
         lines.append(f"❔ Без статуса оплаты: <b>{fmt_money(stats['unspecified'])} грн</b>")
+
     alerts: List[str] = []
-    active_req = finance_active_request_for_user(uid, proj)
+    active_req = finance_active_request_for_user(uid, project) if project else None
     if active_req:
         status = active_req.get("status")
         status_human = {"pending": "ожидает подтверждения", "approved": "одобрена"}.get(status, status or "в обработке")
         code = active_req.get("code", active_req.get("id"))
         alerts.append(f"📨 Активный запрос: <b>{h(code)}</b> — {h(status_human)}")
-    if user_has_approved_not_confirmed(uid):
+    if pending_flag:
         alerts.insert(0, "⚠️ Есть одобренные выплаты. Подтвердите получение денег через соответствующий пункт меню.")
     if alerts:
         lines.append("")
         lines.extend(alerts)
+
+    lines.append("")
+    lines.append(f"🏛 Загальний борг за всіма об'єктами: <b>{fmt_money(aggregate_due)} грн</b>")
+    if aggregate_unpaid:
+        lines.append(f"   • Готово до запиту: {fmt_money(aggregate_unpaid)} грн")
+    if aggregate_pending:
+        lines.append(f"   • В запитах: {fmt_money(aggregate_pending)} грн")
+    if len(projects) > 1:
+        lines.append("")
+        lines.append("📂 Дополнительные проекты:")
+        for other in projects:
+            if other == project:
+                continue
+            other_stats = user_project_stats(uid, other)
+            outstanding = other_stats["unpaid"] + other_stats["pending"]
+            if not other_stats["total"] and not outstanding:
+                continue
+            overview = f"всего {fmt_money(other_stats['total'])} грн"
+            if outstanding:
+                overview += f", ожидает {fmt_money(outstanding)} грн"
+            lines.append(f"• {h(other)} — {overview}")
+
     lines.append("")
     lines.append("Выберите действие ниже, чтобы посмотреть детали чеков, отправить запрос на выплату или подтвердить получение средств.")
-    text = "\n".join(lines)
-    await clear_then_anchor(uid, text, kb_finance_root(user_has_pending_confirm=user_has_approved_not_confirmed(uid)))
+
+    keyboard = kb_finance_root(
+        uid,
+        project=project,
+        projects=projects,
+        user_has_pending_confirm=pending_flag,
+    )
+    return "\n".join(lines), keyboard, True
+
+
+@dp.callback_query_handler(lambda c: c.data == "menu_finance")
+async def finance_menu(c: types.CallbackQuery):
+    uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
+    text, keyboard, has_data = finance_dashboard_view(uid)
+    await clear_then_anchor(uid, text, keyboard)
+    if not has_data:
+        return await c.answer("Нет доступных данных", show_alert=True)
     await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "fin_select_project")
+async def finance_select_project(c: types.CallbackQuery):
+    uid = c.from_user.id
+    project, projects = finance_context(uid)
+    if not projects:
+        return await c.answer("Нет проектов для выбора.", show_alert=True)
+    runtime = finance_runtime(uid)
+    runtime["project_choices"] = projects
+    lines = [
+        "📂 <b>Выбор проекта</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Выберите объект, чтобы посмотреть статистику чеков и сформировать запрос на выплату.",
+        "",
+    ]
+    kb = InlineKeyboardMarkup()
+    for idx, name in enumerate(projects):
+        stats = user_project_stats(uid, name)
+        outstanding = stats["unpaid"] + stats["pending"]
+        total = stats["total"]
+        label_parts = [h(name)]
+        if outstanding:
+            label_parts.append(f"⏳ {fmt_money(outstanding)} грн")
+        elif total:
+            label_parts.append(f"{fmt_money(total)} грн")
+        label = " • ".join(label_parts)
+        if name == project:
+            label = f"✅ {label}"
+        kb.add(InlineKeyboardButton(label, callback_data=f"fin_project:{idx}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("fin_project:"))
+async def finance_project_pick(c: types.CallbackQuery):
+    uid = c.from_user.id
+    idx_raw = c.data.split(":", 1)[1]
+    runtime = finance_runtime(uid)
+    projects = runtime.get("project_choices") or finance_available_projects(uid)
+    try:
+        idx = int(idx_raw)
+    except ValueError:
+        return await c.answer("Проект не найден", show_alert=True)
+    if idx < 0 or idx >= len(projects):
+        return await c.answer("Проект не найден", show_alert=True)
+    finance_set_selected_project(uid, projects[idx])
+    await finance_menu(c)
 
 
 @dp.callback_query_handler(lambda c: c.data == "fin_unpaid_list")
 async def finance_unpaid_list(c: types.CallbackQuery):
     uid = c.from_user.id
-    proj = active_project["name"]
-    if not proj: return await c.answer("❗ Нет активного проекта", show_alert=True)
-    recs = user_project_receipts(uid, proj)
+    project = finance_selected_project(uid)
+    if not project:
+        return await c.answer("Выберите проект в меню финансов.", show_alert=True)
+    recs = user_project_receipts(uid, project)
     unpaid: List[dict] = []
     pending: List[dict] = []
     for r in recs:
@@ -7609,17 +13244,14 @@ async def finance_unpaid_list(c: types.CallbackQuery):
     lines = [
         "⏳ <b>Неоплаченные чеки и запросы</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"📂 Проект: <b>{h(proj)}</b>",
+        f"📂 Проект: <b>{h(project)}</b>",
         ""
     ]
     if unpaid:
         lines.append(f"❌ Готовы к запросу ({len(unpaid)} шт.):")
         total_unpaid = 0.0
         for r in unpaid:
-            try:
-                amount = float(r.get("sum") or 0.0)
-            except (TypeError, ValueError):
-                amount = 0.0
+            amount = receipt_amount(r)
             total_unpaid += amount
             moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
             desc = r.get('desc')
@@ -7632,10 +13264,7 @@ async def finance_unpaid_list(c: types.CallbackQuery):
         lines.append(f"⏳ Уже в запросах ({len(pending)} шт.):")
         total_pending = 0.0
         for r in pending:
-            try:
-                amount = float(r.get("sum") or 0.0)
-            except (TypeError, ValueError):
-                amount = 0.0
+            amount = receipt_amount(r)
             total_pending += amount
             moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
             code = ((r.get("payout") or {}).get("code") or (r.get("payout") or {}).get("request_id")) if isinstance(r.get("payout"), dict) else None
@@ -7643,119 +13272,576 @@ async def finance_unpaid_list(c: types.CallbackQuery):
         lines.append(f"Всего в запросах: <b>{fmt_money(total_pending)} грн</b>")
     lines.append("")
     lines.append("Подайте новый запрос на выплату, чтобы закрыть чеки из раздела «Готовы к запросу».")
-    await clear_then_anchor(uid, "\n".join(lines), kb_finance_root(user_has_pending_confirm=user_has_approved_not_confirmed(uid)))
+    await clear_then_anchor(uid, "\n".join(lines), finance_root_keyboard(uid))
     await c.answer()
+
+
+def finance_collect_outstanding(uid: int) -> Tuple[List[dict], List[dict]]:
+    prof = load_user(uid) or {}
+    recmap = prof.get("receipts", {}) or {}
+    available: List[dict] = []
+    blocked: List[dict] = []
+    for project, recs in recmap.items():
+        if not isinstance(recs, list):
+            continue
+        eligible: List[dict] = []
+        locked_total = 0.0
+        for entry in recs:
+            if entry.get("paid") is not False:
+                continue
+            payout_status = (entry.get("payout") or {}).get("status") if isinstance(entry.get("payout"), dict) else None
+            if payout_status in ("pending", "approved"):
+                locked_total += receipt_amount(entry)
+                continue
+            clone = dict(entry)
+            clone["project"] = project
+            eligible.append(clone)
+        if not eligible:
+            continue
+        total = sum(receipt_amount(item) for item in eligible)
+        entry_payload = {
+            "project": project,
+            "receipts": eligible,
+            "total": round(total, 2),
+            "count": len(eligible),
+            "locked": round(locked_total, 2),
+        }
+        active = finance_active_request_for_user(uid, project)
+        if active:
+            entry_payload["blocked"] = active
+            blocked.append(entry_payload)
+        else:
+            available.append(entry_payload)
+    available.sort(key=lambda x: x["total"], reverse=True)
+    blocked.sort(key=lambda x: x["project"])
+    return available, blocked
+
+
+def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tuple[List[dict], float]:
+    cleaned: List[Tuple[float, dict]] = []
+    for rec in receipts:
+        amount = receipt_amount(rec)
+        cleaned.append((amount, rec))
+    cleaned.sort(key=lambda x: x[0])
+    selected: List[dict] = []
+    total = 0.0
+    for amount, rec in cleaned:
+        selected.append(rec)
+        total += amount
+        if target is not None and total + 0.01 >= target:
+            break
+    return selected, round(total, 2)
+
+
+def finance_group_receipts(receipts: List[dict]) -> Dict[str, List[dict]]:
+    grouped: Dict[str, List[dict]] = {}
+    for rec in receipts:
+        project_name = rec.get("project")
+        grouped.setdefault(project_name, []).append(rec)
+    return grouped
+
+
+def finance_receipts_total(receipts: List[dict]) -> float:
+    total = sum(receipt_amount(rec) for rec in receipts if isinstance(rec, dict))
+    return round(total, 2)
+
+
+def finance_scope_snapshot(uid: int, scope: List[str], grouped: Dict[str, List[dict]]) -> Dict[str, dict]:
+    snapshot: Dict[str, dict] = {}
+    scope_list = list(scope or grouped.keys())
+    total_before = 0.0
+    total_after = 0.0
+    total_selected = 0.0
+    for name in scope_list:
+        if not name:
+            continue
+        stats = user_project_stats(uid, name)
+        outstanding_before = round(float(stats.get("unpaid", 0.0)) + float(stats.get("pending", 0.0)), 2)
+        selected_total = finance_receipts_total(grouped.get(name, []))
+        remaining = round(max(outstanding_before - selected_total, 0.0), 2)
+        snapshot[name] = {
+            "outstanding_before": outstanding_before,
+            "selected_total": selected_total,
+            "outstanding_after": remaining,
+            "unpaid": round(float(stats.get("unpaid", 0.0)), 2),
+            "pending": round(float(stats.get("pending", 0.0)), 2),
+        }
+        total_before += outstanding_before
+        total_after += remaining
+        total_selected += selected_total
+    snapshot["__summary__"] = {
+        "outstanding_before": round(total_before, 2),
+        "selected_total": round(total_selected, 2),
+        "outstanding_after": round(total_after, 2),
+    }
+    return snapshot
+
+
+def finance_should_show_remainder(mode: Optional[str], snapshot: Optional[dict]) -> bool:
+    if mode == "auto":
+        return False
+    if not isinstance(snapshot, dict):
+        return False
+    before_raw = snapshot.get("outstanding_before")
+    after_raw = snapshot.get("outstanding_after")
+    if before_raw in (None, "") or after_raw in (None, ""):
+        return False
+    before_val = parse_amount(before_raw)
+    after_val = parse_amount(after_raw)
+    return abs(before_val - after_val) > 0.01
+
+
+def finance_scope_lines(scope: List[str]) -> List[str]:
+    lines: List[str] = []
+    for name in scope:
+        info = load_project_info(name)
+        code_txt = h((info or {}).get("code") or "—")
+        lines.append(f"• {h(name)} (код {code_txt})")
+    return lines
+
+
+def finance_scope_brief_text(scope: List[str]) -> str:
+    if not scope:
+        return "—"
+    parts: List[str] = []
+    for name in scope:
+        info = load_project_info(name)
+        code_txt = h((info or {}).get("code") or "—")
+        parts.append(f"{h(name)} (код {code_txt})")
+    return ", ".join(parts)
+
+
+def finance_render_confirmation(uid: int, draft: dict) -> str:
+    scope = draft.get("scope", [])
+    selected = draft.get("selected_receipts", [])
+    total = draft.get("amount", 0.0)
+    requested = draft.get("requested_amount")
+    mode = draft.get("mode")
+    lines = ["📨 <b>Підтвердження запиту</b>", "━━━━━━━━━━━━━━━━━━"]
+    if scope:
+        if len(scope) == 1:
+            info = load_project_info(scope[0])
+            code_txt = h((info or {}).get("code") or "—")
+            lines.append(f"📂 Об'єкт: <b>{h(scope[0])}</b> (код {code_txt})")
+        else:
+            lines.append("📂 Об'єкти у виплаті:")
+            lines.extend(finance_scope_lines(scope))
+    lines.append(f"💰 Сума до виплати: <b>{fmt_money(total)} грн</b>")
+    if requested is not None and abs(requested - total) > 0.01:
+        lines.append(f"Запитувана сума: {fmt_money(requested)} грн")
+    lines.append(f"Чеків у запиті: <b>{len(selected)}</b>")
+    grouped = finance_group_receipts(selected)
+    snapshot = finance_scope_snapshot(uid, scope, grouped)
+    summary_snapshot = snapshot.get("__summary__", {})
+    show_remainder = finance_should_show_remainder(mode, summary_snapshot)
+    if summary_snapshot:
+        before = summary_snapshot.get("outstanding_before")
+        after = summary_snapshot.get("outstanding_after")
+        if before is not None and before != "":
+            lines.append(f"🏦 Борг до запиту: <b>{fmt_money(parse_amount(before))} грн</b>")
+        if show_remainder and after is not None and after != "":
+            lines.append(f"📉 Залишок після: <b>{fmt_money(parse_amount(after))} грн</b>")
+    for proj, recs in grouped.items():
+        subtotal = finance_receipts_total(recs)
+        proj_line = f"• {h(proj)} — {fmt_money(subtotal)} грн ({len(recs)} шт.)"
+        info_snapshot = snapshot.get(proj) or {}
+        extras: List[str] = []
+        before_val = info_snapshot.get("outstanding_before")
+        if before_val not in (None, ""):
+            extras.append(f"до: {fmt_money(parse_amount(before_val))} грн")
+        after_val = info_snapshot.get("outstanding_after") if finance_should_show_remainder(mode, info_snapshot) else None
+        if after_val not in (None, ""):
+            extras.append(f"після: {fmt_money(parse_amount(after_val))} грн")
+        if extras:
+            proj_line += f" ({'; '.join(extras)})"
+        lines.append(proj_line)
+    preview: List[str] = []
+    for rec in selected[:8]:
+        rid = h(rec.get("receipt_no", "—"))
+        amt = fmt_money(receipt_amount(rec))
+        preview.append(f"#{rid} — {amt} грн")
+    if preview:
+        lines.append("")
+        lines.append("Чеки у вибірці:")
+        lines.extend(preview)
+        if len(selected) > len(preview):
+            lines.append("…")
+    lines.append("")
+    lines.append("Підтвердіть, щоб надіслати запит адміністратору, або поверніться для зміни параметрів.")
+    return "\n".join(lines)
+
+
+def finance_reset_payout_runtime(uid: int) -> None:
+    runtime = finance_runtime(uid)
+    runtime.pop("payout_scopes", None)
+    runtime.pop("payout_draft", None)
 
 
 @dp.callback_query_handler(lambda c: c.data == "fin_request_payout")
 async def finance_request_payout(c: types.CallbackQuery):
     uid = c.from_user.id
-    proj = active_project["name"]
-    if not proj: return await c.answer("❗ Нет активного проекта", show_alert=True)
-    existing = finance_active_request_for_user(uid, proj)
-    if existing:
-        code = existing.get("code", existing.get("id"))
-        status = existing.get("status")
-        status_human = {"pending": "ожидает подтверждения", "approved": "одобрена"}.get(status, status or "в обработке")
+    available, blocked = finance_collect_outstanding(uid)
+    if not available:
+        lines = [
+            "ℹ️ <b>Немає чеків для запиту</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            "Усі неоплачені чеки вже у діючих запитах або відсутні.",
+        ]
+        if blocked:
+            lines.append("")
+            lines.append("Об'єкти з активними запитами:")
+            for entry in blocked:
+                active = entry.get("blocked") or {}
+                code = active.get("code", active.get("id", "—"))
+                status_txt = active.get("status", "—")
+                lines.append(f"• {h(entry['project'])} — {h(code)} ({h(status_txt)})")
+        await clear_then_anchor(uid, "\n".join(lines), finance_root_keyboard(uid))
+        return await c.answer("Даних недостатньо", show_alert=True)
+    options: List[dict] = []
+    for entry in available:
+        if entry["total"] <= 0:
+            continue
+        options.append({
+            "scope": [entry["project"]],
+            "project": entry["project"],
+            "receipts": entry["receipts"],
+            "total": entry["total"],
+            "count": entry["count"],
+        })
+    if not options:
         await clear_then_anchor(
             uid,
-            (
-                "📨 <b>Запрос уже в обработке</b>\n"
-                f"Код: <b>{h(code)}</b>\n"
-                f"Текущий статус: {h(status_human)}.\n\n"
-                "Дождитесь ответа администратора или подтвердите получение средств в разделе подтверждений."
+            "\n".join(
+                [
+                    "ℹ️ <b>Запити недоступні</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Усі доступні чеки вже у роботі або відсутні.",
+                    "Поверніться пізніше чи оберіть інший об'єкт.",
+                ]
             ),
-            kb_finance_root(user_has_pending_confirm=user_has_approved_not_confirmed(uid))
+            finance_root_keyboard(uid),
         )
-        return await c.answer("Есть активный запрос на выплату.", show_alert=True)
-    recs = user_project_receipts(uid, proj)
-    eligible: List[dict] = []
-    locked: List[dict] = []
-    for r in recs:
-        if r.get("paid") is False:
-            payout_status = (r.get("payout") or {}).get("status") if isinstance(r.get("payout"), dict) else None
-            if payout_status in ("pending", "approved"):
-                locked.append(r)
-            else:
-                eligible.append(r)
-    if not eligible:
-        if locked:
-            message_text = (
-                "Все неоплаченные чеки уже добавлены в действующие запросы.\n"
-                "Ожидайте подтверждения администратора или уведомления о выплате."
-            )
-        else:
-            message_text = (
-                "Фирма закрыла все ваши чеки — неоплаченных сумм не осталось.\n"
-                "Добавьте новые чеки, чтобы сформировать следующий запрос."
-            )
-        await clear_then_anchor(
-            uid,
-            message_text,
-            kb_finance_root(user_has_pending_confirm=user_has_approved_not_confirmed(uid))
-        )
-        return await c.answer("Нет чеков для запроса.", show_alert=True)
-    req = finance_new_request(uid, proj, eligible)
-    req_id = req["id"]
-    req_code = req.get("code", req_id)
-    total = float(req.get("sum") or 0.0)
-    proj_info = load_project_info(proj)
-    project_code_txt = h(proj_info.get('code') or '—')
-    await c.answer("Запрос отправлен администратору.")
+        return await c.answer()
+    if len(options) > 1:
+        combined_receipts: List[dict] = []
+        combined_scope: List[str] = []
+        total_sum = 0.0
+        for opt in options:
+            combined_scope.extend(opt["scope"])
+            combined_receipts.extend(opt["receipts"])
+            total_sum += opt["total"]
+        options.append({
+            "scope": combined_scope,
+            "project": None,
+            "receipts": combined_receipts,
+            "total": round(total_sum, 2),
+            "count": sum(opt["count"] for opt in options),
+            "all": True,
+        })
+    runtime = finance_runtime(uid)
+    runtime["payout_scopes"] = options
+    runtime.pop("payout_draft", None)
+    lines = [
+        "💸 <b>Створення запиту</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Оберіть об'єкт або всі одразу, щоб продовжити оформлення виплати.",
+        "",
+    ]
+    kb = InlineKeyboardMarkup()
+    for idx, opt in enumerate(options):
+        title = "Усі проєкти" if opt.get("all") else opt["scope"][0]
+        lines.append(f"• {h(title)} — {fmt_money(opt['total'])} грн ({opt['count']} чеків)")
+        kb.add(InlineKeyboardButton(f"{title} • {fmt_money(opt['total'])} грн", callback_data=f"fin_req_scope:{idx}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
 
-    prof = load_user(uid) or {}
-    fullname = h(prof.get('fullname', '—'))
-    bsu_code = h(prof.get('bsu', '—'))
-    phone = h(prof.get('phone', '—'))
-    username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_display = h(f"@{username_raw}" if username_raw else "—")
-    receipts_line_parts = [h(r.get('receipt_no', '—')) for r in eligible[:10]]
-    files_line = ", ".join(receipts_line_parts)
-    if len(eligible) > 10:
-        files_line += "…"
-    region_txt = h(proj_info.get('region') or '—')
-    location_txt = h(proj_info.get('location', '—'))
-    req_code_disp = h(req_code)
-    req_id_disp = h(req_id)
-    text = (
-        "📢 <b>Новый запрос на выплату</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"Код выплаты: <b>{req_code_disp}</b>\n"
-        f"Файл: <code>{req_id_disp}</code>\n"
-        f"👤 {fullname} (ID {uid}, {bsu_code})\n"
-        f"📱 {phone}\n"
-        f"🆔 {username_display}\n"
-        f"📂 Проект: {h(proj)}\n"
-        f"🆔 Код объекта: {project_code_txt}\n"
-        f"🌍 Область: {region_txt}\n"
-        f"📍 Локация: {location_txt}\n"
-        f"❌ Неоплаченных чеков: {len(eligible)} шт.\n"
-        f"💰 Сумма к выплате: <b>{fmt_money(total)} грн</b>\n"
-        f"🧾 Номера чеков: {files_line}\n\n"
-        "Используйте кнопки ниже, чтобы проверить карточки и подтвердить перечисление."
+
+def finance_build_draft(uid: int, option: dict) -> dict:
+    draft = {
+        "scope": option.get("scope", []),
+        "project": option.get("project"),
+        "receipts": option.get("receipts", []),
+        "total_available": option.get("total", 0.0),
+        "mode": "auto",
+    }
+    runtime = finance_runtime(uid)
+    runtime["payout_draft"] = draft
+    return draft
+
+
+async def finance_show_amount_menu(uid: int, draft: dict):
+    scope = draft.get("scope", [])
+    title = "Усі проєкти" if len(scope) > 1 else (scope[0] if scope else "—")
+    total = draft.get("total_available", 0.0)
+    lines = [
+        "💰 <b>Налаштування виплати</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Обрано: {h(title)}",
+        f"Доступно до виплати: <b>{fmt_money(total)} грн</b>",
+        "Оберіть повну суму або введіть власне значення.",
+    ]
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(f"💰 Повна сума ({fmt_money(total)} грн)", callback_data="fin_req_amount:auto"))
+    kb.add(InlineKeyboardButton("🔢 Вказати суму", callback_data="fin_req_amount:custom"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="fin_request_payout"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("fin_req_scope:"))
+async def finance_request_pick_scope(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = finance_runtime(uid)
+    options = runtime.get("payout_scopes") or []
+    try:
+        idx = int(c.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        return await c.answer("Параметр не знайдено", show_alert=True)
+    if idx < 0 or idx >= len(options):
+        return await c.answer("Параметр не знайдено", show_alert=True)
+    option = options[idx]
+    scope = option.get("scope", [])
+    for name in scope:
+        active = finance_active_request_for_user(uid, name)
+        if active:
+            return await c.answer("За обраним об'єктом вже є активний запит.", show_alert=True)
+    draft = finance_build_draft(uid, option)
+    await finance_show_amount_menu(uid, draft)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("fin_req_amount:"))
+async def finance_request_amount_choice(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    mode = c.data.split(":", 1)[1]
+    runtime = finance_runtime(uid)
+    draft = runtime.get("payout_draft")
+    if not draft:
+        return await c.answer("Спочатку оберіть проєкт", show_alert=True)
+    receipts = draft.get("receipts", [])
+    if not receipts:
+        finance_reset_payout_runtime(uid)
+        return await c.answer("Чеки недоступні", show_alert=True)
+    if mode == "auto":
+        selected, amount = finance_pick_receipts(receipts, draft.get("total_available"))
+        draft["selected_receipts"] = selected
+        draft["amount"] = amount
+        draft["requested_amount"] = None
+        draft["mode"] = "auto"
+        runtime["payout_draft"] = draft
+        text = finance_render_confirmation(uid, draft)
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("✅ Надіслати", callback_data="fin_req_confirm"))
+        kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="fin_request_payout"))
+        kb.add(InlineKeyboardButton("❌ Скасувати", callback_data="fin_req_cancel"))
+        await clear_then_anchor(uid, text, kb)
+        await c.answer()
+        return
+    await state.finish()
+    await UserPayoutRequestFSM.waiting_amount.set()
+    prompt = (
+        "Введіть суму у гривнях, яку хочете отримати за цей запит.\n"
+        f"Доступно: {fmt_money(draft.get('total_available', 0.0))} грн."
     )
-    akb = InlineKeyboardMarkup()
-    akb.add(InlineKeyboardButton("👀 Посмотреть чеки", callback_data=f"adm_req_view_checks:{req_id}"))
-    akb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{req_id}"))
-    akb.add(InlineKeyboardButton("❌ Закрыть", callback_data=f"adm_req_close:{req_id}"))
-    for ad in list(admins):
-        chat_id = users_runtime.get(ad, {}).get("tg", {}).get("chat_id") or (load_user(ad) or {}).get("tg", {}).get("chat_id")
-        if chat_id:
-            try: await bot.send_message(chat_id, text, reply_markup=akb)
-            except Exception: pass
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data="fin_req_cancel"))
+    msg = await bot.send_message(c.message.chat.id, prompt, reply_markup=kb)
+    flow_track(uid, msg)
+    await c.answer()
 
-    await clear_then_anchor(
+
+@dp.message_handler(state=UserPayoutRequestFSM.waiting_amount, content_types=ContentType.TEXT)
+async def finance_request_amount_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    runtime = finance_runtime(uid)
+    draft = runtime.get("payout_draft")
+    text = (m.text or "").replace(",", ".").strip()
+    try:
+        amount_value = float(text)
+    except ValueError:
+        await m.reply("Будь ласка, введіть числове значення.")
+        return
+    if amount_value <= 0:
+        await m.reply("Сума повинна бути більшою за нуль.")
+        return
+    receipts = draft.get("receipts") if draft else None
+    if not receipts:
+        await state.finish()
+        finance_reset_payout_runtime(uid)
+        return await m.reply("Не вдалося сформувати запит, спробуйте ще раз.")
+    selected, actual = finance_pick_receipts(receipts, amount_value)
+    if not selected:
+        await m.reply("Не знайдено чеків для цієї суми.")
+        return
+    draft["selected_receipts"] = selected
+    draft["amount"] = actual
+    draft["requested_amount"] = round(float(amount_value), 2)
+    draft["mode"] = "custom"
+    runtime["payout_draft"] = draft
+    await state.finish()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    text_rendered = finance_render_confirmation(uid, draft)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("✅ Надіслати", callback_data="fin_req_confirm"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="fin_request_payout"))
+    kb.add(InlineKeyboardButton("❌ Скасувати", callback_data="fin_req_cancel"))
+    await clear_then_anchor(uid, text_rendered, kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "fin_req_cancel")
+async def finance_request_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.finish()
+    finance_reset_payout_runtime(uid)
+    await finance_menu(c)
+
+
+def finance_admin_scope_summary(
+    scope: List[str],
+    grouped: Dict[str, List[dict]],
+    snapshot: Optional[Dict[str, dict]] = None,
+    *,
+    mode: Optional[str] = None,
+) -> Tuple[str, str]:
+    detail_lines: List[str] = []
+    brief_parts: List[str] = []
+    snapshot = snapshot or {}
+    for name in scope:
+        info = load_project_info(name)
+        code_txt = h((info or {}).get("code") or "—")
+        recs = grouped.get(name, [])
+        subtotal = finance_receipts_total(recs)
+        base_line = f"• {h(name)} (код {code_txt}) — {fmt_money(subtotal)} грн ({len(recs)} шт.)"
+        info_snapshot = snapshot.get(name) or {}
+        before = info_snapshot.get("outstanding_before")
+        after = info_snapshot.get("outstanding_after")
+        extras: List[str] = []
+        if before is not None and before != "":
+            extras.append(f"📊 Борг до запиту: {fmt_money(parse_amount(before))} грн")
+        if finance_should_show_remainder(mode, info_snapshot) and after not in (None, ""):
+            extras.append(f"📉 Залишок після: {fmt_money(parse_amount(after))} грн")
+        if extras:
+            base_line = "\n".join([base_line, "   " + "\n   ".join(extras)])
+        detail_lines.append(base_line)
+        brief_parts.append(f"{h(name)} (код {code_txt})")
+    return "\n".join(detail_lines), ", ".join(brief_parts)
+
+
+@dp.callback_query_handler(lambda c: c.data == "fin_req_confirm")
+async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    runtime = finance_runtime(uid)
+    draft = runtime.get("payout_draft")
+    if not draft or not draft.get("selected_receipts"):
+        return await c.answer("Немає даних для запиту", show_alert=True)
+    scope = draft.get("scope", [])
+    receipts = draft.get("selected_receipts", [])
+    amount = draft.get("amount", 0.0)
+    mode = draft.get("mode", "auto")
+    project_hint = draft.get("project") if len(scope) <= 1 else None
+    grouped = finance_group_receipts(receipts)
+    scope_snapshot = finance_scope_snapshot(uid, scope, grouped)
+    request = finance_new_request(
         uid,
-        (
-            "📨 <b>Запрос на выплату отправлен</b>\n"
-            f"Код: <b>{req_code_disp}</b>\n"
-            f"Проект: {h(proj)} (код {project_code_txt})\n"
-            f"Чеков в запросе: {len(eligible)} шт.\n"
-            f"Сумма: <b>{fmt_money(total)} грн</b>\n\n"
-            "Мы сообщим, когда администратор одобрит выплату или запросит уточнения."
-        ),
-        kb_finance_root(user_has_pending_confirm=user_has_approved_not_confirmed(uid))
+        project_hint,
+        receipts,
+        scope=scope,
+        amount_override=amount,
+        mode=mode,
+        scope_snapshot=scope_snapshot,
     )
+    mode_value = request.get("mode") or mode
+    code = request.get("code", request.get("id"))
+    scope_lines, scope_brief = finance_admin_scope_summary(scope, grouped, scope_snapshot, mode=mode_value)
+    prof = load_user(uid) or {}
+    fullname = h(prof.get("fullname", "—"))
+    bsu_code = h(prof.get("bsu", "—"))
+    phone = h(prof.get("phone", "—"))
+    username_raw = (prof.get("tg", {}) or {}).get("username")
+    username_display = format_username_link(username_raw)
+    request_id = request.get("id")
+    requested_sum = parse_amount_chain(request.get("sum"), amount)
+    calc_sum = float(request.get("calc_sum") or amount)
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
+    user_lines = [
+        "📨 <b>Запит на виплату надіслано</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🔖 Код: <b>{h(code)}</b>",
+        f"📂 Об'єкти: {scope_brief or '—'}",
+        f"🧾 Чеків у запиті: <b>{len(receipts)}</b>",
+    ]
+    if abs(requested_sum - calc_sum) > 0.01:
+        user_lines.append(f"💰 Запитана сума: <b>{fmt_money(requested_sum)} грн</b>")
+        user_lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    else:
+        user_lines.append(f"💰 Сума до виплати: <b>{fmt_money(calc_sum)} грн</b>")
+    if outstanding_before is not None:
+        user_lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(outstanding_before))} грн</b>")
+    if show_remainder and outstanding_after is not None:
+        user_lines.append(f"📉 Залишок після виплати: <b>{fmt_money(float(outstanding_after))} грн</b>")
+    user_lines.append("")
+    user_lines.append("Очікуйте рішення адміністратора.")
+    user_summary = "\n".join(user_lines)
+    admin_lines = [
+        "📢 <b>Запит на виплату</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"🔖 Код: <b>{h(code)}</b>",
+        f"🗂 Файл: <code>{h(request_id)}</code>",
+        f"👤 {fullname} (ID {uid}, {bsu_code})",
+        f"📱 {phone}",
+        f"🆔 {username_display}",
+        "",
+        "💵 <b>Фінансові показники</b>",
+        f"• Запитано: <b>{fmt_money(requested_sum)} грн</b>",
+    ]
+    if abs(requested_sum - calc_sum) > 0.01:
+        admin_lines.append(f"• Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    admin_lines.append(f"• Кількість чеків: {len(receipts)}")
+    if outstanding_before is not None:
+        admin_lines.append(f"• Борг до запиту: {fmt_money(float(outstanding_before))} грн")
+    if show_remainder and outstanding_after is not None:
+        admin_lines.append(f"• Залишок після виплати: {fmt_money(float(outstanding_after))} грн")
+    if scope_lines:
+        admin_lines.append("")
+        admin_lines.append("📂 Об'єкти у запиті:")
+        admin_lines.append(scope_lines)
+    admin_text = "\n".join(admin_lines)
+    akb = InlineKeyboardMarkup()
+    akb.add(InlineKeyboardButton("👀 Посмотреть чеки", callback_data=f"adm_req_view_checks:{request_id}"))
+    akb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{request_id}"))
+    akb.add(InlineKeyboardButton("❌ Відхилити", callback_data=f"adm_req_close:{request_id}"))
+    for ad in list(admins):
+        admin_profile = load_user(ad) or {}
+        if not registration_profile_completed(admin_profile):
+            continue
+        chat_id = (
+            users_runtime.get(ad, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
+        if chat_id:
+            try:
+                await bot.send_message(chat_id, admin_text, reply_markup=akb)
+            except Exception:
+                continue
+    finance_reset_payout_runtime(uid)
+
+    dashboard_text, dashboard_kb, _ = finance_dashboard_view(uid)
+    await clear_then_anchor(uid, dashboard_text, dashboard_kb)
+
+    chat_id = c.message.chat.id if c.message else registration_chat_id(uid, prof)
+    notify_kb = kb_broadcast_close()
+    try:
+        if chat_id:
+            await bot.send_message(chat_id, user_summary, reply_markup=notify_kb)
+    except Exception:
+        pass
+
+    await c.answer("Запит надіслано адміністратору.")
 
 
 @dp.callback_query_handler(lambda c: c.data == "fin_history")
@@ -7770,12 +13856,20 @@ async def fin_history(c: types.CallbackQuery):
     if not requests:
         await clear_then_anchor(
             uid,
-            "📚 История выплат пока пуста.\nОтправьте запрос на выплату, и здесь появятся все подтверждённые операции.",
-            kb_finance_root(user_has_pending_confirm=user_has_approved_not_confirmed(uid))
+            "\n".join(
+                [
+                    "📚 <b>Історія виплат порожня</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Ще не було підтверджених виплат.",
+                    "Надішліть запит, щоб бачити тут усі завершені операції.",
+                ]
+            ),
+            finance_root_keyboard(uid),
         )
         return await c.answer()
     requests.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто"}
+    status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
+    status_icons = {"pending": "⏳", "approved": "✅", "confirmed": "💰", "closed": "🔒", "rejected": "❌"}
     lines = [
         "📚 <b>История выплат</b>",
         "━━━━━━━━━━━━━━━━━━",
@@ -7786,10 +13880,13 @@ async def fin_history(c: types.CallbackQuery):
     kb = InlineKeyboardMarkup()
     for req in requests[:20]:
         code = req.get("code", req["id"])
-        status_txt = status_map.get(req.get("status"), req.get("status", "—"))
-        amount = fmt_money(float(req.get("sum") or 0.0))
-        lines.append(f"• {h(code)} — {amount} грн — {h(status_txt)}")
-        kb.add(InlineKeyboardButton(f"{code} • {status_txt}", callback_data=f"fin_hist_open:{req['id']}"))
+        status_key = req.get("status")
+        status_txt = status_map.get(status_key, req.get("status", "—"))
+        amount = fmt_money(parse_amount(req.get("sum")))
+        scope_text = finance_scope_brief_text(finance_request_scope(req))
+        icon = status_icons.get(status_key, "•")
+        lines.append(f"{icon} {h(code)} — {amount} грн — {h(status_txt)} — {scope_text}")
+        kb.add(InlineKeyboardButton(f"{icon} {code} • {status_txt}", callback_data=f"fin_hist_open:{req['id']}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_finance"))
     await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
@@ -7803,19 +13900,40 @@ async def fin_hist_open(c: types.CallbackQuery):
     if not obj or obj.get("user_id") != uid:
         return await c.answer("Запись не найдена", show_alert=True)
     code = obj.get("code", req_id)
-    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
-    project_code_txt = h(proj_info.get("code") or "—")
-    status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто"}
+    scope = finance_request_scope(obj)
+    grouped_items = finance_group_receipts(obj.get("items", []))
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    mode_value = obj.get("mode")
+    scope_lines_text, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot, mode=mode_value)
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
+    status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
     status_disp = status_map.get(obj.get("status"), obj.get("status", "—"))
+    calc_sum = parse_amount_chain(obj.get("calc_sum"), obj.get("sum"), 0.0)
     lines = [
         f"💵 <b>Выплата {h(code)}</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"Статус: <b>{h(status_disp)}</b>",
-        f"Сумма: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>",
-        f"Проект: {h(obj.get('project', '—'))}",
-        f"Связанных чеков: {len(obj.get('files', []))}",
-        ""
+        f"Сума виплати: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>"
     ]
+    if abs(calc_sum - parse_amount_chain(obj.get("sum"), 0.0)) > 0.01:
+        lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    if outstanding_before is not None:
+        lines.append(f"🏦 Борг до запиту: <b>{fmt_money(float(outstanding_before))} грн</b>")
+    if show_remainder and outstanding_after is not None:
+        lines.append(f"📉 Залишок після: <b>{fmt_money(float(outstanding_after))} грн</b>")
+    if scope_lines_text:
+        lines.append("")
+        lines.append("📂 Об'єкти у виплаті:")
+        lines.extend(scope_lines_text.splitlines())
+    elif scope:
+        lines.append("")
+        lines.append("📂 Об'єкти у виплаті:")
+        lines.append("• —")
+    lines.append(f"Связанных чеков: {len(obj.get('files', []))}")
+    lines.append("")
     def fmt_ts(value: Optional[str]) -> str:
         if not value:
             return "—"
@@ -7842,35 +13960,48 @@ async def fin_hist_view(c: types.CallbackQuery):
     obj = finance_load_request(req_id)
     if not obj or obj.get("user_id") != uid:
         return await c.answer("Запись не найдена", show_alert=True)
-    files = obj.get("files", [])
     code = obj.get("code", req_id)
-    recs = user_project_receipts(uid, obj.get("project"))
-    by_file = {r.get("file"): r for r in recs}
-    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
-    project_code_txt = h(proj_info.get("code") or "—")
+    scope = finance_request_scope(obj)
+    grouped_files: Dict[str, List[str]] = {}
+    for item in obj.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        fname = item.get("file")
+        proj_name = item.get("project") or obj.get("project")
+        if fname:
+            grouped_files.setdefault(proj_name, []).append(fname)
+    if not grouped_files and obj.get("files"):
+        grouped_files.setdefault(obj.get("project"), list(obj.get("files", [])))
     lines = [
-        f"🧾 <b>Чеки выплаты {h(code)}</b>",
+        f"🧾 <b>Чеки виплати {h(code)}</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"Проект: {h(obj.get('project','—'))} (код {project_code_txt})",
-        f"Всего файлов: <b>{len(files)}</b>",
+        f"Об'єктів у виплаті: <b>{len(grouped_files) or len(scope) or 0}</b>",
         ""
     ]
-    for fname in files:
-        r = by_file.get(fname)
-        if r:
-            amount = fmt_money(float(r.get("sum") or 0.0))
-            desc = h(r.get("desc")) if r.get("desc") else "—"
-            lines.append(f"• #{h(r.get('receipt_no','—'))} — {amount} грн — {desc}")
-        else:
-            lines.append(f"• {h(fname)}")
+    receipts_to_send: List[Tuple[str, dict]] = []
+    for proj_name, files in grouped_files.items():
+        proj_info = load_project_info(proj_name)
+        project_code_txt = h((proj_info or {}).get("code") or "—")
+        lines.append(f"{h(proj_name)} (код {project_code_txt}) — {len(files)} файлів")
+        recs = user_project_receipts(uid, proj_name)
+        by_file = {r.get("file"): r for r in recs}
+        for fname in files:
+            r = by_file.get(fname)
+            if r:
+                amount = fmt_money(receipt_amount(r))
+                desc = h(r.get("desc")) if r.get("desc") else "—"
+                rid = h(r.get("receipt_no", "—"))
+                lines.append(f"• #{rid} — {amount} грн — {desc}")
+                receipts_to_send.append((proj_name, r))
+            else:
+                lines.append(f"• {h(fname)}")
+        lines.append("")
     kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data=f"fin_hist_open:{req_id}"))
     await clear_then_anchor(uid, "\n".join(lines), kb)
     chat_id = c.message.chat.id
-    for fname in files[:5]:
-        r = by_file.get(fname)
-        if r:
-            msg = await send_receipt_card(chat_id, obj.get("project"), uid, r, include_project=False)
-            flow_track(uid, msg)
+    for proj_name, receipt in receipts_to_send[:5]:
+        msg = await send_receipt_card(chat_id, proj_name, uid, receipt, include_project=False)
+        flow_track(uid, msg)
     await c.answer()
 
 
@@ -7895,15 +14026,9 @@ async def fin_confirm_list(c: types.CallbackQuery):
     for o in to_confirm[:20]:
         code = o.get("code", o['id'])
         amount = float(o.get('sum') or 0.0)
-        project_name_raw = o.get('project')
-        if project_name_raw:
-            proj_info = load_project_info(project_name_raw)
-            project_name_disp = h(project_name_raw)
-            project_code_txt = h(proj_info.get('code') or '—')
-        else:
-            project_name_disp = '—'
-            project_code_txt = '—'
-        text_lines.append(f"• {h(code)} — {fmt_money(amount)} грн — {project_name_disp} (код {project_code_txt})")
+        scope = finance_request_scope(o)
+        scope_text = finance_scope_brief_text(scope)
+        text_lines.append(f"• {h(code)} — {fmt_money(amount)} грн — {scope_text}")
         kb.add(InlineKeyboardButton(f"Подтвердить {code}", callback_data=f"user_confirm_payout:{o['id']}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_finance"))
     await clear_then_anchor(uid, "\n".join(text_lines), kb)
@@ -7931,34 +14056,50 @@ async def user_confirm_payout(c: types.CallbackQuery):
     finance_append_history(obj, "confirmed", {"by": uid})
     finance_save_request(obj)
     update_receipts_for_request(uid, obj.get("project"), obj.get("files", []), "confirmed", obj)
-    fin_state_clear(obj.get("project", ""), uid)
+    finance_scope_clear_state(obj)
     code = obj.get("code", obj["id"])
-    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
     amount = float(obj.get('sum') or 0.0)
     if c.message:
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
     # уведомим админа(ов)
     code_disp = h(code)
-    project_disp = h(obj.get('project', '—'))
-    proj_info = load_project_info(obj.get('project')) if obj.get('project') else {}
-    project_code_txt = h(proj_info.get('code') or '—') if proj_info else '—'
-    project_code_txt = h(proj_info.get('code') or '—') if proj_info else '—'
+    scope = finance_request_scope(obj)
+    scope_text = finance_scope_brief_text(scope)
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    mode_value = obj.get("mode")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
     fullname = h(prof.get('fullname', '—'))
     bsu_code = h(prof.get('bsu', '—'))
     phone = h(prof.get('phone', '—'))
-    admin_note = (
-        "💸 <b>Выплата подтверждена</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"Код: <b>{code_disp}</b>\n"
-        f"Проект: {project_disp} (код {project_code_txt})\n"
-        f"Сумма: <b>{fmt_money(amount)} грн</b>\n"
-        f"Получатель: {fullname} (ID {uid}, {bsu_code})\n"
-        f"Телефон: {phone}\n"
-        f"Подтверждено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    admin_lines = [
+        "💸 <b>Выплата подтверждена</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Код: <b>{code_disp}</b>",
+        f"Об'єкти: {scope_text}",
+        f"Сумма: <b>{fmt_money(amount)} грн</b>",
+    ]
+    if outstanding_before is not None:
+        admin_lines.append(f"Борг до: {fmt_money(float(outstanding_before))} грн")
+    if show_remainder and outstanding_after is not None:
+        admin_lines.append(f"Залишок після: {fmt_money(float(outstanding_after))} грн")
+    admin_lines.extend([
+        f"Получатель: {fullname} (ID {uid}, {bsu_code})",
+        f"Телефон: {phone}",
+        f"Подтверждено: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+    ])
+    admin_note = "\n".join(admin_lines)
     admin_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
     for ad in list(admins):
-        chat_id = users_runtime.get(ad, {}).get("tg", {}).get("chat_id") or (load_user(ad) or {}).get("tg", {}).get("chat_id")
+        admin_profile = load_user(ad) or {}
+        if not registration_profile_completed(admin_profile):
+            continue
+        chat_id = (
+            users_runtime.get(ad, {}).get("tg", {}).get("chat_id")
+            or (admin_profile.get("tg") or {}).get("chat_id")
+        )
         if chat_id:
             try:
                 await bot.send_message(chat_id, admin_note, reply_markup=admin_kb)
@@ -7980,21 +14121,27 @@ async def user_confirm_payout(c: types.CallbackQuery):
         ]
         for o in remaining[:20]:
             oc = o.get("code", o["id"])
-            amt = float(o.get("sum") or 0.0)
-            text_lines.append(f"• {h(oc)} — {fmt_money(amt)} грн — {h(o.get('project','—'))}")
+            amt = parse_amount(o.get("sum"))
+            scope = finance_request_scope(o)
+            scope_text = finance_scope_brief_text(scope)
+            text_lines.append(f"• {h(oc)} — {fmt_money(amt)} грн — {scope_text}")
             kb.add(InlineKeyboardButton(f"Подтвердить {oc}", callback_data=f"user_confirm_payout:{o['id']}"))
         kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_finance"))
         await anchor_show_text(uid, "\n".join(text_lines), kb)
     else:
         await anchor_show_text(
             uid,
-            (
-                "✅ <b>Выплата подтверждена</b>\n"
-                f"Код: <b>{code_disp}</b>\n"
-                f"Сумма: <b>{fmt_money(amount)} грн</b>\n\n"
-                "Спасибо! Статистика обновлена, и запрос перенесён в историю выплат."
+            "\n".join(
+                [
+                    "✅ <b>Выплата подтверждена</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    f"Код: <b>{code_disp}</b>",
+                    f"Сума: <b>{fmt_money(amount)} грн</b>",
+                    "",
+                    "Статистика оновлена, запит переміщено до історії виплат.",
+                ]
             ),
-            kb_finance_root(user_has_pending_confirm=user_has_approved_not_confirmed(uid))
+            finance_root_keyboard(uid),
         )
     await c.answer("Подтверждено")
 
@@ -8010,7 +14157,13 @@ async def adm_finance(c: types.CallbackQuery):
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
     await clear_then_anchor(
         uid,
-        "💵 <b>Финансовый модуль администратора</b>\nВыберите раздел для просмотра запросов или истории выплат.",
+        "\n".join(
+            [
+                "💵 <b>Фінансовий модуль адміністратора</b>",
+                "━━━━━━━━━━━━━━━━━━",
+                "Оберіть розділ, щоб опрацювати запити чи переглянути історію виплат.",
+            ]
+        ),
         kb
     )
     await c.answer()
@@ -8024,14 +14177,21 @@ async def adm_requests(c: types.CallbackQuery):
     if not lst:
         await clear_then_anchor(
             uid,
-            "💵 <b>Запросов на выплату нет</b>\nВсе обращения сотрудников обработаны.",
+            "\n".join(
+                [
+                    "💵 <b>Запитів на виплату немає</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Усі звернення співробітників уже опрацьовані.",
+                ]
+            ),
             kb_admin_root()
         ); return await c.answer()
     kb = InlineKeyboardMarkup()
     for r in lst[:20]:
         code = r.get("code", r['id'])
-        amount = float(r.get('sum') or 0.0)
-        kb.add(InlineKeyboardButton(f"{code} • {fmt_money(amount)} грн • u{r['user_id']}", callback_data=f"adm_req_open:{r['id']}"))
+        amount = parse_amount(r.get('sum'))
+        scope_text = finance_scope_brief_text(finance_request_scope(r))
+        kb.add(InlineKeyboardButton(f"{code} • {fmt_money(amount)} грн • {scope_text}", callback_data=f"adm_req_open:{r['id']}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_finance"))
     await clear_then_anchor(
         uid,
@@ -8045,15 +14205,22 @@ async def adm_requests(c: types.CallbackQuery):
 async def adm_history(c: types.CallbackQuery):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
-    lst = [x for x in finance_list() if x.get("status") in ("approved","confirmed","closed")]
+    lst = [x for x in finance_list() if x.get("status") in ("approved","confirmed","closed","rejected")]
     if not lst:
         await clear_then_anchor(
             uid,
-            "📚 История выплат пуста.\nЗдесь появятся все одобренные и закрытые обращения.",
+            "\n".join(
+                [
+                    "📚 <b>Історія виплат порожня</b>",
+                    "━━━━━━━━━━━━━━━━━━",
+                    "Ще немає підтверджених чи закритих запитів.",
+                    "Після обробки звернень записи з'являться у цьому розділі.",
+                ]
+            ),
             kb_admin_root()
         ); return await c.answer()
     kb = InlineKeyboardMarkup()
-    status_map = {"approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто"}
+    status_map = {"approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
     for o in lst[:30]:
         code = o.get("code", o['id'])
         status_txt = status_map.get(o.get("status"), o.get("status"))
@@ -8087,28 +14254,40 @@ async def adm_hist_open(c: types.CallbackQuery):
         except Exception:
             return value
 
-    status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто"}
+    scope = finance_request_scope(obj)
+    scope_lines = finance_scope_lines(scope)
+    status_map = {"pending": "В ожидании", "approved": "Одобрено", "confirmed": "Подтверждено", "closed": "Закрыто", "rejected": "Отменено"}
     status_disp = status_map.get(obj.get('status'), obj.get('status'))
-    project_disp = h(obj.get('project', '—'))
     code_disp = h(code)
     fullname = h(prof.get('fullname', '—'))
     bsu_code = h(prof.get('bsu', '—'))
     phone = h(prof.get('phone', '—'))
     username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_display = h(f"@{username_raw}" if username_raw else "—")
-    text = (
-        f"💵 <b>Выплата {code_disp}</b>\n\n"
-        f"Статус: {h(status_disp)}\n"
-        f"Сумма: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>\n"
-        f"Проект: {project_disp} (код {project_code_txt})\n"
-        f"Чеков: {len(obj.get('files', []))}\n\n"
-        f"👤 {fullname} (ID {obj.get('user_id')}, {bsu_code})\n"
-        f"📱 {phone}\n"
-        f"🆔 {username_display}\n\n"
-        f"Создано: {fmt_ts(obj.get('created_at'))}\n"
-        f"Одобрено: {fmt_ts(obj.get('approved_at'))}\n"
-        f"Подтверждено: {fmt_ts(obj.get('confirmed_at'))}"
-    )
+    username_display = format_username_link(username_raw)
+    project_block: List[str] = []
+    if scope_lines:
+        project_block.append("📂 Об'єкти у виплаті:")
+        project_block.extend(scope_lines)
+    else:
+        project_block.append("📂 Об'єкти у виплаті: —")
+    text_lines = [
+        f"💵 <b>Виплата {code_disp}</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Статус: <b>{h(status_disp)}</b>",
+        f"Сума: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>",
+        "",
+        *project_block,
+        f"Чеків у запиті: {len(obj.get('files', []))}",
+        "",
+        f"👤 {fullname} (ID {obj.get('user_id')}, {bsu_code})",
+        f"📱 {phone}",
+        f"🆔 {username_display}",
+        "",
+        f"Створено: {fmt_ts(obj.get('created_at'))}",
+        f"Схвалено: {fmt_ts(obj.get('approved_at'))}",
+        f"Підтверджено: {fmt_ts(obj.get('confirmed_at'))}"
+    ]
+    text = "\n".join(text_lines)
     kb = InlineKeyboardMarkup()
     if obj.get("files"):
         kb.add(InlineKeyboardButton("🧾 Посмотреть чеки", callback_data=f"adm_hist_view_checks:{req_id}"))
@@ -8127,21 +14306,42 @@ async def adm_hist_view_checks(c: types.CallbackQuery):
         return await c.answer("Запрос не найден", show_alert=True)
     files = obj.get("files", [])
     code = obj.get("code", req_id)
-    lines = [f"🧾 Чеки выплаты <b>{h(code)}</b> ({len(files)})", ""]
-    recs = user_project_receipts(obj.get("user_id"), obj.get("project"))
-    by_file = {r.get("file"): r for r in recs}
-    for fname in files:
-        r = by_file.get(fname)
-        if r:
-            amount = float(r.get('sum') or 0.0)
-            desc_text = h(r.get('desc')) if r.get('desc') else "—"
-            lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн — {desc_text}")
-        else:
-            lines.append(f"• {h(fname)}")
+    lines = [
+        f"🧾 <b>Чеки виплати {h(code)}</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"У запиті файлів: <b>{len(files)}</b>",
+        "",
+    ]
+    grouped_files: Dict[str, List[str]] = {}
+    for item in obj.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        fname = item.get("file")
+        proj_name = item.get("project") or obj.get("project")
+        if fname:
+            grouped_files.setdefault(proj_name, []).append(fname)
+    if not grouped_files and files:
+        grouped_files.setdefault(obj.get("project"), list(files))
+    for proj_name, file_list in grouped_files.items():
+        proj_info = load_project_info(proj_name)
+        project_code_txt = h((proj_info or {}).get("code") or "—")
+        lines.append(f"{h(proj_name)} (код {project_code_txt}) — {len(file_list)} файлів")
+        recs = user_project_receipts(obj.get("user_id"), proj_name)
+        by_file = {r.get("file"): r for r in recs}
+        for fname in file_list:
+            r = by_file.get(fname)
+            if r:
+                amount = receipt_amount(r)
+                desc_text = h(r.get('desc')) if r.get('desc') else "—"
+                lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн — {desc_text}")
+            else:
+                lines.append(f"• {h(fname)}")
+        lines.append("")
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_hist_open:{req_id}"))
     await clear_then_anchor(uid, "\n".join(lines), kb)
-    await admin_send_receipt_photos(uid, c.message.chat.id, obj.get("user_id"), obj.get("project"), files)
+    for proj_name, file_list in grouped_files.items():
+        await admin_send_receipt_photos(uid, c.message.chat.id, obj.get("user_id"), proj_name, file_list)
     await c.answer()
 
 
@@ -8154,38 +14354,63 @@ async def adm_req_open(c: types.CallbackQuery):
     if not obj: return await c.answer("Запрос не найден", show_alert=True)
     prof = load_user(obj["user_id"]) or {}
     code = obj.get("code", obj["id"])
-    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {"region": "", "location": ""}
+    scope = finance_request_scope(obj)
+    grouped_items = finance_group_receipts(obj.get("items", []))
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    mode_value = obj.get("mode")
+    scope_detail, _ = finance_admin_scope_summary(scope, grouped_items, scope_snapshot, mode=mode_value)
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
     fullname = h(prof.get('fullname', '—'))
     bsu_code = h(prof.get('bsu', '—'))
     phone = h(prof.get('phone', '—'))
     username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_display = h(f"@{username_raw}" if username_raw else "—")
+    username_display = format_username_link(username_raw)
     code_disp = h(code)
     file_disp = h(obj['id'])
-    project_name = h(obj.get('project', '—'))
-    project_code_txt = h(proj_info.get('code') or '—')
-    region_txt = h(proj_info.get('region') or '—')
-    location_txt = h(proj_info.get('location', '—'))
-    text = (
-        "📢 <b>Запрос на выплату</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"Код выплаты: <b>{code_disp}</b>\n"
-        f"Файл: <code>{file_disp}</code>\n"
-        f"👤 {fullname} (ID {obj['user_id']}, {bsu_code})\n"
-        f"📱 {phone}\n"
-        f"🆔 {username_display}\n"
-        f"📂 Проект: {project_name}\n"
-        f"🆔 Код объекта: {project_code_txt}\n"
-        f"🌍 Область: {region_txt}\n"
-        f"📍 Локация: {location_txt}\n"
-        f"❌ Неоплаченных чеков: {len(obj['files'])} шт.\n"
-        f"💰 К выплате: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>\n\n"
-        "Просмотрите прикреплённые чеки перед одобрением выплаты."
-    )
+    project_block: List[str] = []
+    if scope_detail:
+        project_block.append("📂 Об'єкти у виплаті:")
+        project_block.extend(scope_detail.splitlines())
+    elif len(scope) == 1:
+        project_name = scope[0]
+        proj_info = load_project_info(project_name) or {}
+        project_block.append("📂 Об'єкти у виплаті:")
+        project_block.append(f"• {h(project_name)} (код {h(proj_info.get('code') or '—')})")
+    else:
+        project_block.append("📂 Об'єкти у виплаті:")
+        project_block.append("• —")
+    requested_sum = parse_amount_chain(obj.get("sum"), 0.0)
+    calc_sum = float(obj.get("calc_sum") or requested_sum)
+    text_lines = [
+        "📢 <b>Запрос на выплату</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Код выплаты: <b>{code_disp}</b>",
+        f"Файл: <code>{file_disp}</code>",
+        f"👤 {fullname} (ID {obj['user_id']}, {bsu_code})",
+        f"📱 {phone}",
+        f"🆔 {username_display}",
+        "",
+        *project_block,
+        "",
+        f"❌ Неоплаченных чеков: {len(obj['files'])} шт.",
+        f"💰 Запитана сума: <b>{fmt_money(requested_sum)} грн</b>",
+    ]
+    if abs(requested_sum - calc_sum) > 0.01:
+        text_lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+    if outstanding_before is not None:
+        text_lines.append(f"🏦 Борг до запиту: {fmt_money(float(outstanding_before))} грн")
+    if show_remainder and outstanding_after is not None:
+        text_lines.append(f"📉 Залишок після: {fmt_money(float(outstanding_after))} грн")
+    text_lines.append("")
+    text_lines.append("Просмотрите прикреплённые чеки перед одобрением выплаты.")
+    text = "\n".join(text_lines)
     akb = InlineKeyboardMarkup()
     akb.add(InlineKeyboardButton("👀 Посмотреть чеки", callback_data=f"adm_req_view_checks:{req_id}"))
     akb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{req_id}"))
-    akb.add(InlineKeyboardButton("❌ Закрыть", callback_data=f"adm_req_close:{req_id}"))
+    akb.add(InlineKeyboardButton("❌ Відхилити", callback_data=f"adm_req_close:{req_id}"))
     akb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_requests"))
     await clear_then_anchor(uid, text, akb)
     await c.answer()
@@ -8198,140 +14423,241 @@ async def adm_req_view_checks(c: types.CallbackQuery):
     req_id = c.data.split(":",1)[1]
     obj = finance_load_request(req_id)
     if not obj: return await c.answer("Запрос не найден", show_alert=True)
-    # вытащим чеки пользователя по проекту с указанными файлами
-    recs = user_project_receipts(obj["user_id"], obj["project"])
-    by_file = {r["file"]: r for r in recs}
     code = obj.get("code", req_id)
-    proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
-    project_code_txt = h(proj_info.get("code") or "—")
+    grouped_files: Dict[str, List[str]] = {}
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    mode_value = obj.get("mode")
+    for item in obj.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        fname = item.get("file")
+        proj_name = item.get("project") or obj.get("project")
+        if fname:
+            grouped_files.setdefault(proj_name, []).append(fname)
+    if not grouped_files and obj.get("files"):
+        grouped_files.setdefault(obj.get("project"), list(obj.get("files", [])))
     lines = [
-        f"🧾 <b>Чеки выплаты {h(code)}</b>",
+        f"🧾 <b>Чеки виплати {h(code)}</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"Проект: {h(obj.get('project','—'))} (код {project_code_txt})",
-        f"Всего чеков: <b>{len(obj['files'])}</b>",
+        f"У запиті файлів: <b>{len(obj.get('files', []))}</b>",
         ""
     ]
-    for f in obj["files"]:
-        r = by_file.get(f)
-        if r:
-            amount = float(r.get('sum') or 0.0)
-            desc_text = h(r.get('desc')) if r.get('desc') else "—"
-            lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн — {desc_text} — {h(r.get('date','—'))} {h(r.get('time',''))}")
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    show_summary_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
+    summary_parts: List[str] = []
+    before_total = summary_snapshot.get("outstanding_before")
+    selected_total = summary_snapshot.get("selected_total")
+    after_total = summary_snapshot.get("outstanding_after")
+    if before_total is not None:
+        summary_parts.append(f"📊 Борг до запиту: {fmt_money(float(before_total))} грн")
+    if selected_total is not None:
+        summary_parts.append(f"💰 У запиті: {fmt_money(float(selected_total))} грн")
+    if show_summary_remainder and after_total is not None:
+        summary_parts.append(f"📉 Залишок після: {fmt_money(float(after_total))} грн")
+    if summary_parts:
+        lines.extend(summary_parts)
+        lines.append("")
+    for proj_name, file_list in grouped_files.items():
+        if not proj_name:
+            display_name = "—"
+            proj_info = {}
         else:
-            lines.append(f"• {h(f)}")
+            display_name = proj_name
+            proj_info = load_project_info(proj_name)
+        project_code_txt = h((proj_info or {}).get("code") or "—")
+        lines.append(f"{h(display_name)} (код {project_code_txt}) — {len(file_list)} файлів")
+        proj_snapshot = scope_snapshot.get(proj_name) or {}
+        proj_parts: List[str] = []
+        before_val = proj_snapshot.get("outstanding_before")
+        if before_val not in (None, ""):
+            proj_parts.append(f"до: {fmt_money(parse_amount(before_val))} грн")
+        selected_val = proj_snapshot.get("selected_total")
+        if selected_val not in (None, ""):
+            proj_parts.append(f"у запиті: {fmt_money(parse_amount(selected_val))} грн")
+        after_val = proj_snapshot.get("outstanding_after")
+        if finance_should_show_remainder(mode_value, proj_snapshot) and after_val not in (None, ""):
+            proj_parts.append(f"після: {fmt_money(parse_amount(after_val))} грн")
+        if proj_parts:
+            lines.append("   " + " | ".join(proj_parts))
+        recs = user_project_receipts(obj.get("user_id"), proj_name) if proj_name else []
+        by_file = {r.get("file"): r for r in recs}
+        for fname in file_list:
+            r = by_file.get(fname)
+            if r:
+                amount = receipt_amount(r)
+                desc_text = h(r.get('desc')) if r.get('desc') else "—"
+                moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
+                lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн — {desc_text} — {moment}")
+            else:
+                lines.append(f"• {h(fname)}")
+        lines.append("")
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("✅ Выплатить", callback_data=f"adm_req_paid:{req_id}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_req_open:{req_id}"))
     await clear_then_anchor(uid, "\n".join(lines), kb)
-    await admin_send_receipt_photos(uid, c.message.chat.id, obj["user_id"], obj["project"], obj.get("files", []))
+    for proj_name, file_list in grouped_files.items():
+        if proj_name:
+            await admin_send_receipt_photos(uid, c.message.chat.id, obj["user_id"], proj_name, file_list)
     await c.answer()
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("adm_req_close:"))
-async def adm_req_close(c: types.CallbackQuery):
+async def adm_req_close(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
     req_id = c.data.split(":",1)[1]
     obj = finance_load_request(req_id)
     if not obj or obj.get("status") != "pending":
         return await c.answer("Запрос не найден/обработан", show_alert=True)
-    now_iso = datetime.now().isoformat()
-    obj["status"] = "closed"
-    obj["closed_at"] = now_iso
-    finance_update_items_status(obj, "closed", now_iso)
-    finance_append_history(obj, "closed", {"by": uid})
-    finance_save_request(obj)
-    update_receipts_for_request(obj.get("user_id"), obj.get("project"), obj.get("files", []), "closed", obj)
-    fin_state_clear(obj.get("project", ""), obj.get("user_id"))
-    code = obj.get("code", req_id)
-    if c.message:
-        await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
-    user_id = obj.get("user_id")
-    prof = load_user(user_id) or {}
-    chat_id = users_runtime.get(user_id, {}).get("tg", {}).get("chat_id") or prof.get("tg", {}).get("chat_id")
-    if chat_id:
-        note = (
-            "ℹ️ <b>Запрос на выплату закрыт</b>\n\n"
-            f"Код: <b>{h(code)}</b>\n"
-            f"Проект: {h(obj.get('project','—'))} (код {project_code_txt})\n"
-            "Если нужна помощь — напишите администратору."
-        )
-        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+    await AdminRejectRequestFSM.waiting_reason.set()
+    await state.update_data(reject_req_id=req_id, reject_prompt=None)
+    prompt = (
+        "Вкажіть причину відмови у виплаті.\n"
+        "Це повідомлення буде надіслано користувачу."
+    )
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data=f"adm_req_reject_cancel:{req_id}"))
+    msg = await bot.send_message(c.message.chat.id, prompt, reply_markup=kb)
+    await state.update_data(reject_prompt=(msg.chat.id, msg.message_id))
+    await c.answer()
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_req_reject_cancel:"), state=AdminRejectRequestFSM.waiting_reason)
+async def adm_req_reject_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    prompt = data.get('reject_prompt')
+    if prompt:
         try:
-            await bot.send_message(chat_id, note, reply_markup=kb)
+            await bot.delete_message(prompt[0], prompt[1])
         except Exception:
             pass
-    await clear_then_anchor(uid, f"🗂 Запрос {code} закрыт без выплат.", kb_admin_root())
-    await c.answer("Закрыто")
+    await state.finish()
+    req_id = c.data.split(":", 1)[1]
+    c.data = f"adm_req_open:{req_id}"
+    await adm_req_open(c)
+
+
+@dp.message_handler(state=AdminRejectRequestFSM.waiting_reason, content_types=ContentType.TEXT)
+async def adm_req_reject_reason(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    reason = (m.text or "").strip()
+    if not reason:
+        await m.reply("Вкажіть текст причини.")
+        return
+    data = await state.get_data()
+    req_id = data.get('reject_req_id')
+    if not req_id:
+        await state.finish()
+        return
+    obj = finance_load_request(req_id)
+    if not obj or obj.get('status') != 'pending':
+        await state.finish()
+        await m.reply("Запит не знайдено або вже оброблений.")
+        return
+    now_iso = datetime.now().isoformat()
+    obj['status'] = 'rejected'
+    obj['rejected_at'] = now_iso
+    obj['rejected_by'] = uid
+    obj['rejected_reason'] = reason
+    finance_update_items_status(obj, 'rejected', now_iso)
+    finance_append_history(obj, 'rejected', {'by': uid, 'reason': reason})
+    finance_save_request(obj)
+    update_receipts_for_request(obj.get('user_id'), obj.get('project'), obj.get('files', []), 'rejected', obj)
+    finance_scope_clear_state(obj)
+    scope_text = finance_scope_brief_text(finance_request_scope(obj))
+    code = obj.get('code', req_id)
+    user_profile = load_user(obj.get('user_id')) or {}
+    chat_id = registration_chat_id(obj.get('user_id'), user_profile)
+    note_lines = [
+        "⚠️ <b>Запит на виплату відхилено</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Код: <b>{h(code)}</b>",
+        f"Об'єкти: {scope_text}",
+        f"Сума: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>",
+    ]
+    company_title = h(FINANCE_COMPANY_TITLE) if FINANCE_COMPANY_TITLE else ""
+    if company_title:
+        note_lines.append(f"Компанія {company_title} наразі не може здійснити цю виплату.")
+    note_lines.append(f"Причина: {h(reason) if reason else '—'}")
+    note_lines.extend([
+        "",
+        "Зв'яжіться з адміністратором для уточнення.",
+    ])
+    note = "\n".join(note_lines)
+    kb_user = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+    if chat_id:
+        try:
+            await bot.send_message(chat_id, note, reply_markup=kb_user)
+        except Exception:
+            pass
+    prompt = data.get('reject_prompt')
+    if prompt:
+        try:
+            await bot.delete_message(prompt[0], prompt[1])
+        except Exception:
+            pass
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    await state.finish()
+    await clear_then_anchor(
+        uid,
+        "\n".join(
+            [
+                "❌ <b>Запит відхилено</b>",
+                "━━━━━━━━━━━━━━━━━━",
+                f"Код: <b>{h(code)}</b>",
+                "Користувач отримав повідомлення з причиною відмови.",
+            ]
+        ),
+        kb_admin_root(),
+    )
+
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("adm_req_paid:"))
 async def adm_req_paid(c: types.CallbackQuery):
     uid = c.from_user.id
-    if uid not in admins: return await c.answer("⛔", show_alert=True)
-    req_id = c.data.split(":",1)[1]
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    req_id = c.data.split(":", 1)[1]
     obj = finance_load_request(req_id)
     if not obj or obj.get("status") != "pending":
         return await c.answer("Запрос не найден/обработан", show_alert=True)
 
-    now_iso = datetime.now().isoformat()
-    obj["status"] = "approved"
-    obj["approved_by"] = uid
-    obj["approved_at"] = now_iso
-    finance_update_items_status(obj, "approved", now_iso)
-    finance_append_history(obj, "approved", {"by": uid})
-    finance_save_request(obj)
-    update_receipts_for_request(obj.get("user_id"), obj.get("project"), obj.get("files", []), "approved", obj)
-    fin_state_set(obj.get("project", ""), obj.get("user_id"), req_id, "approved")
-
-    user_id = obj["user_id"]
+    user_id = obj.get("user_id")
     prof = load_user(user_id) or {}
-    code = obj.get("code", obj["id"])
+    code = obj.get("code", obj.get("id"))
     proj_info = load_project_info(obj.get("project")) if obj.get("project") else {}
     if c.message:
         await delete_if_not_anchor(uid, c.message.chat.id, c.message.message_id)
 
-    chat_id = users_runtime.get(user_id, {}).get("tg", {}).get("chat_id") or prof.get("tg", {}).get("chat_id")
-    recs = user_project_receipts(user_id, obj["project"])
-    by_file = {r["file"]: r for r in recs}
-    lines = []
-    for f in obj["files"]:
-        r = by_file.get(f)
-        if r:
-            amount = float(r.get("sum") or 0.0)
-            lines.append(f"• {h(r.get('receipt_no','—'))} — {fmt_money(amount)} грн")
-        else:
-            lines.append(f"• {h(f)}")
-    details = "\n".join(lines) if lines else "—"
-    code_disp = h(code)
-    project_disp = h(obj.get('project', '—'))
-    project_code_txt = h(proj_info.get("code") or "—")
-    user_text = (
-        "💵 <b>Выплата согласована</b>\n\n"
-        f"Код: <b>{code_disp}</b>\n"
-        f"Проект: {project_disp} (код {project_code_txt})\n"
-        f"💰 К выдаче: <b>{fmt_money(float(obj.get('sum') or 0.0))} грн</b>\n"
-        "Вам должны передать указанную сумму. Как только получите деньги, подтвердите это внизу.\n\n"
-        "Чеки в выплате:\n"
-        f"{details}"
-    )
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("✅ Деньги получены", callback_data=f"user_confirm_payout:{obj['id']}"))
-    kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
-    if chat_id:
-        try:
-            await bot.send_message(chat_id, user_text, reply_markup=kb)
-        except Exception:
-            pass
+    obj = await finance_admin_apply_approval(obj, uid)
+    await finance_admin_notify_approval(obj)
 
-    await clear_then_anchor(uid, f"💸 Выплата {code_disp} по объекту {project_disp} (код {project_code_txt}) одобрена. Ожидаем подтверждения пользователя.", kb_admin_root())
+    code_disp = h(code)
+    project_disp = h(obj.get("project", "—"))
+    project_code_txt = h(proj_info.get("code") or "—")
+    await clear_then_anchor(
+        uid,
+        f"💸 Выплата {code_disp} по объекту {project_disp} (код {project_code_txt}) одобрена. Очікуємо підтвердження користувача.",
+        kb_admin_root(),
+    )
     await c.answer("Выплата одобрена")
+
 
 
 # ========================== SOS ==========================
 @dp.callback_query_handler(lambda c: c.data == "menu_sos")
 async def sos_start(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id, state=state):
+        return await c.answer()
     await state.finish()
     await flow_clear(uid)
     text = ("⚠️ Вы нажали кнопку <b>SOS</b>.\n\n"
@@ -8433,12 +14759,6 @@ async def sos_location(m: types.Message, state: FSMContext):
                 f"❗ Пользователь запросил помощь. Координаты ниже.")
     close_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть сообщение", callback_data="sos_close"))
 
-    def get_chat_id_for_user(u_id: int) -> Optional[int]:
-        ch = users_runtime.get(u_id, {}).get("tg", {}).get("chat_id")
-        if ch: return ch
-        up = load_user(u_id)
-        return (up.get("tg", {}).get("chat_id")) if up else None
-
     for f in os.listdir(USERS_PATH):
         if not f.endswith(".json"): continue
         try:
@@ -8448,7 +14768,7 @@ async def sos_location(m: types.Message, state: FSMContext):
         rec_uid = int(udata.get("user_id", 0))
         if rec_uid == uid:  # отправителю не шлём
             continue
-        chat_id = get_chat_id_for_user(rec_uid)
+        chat_id = registration_chat_id(rec_uid, udata)
         if not chat_id:
             continue
         try:
@@ -8498,6 +14818,9 @@ def paginate(lst: List[str], page: int, per_page: int=10) -> Tuple[List[str], in
 @dp.callback_query_handler(lambda c: c.data == "menu_admin")
 async def menu_admin(c: types.CallbackQuery):
     uid = c.from_user.id
+    chat_id = c.message.chat.id if c.message else None
+    if not await registration_guard(uid, chat_id=chat_id):
+        return await c.answer()
     if uid not in admins:
         return await c.answer("⛔ Доступ только для администраторов", show_alert=True)
     await clear_then_anchor(
@@ -8509,16 +14832,34 @@ async def menu_admin(c: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda c: c.data == "adm_users")
-async def adm_users(c: types.CallbackQuery):
+async def adm_users(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
-    files = sorted([f for f in os.listdir(USERS_PATH) if f.endswith(".json")])
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    ids = list_completed_user_ids()
+    if not ids:
+        kb_empty = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+        await clear_then_anchor(
+            uid,
+            "👥 <b>Пользователи</b>\n━━━━━━━━━━━━━━━━━━\nНемає співробітників із завершеною реєстрацією.",
+            kb_empty,
+        )
+        return await c.answer()
     page = 1
-    slice_, total = paginate(files, page)
+    slice_, total = paginate(ids, page)
     kb = InlineKeyboardMarkup()
-    for f in slice_:
-        prof = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
-        kb.add(InlineKeyboardButton(f"{prof.get('fullname','—')} ({prof.get('bsu','—')})", callback_data=f"adm_user_{prof['user_id']}"))
+    for target_uid in slice_:
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(
+            InlineKeyboardButton(
+                f"{fullname} ({code})",
+                callback_data=f"adm_user_{target_uid}"
+            )
+        )
     if total > 1:
         kb.row(
             InlineKeyboardButton("⏮", callback_data=f"adm_users_page_1"),
@@ -8535,17 +14876,37 @@ async def adm_users(c: types.CallbackQuery):
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("adm_users_page_"))
-async def adm_users_page(c: types.CallbackQuery):
+async def adm_users_page(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
-    files = sorted([f for f in os.listdir(USERS_PATH) if f.endswith(".json")])
-    try: page = int(c.data.split("_")[-1])
-    except: page = 1
-    slice_, total = paginate(files, page)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    ids = list_completed_user_ids()
+    if not ids:
+        kb_empty = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+        await clear_then_anchor(
+            uid,
+            "👥 <b>Пользователи</b>\n━━━━━━━━━━━━━━━━━━\nНемає співробітників із завершеною реєстрацією.",
+            kb_empty,
+        )
+        return await c.answer()
+    try:
+        page = int(c.data.split("_")[-1])
+    except Exception:
+        page = 1
+    slice_, total = paginate(ids, page)
     kb = InlineKeyboardMarkup()
-    for f in slice_:
-        prof = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
-        kb.add(InlineKeyboardButton(f"{prof.get('fullname','—')} ({prof.get('bsu','—')})", callback_data=f"adm_user_{prof['user_id']}"))
+    for target_uid in slice_:
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(
+            InlineKeyboardButton(
+                f"{fullname} ({code})",
+                callback_data=f"adm_user_{target_uid}"
+            )
+        )
     if total > 1:
         prev_page = max(1, page-1); next_page = min(total, page+1)
         kb.row(
@@ -8564,56 +14925,1439 @@ async def adm_users_page(c: types.CallbackQuery):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_"))
+@dp.callback_query_handler(lambda c: c.data == "adm_points")
+async def adm_points(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    await flow_clear(uid)
+    ids = list_completed_user_ids()
+    if not ids:
+        kb_empty = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+        await clear_then_anchor(
+            uid,
+            "🏅 <b>Нарахування балів</b>\n━━━━━━━━━━━━━━━━━━\nНемає користувачів із завершеною реєстрацією.",
+            kb_empty,
+        )
+        return await c.answer()
+    page = 1
+    slice_, total = paginate(ids, page)
+    kb = InlineKeyboardMarkup()
+    for target_uid in slice_:
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(InlineKeyboardButton(f"{fullname} ({code})", callback_data=f"adm_points_user_{target_uid}"))
+    if total > 1:
+        kb.row(
+            InlineKeyboardButton("⏮", callback_data="adm_points_page_1"),
+            InlineKeyboardButton(f"{page}/{total}", callback_data="noop"),
+            InlineKeyboardButton("⏭", callback_data=f"adm_points_page_{total}"),
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+    await clear_then_anchor(uid, tr(uid, "POINTS_ADMIN_HEADER"), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_points_page_"))
+async def adm_points_page(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await state.reset_state(with_data=False)
+    await flow_clear(uid)
+    ids = list_completed_user_ids()
+    if not ids:
+        kb_empty = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+        await clear_then_anchor(uid, tr(uid, "POINTS_ADMIN_HEADER"), kb_empty)
+        return await c.answer()
+    try:
+        page = int(c.data.split("_")[-1])
+    except Exception:
+        page = 1
+    slice_, total = paginate(ids, page)
+    kb = InlineKeyboardMarkup()
+    for target_uid in slice_:
+        profile = load_user(target_uid) or {"user_id": target_uid}
+        fullname = str(profile.get("fullname") or "—")
+        code = str(profile.get("bsu") or "—")
+        kb.add(InlineKeyboardButton(f"{fullname} ({code})", callback_data=f"adm_points_user_{target_uid}"))
+    if total > 1:
+        prev_page = max(1, page - 1)
+        next_page = min(total, page + 1)
+        kb.row(
+            InlineKeyboardButton("⏮", callback_data="adm_points_page_1"),
+            InlineKeyboardButton(f"◀ {prev_page}", callback_data=f"adm_points_page_{prev_page}"),
+            InlineKeyboardButton(f"{page}/{total}", callback_data="noop"),
+            InlineKeyboardButton(f"{next_page} ▶", callback_data=f"adm_points_page_{next_page}"),
+            InlineKeyboardButton("⏭", callback_data=f"adm_points_page_{total}"),
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
+    await clear_then_anchor(uid, tr(uid, "POINTS_ADMIN_HEADER"), kb)
+    await c.answer()
+
+
+def _adm_points_cancel_keyboard() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("❌ Скасувати", callback_data="adm_points_cancel"))
+    return kb
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_points_user_"))
+async def adm_points_user_select(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        target = int(c.data.split("adm_points_user_", 1)[1])
+    except Exception:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    name = profile.get("fullname") or f"ID {target}"
+    code = profile.get("bsu") or f"ID {target}"
+    display = f"{name} ({code})"
+    await state.update_data(points_target=target, points_target_name=display)
+    await AdminPointsFSM.waiting_amount.set()
+    await flow_clear(uid)
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        tr(uid, "POINTS_ADMIN_PROMPT_AMOUNT", user=h(display)),
+        reply_markup=_adm_points_cancel_keyboard(),
+    )
+    flow_store_prompt(uid, prompt)
+    await c.answer()
+
+@dp.message_handler(state=AdminPointsFSM.waiting_amount, content_types=ContentType.TEXT)
+async def adm_points_amount_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    text_value = (m.text or "").strip().replace(",", ".")
+    try:
+        amount_value = round_points(_points_decimal(text_value))
+    except Exception:
+        amount_value = None
+    if amount_value is None or not math.isfinite(amount_value):
+        warn = await bot.send_message(m.chat.id, tr(uid, "POINTS_ADMIN_INVALID_AMOUNT"))
+        flow_track_warning(uid, warn)
+        return
+    await state.update_data(points_amount=amount_value)
+    await AdminPointsFSM.waiting_reason.set()
+    await flow_prepare_prompt(uid)
+    prompt = await bot.send_message(
+        m.chat.id,
+        tr(uid, "POINTS_ADMIN_PROMPT_REASON"),
+        reply_markup=_adm_points_cancel_keyboard(),
+    )
+    flow_store_prompt(uid, prompt)
+
+
+@dp.message_handler(state=AdminPointsFSM.waiting_reason, content_types=ContentType.TEXT)
+async def adm_points_reason_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    data = await state.get_data()
+    target = data.get("points_target")
+    if not target:
+        await state.finish()
+        return
+    reason = (m.text or "").strip()
+    await state.update_data(points_reason=reason)
+    amount_value = float(data.get("points_amount") or 0.0)
+    target_name = data.get("points_target_name") or f"ID {target}"
+    current_total = points_total(target)
+    new_total = fmt_points(current_total + amount_value)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("✅ Підтвердити", callback_data="adm_points_confirm"))
+    kb.add(InlineKeyboardButton("✏️ Змінити опис", callback_data="adm_points_edit_reason"))
+    kb.add(InlineKeyboardButton("❌ Скасувати", callback_data="adm_points_cancel"))
+    summary = tr(
+        uid,
+        "POINTS_ADMIN_CONFIRM",
+        amount=fmt_points(amount_value),
+        user=h(target_name),
+        total=new_total,
+    )
+    await flow_prepare_prompt(uid)
+    prompt = await bot.send_message(m.chat.id, summary, reply_markup=kb)
+    flow_store_prompt(uid, prompt)
+    await AdminPointsFSM.confirm.set()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_points_edit_reason", state=AdminPointsFSM.confirm)
+async def adm_points_edit_reason(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await AdminPointsFSM.waiting_reason.set()
+    await flow_prepare_prompt(uid)
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        tr(uid, "POINTS_ADMIN_EDIT_REASON"),
+        reply_markup=_adm_points_cancel_keyboard(),
+    )
+    flow_store_prompt(uid, prompt)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_points_confirm", state=AdminPointsFSM.confirm)
+async def adm_points_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("points_target")
+    amount_value = float(data.get("points_amount") or 0.0)
+    reason = data.get("points_reason") or ""
+    target_name = data.get("points_target_name") or f"ID {target}"
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    entry = points_add(target, amount_value, reason, source="admin_manual", meta={"by": uid})
+    await state.finish()
+    await flow_clear(uid)
+    await anchor_show_root(target)
+    admin_text = tr(
+        uid,
+        "POINTS_ADMIN_DONE",
+        user=h(target_name),
+        amount=fmt_points(amount_value),
+        total=fmt_points(entry.get("balance", 0.0)),
+    )
+    await clear_then_anchor(uid, admin_text, kb_admin_root())
+    profile = load_user(target) or {}
+    chat_id = registration_chat_id(target, profile)
+    if chat_id:
+        user_note = tr(
+            target,
+            "POINTS_USER_NOTIFICATION",
+            amount=fmt_points(amount_value),
+            total=fmt_points(entry.get("balance", 0.0)),
+            reason=h(reason or "—"),
+        )
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+        try:
+            await bot.send_message(chat_id, user_note, reply_markup=kb)
+        except Exception:
+            pass
+    await c.answer("Готово")
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_points_cancel", state="*")
+async def adm_points_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    current_state = await state.get_state()
+    if current_state and current_state.startswith(AdminPointsFSM.__name__):
+        await state.finish()
+        await flow_clear(uid)
+        await clear_then_anchor(uid, tr(uid, "POINTS_ADMIN_CANCELLED"), kb_admin_root())
+        return await c.answer("Скасовано")
+    return await c.answer()
+@dp.callback_query_handler(
+    lambda c: c.data.startswith("adm_user_")
+    and c.data.split("adm_user_", 1)[1].isdigit()
+)
 async def adm_user_card(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
     target = int(c.data.split("adm_user_",1)[1])
-    await state.update_data(target_uid=target)
-    prof = load_user(target) or {"user_id": target}
-    projects = sorted(list((prof.get("receipts") or {}).keys()))
-    cnt_all = sum(len(prof.get("receipts", {}).get(p, [])) for p in projects)
-    sum_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, [])) for p in projects)
-    unpaid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is False) for p in projects)
-    paid_all = sum(sum(float(r.get("sum", 0.0)) for r in prof.get("receipts", {}).get(p, []) if r.get("paid") is True) for p in projects)
-
-    fullname_disp = h(prof.get('fullname', '—'))
-    bsu_disp = h(prof.get('bsu', '—'))
-    username_raw = (prof.get('tg', {}) or {}).get('username')
-    username_disp = h(f"@{username_raw}" if username_raw else "—")
-    phone_disp = h(prof.get('phone', '—'))
-    text = (
-        f"👤 <b>{fullname_disp}</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        f"🆔 UserID: <code>{target}</code>\n"
-        f"🧾 BSU: <b>{bsu_disp}</b>\n"
-        f"🆘 Telegram: {username_disp}\n"
-        f"📱 Телефон: {phone_disp}\n"
-        f"🗂 Проектов: <b>{len(projects)}</b>\n"
-        f"🧾 Чеков всего: <b>{cnt_all}</b>\n"
-        f"💰 Сумма чеков: <b>{fmt_money(sum_all)} грн</b>\n"
-        f"✅ Оплачено: <b>{fmt_money(paid_all)} грн</b>\n"
-        f"❌ К выплате: <b>{fmt_money(unpaid_all)} грн</b>"
-    )
-    kb = InlineKeyboardMarkup()
-    if projects:
-        kb.add(InlineKeyboardButton("📊 Статистика по проекту", callback_data="adm_stat_choose"))
-        kb.add(InlineKeyboardButton("📁 Чеки по проекту", callback_data="adm_recs_choose"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_users"))
-    await clear_then_anchor(uid, text, kb)
+    await state.reset_state(with_data=False)
+    await state.update_data(target_uid=target, admin_user_show_photo=False, admin_user_edit_mode=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=False)
     await c.answer()
 
 
+async def admin_show_user(
+    uid: int,
+    target_uid: int,
+    state: FSMContext,
+    show_photo: Optional[bool] = None,
+    edit_mode: Optional[bool] = None,
+):
+    data = await state.get_data()
+    if show_photo is None:
+        show_photo = bool(data.get("admin_user_show_photo"))
+    if edit_mode is None:
+        edit_mode = bool(data.get("admin_user_edit_mode"))
+    await state.update_data(admin_user_show_photo=show_photo, admin_user_edit_mode=edit_mode)
+    profile = load_user(target_uid) or {"user_id": target_uid}
+    has_photos = admin_user_has_photos(target_uid)
+    text = admin_user_card_text(uid, profile, edit_mode=edit_mode)
+    kb = kb_admin_user(uid, profile, show_photo=show_photo, edit_mode=edit_mode, has_photos=has_photos)
+    if show_photo and profile_has_photo(profile):
+        await anchor_replace_with_photo(uid, user_profile_photo_path(target_uid), text, kb)
+    else:
+        chat = users_runtime.get(uid, {}).get("tg", {}).get("chat_id")
+        if chat:
+            await anchor_upsert(uid, chat, text, kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_photo_toggle")
+async def adm_user_photo_toggle(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    current = bool(data.get("admin_user_show_photo"))
+    await admin_show_user(uid, target, state, show_photo=not current)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_edit")
+async def adm_user_edit(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.update_data(admin_user_edit_mode=True)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_edit_done", state="*")
+async def adm_user_edit_done(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    runtime = admin_edit_runtime(uid)
+    runtime.pop("reply_keyboard", False)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await state.update_data(admin_user_edit_mode=False)
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=False)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_photos")
+async def adm_user_photos(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    projects = admin_user_photo_projects(target)
+    if not projects:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+        await clear_then_anchor(uid, "🖼 Фотоархів цього користувача порожній.", kb)
+        return await c.answer()
+    mapping = {project_token(item["name"]): item["name"] for item in projects}
+    await state.update_data(admin_user_photo_tokens=mapping)
+    lines = [
+        "🖼 <b>Фотоархів користувача</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Оберіть проєкт, щоб переглянути завантажені зображення.",
+        "",
+    ]
+    kb = InlineKeyboardMarkup()
+    for payload in projects:
+        info = payload.get("info") or {}
+        display = info.get("name") or payload["name"]
+        code = info.get("code") or payload["name"]
+        count = len(payload.get("entries") or [])
+        lines.append(f"• {h(display)} (код {h(code)}) — {count} файлів")
+        kb.add(
+            InlineKeyboardButton(
+                f"{display} ({count})",
+                callback_data=f"adm_user_photos_project:{project_token(payload['name'])}"
+            )
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_photos_project:"))
+async def adm_user_photos_project(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_user_photo_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    mapping[project_token(project)] = project
+    await state.update_data(admin_user_photo_tokens=mapping)
+    entries = [entry for entry in load_project_photos(project) if entry.get("uploader_id") == target]
+    if not entries:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_photos"))
+        await clear_then_anchor(uid, "🖼 У цього користувача немає фото за вибраним проєктом.", kb)
+        return await c.answer()
+    entries_sorted = sorted(entries, key=lambda e: e.get("uploaded_at") or "", reverse=True)
+    info = load_project_info(project)
+    display = info.get("name") or project
+    code = info.get("code") or project
+    lines = [
+        "🖼 <b>Фото користувача</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📂 Проєкт: <b>{h(display)}</b> (код {h(code)})",
+        f"Файлів у архіві: <b>{len(entries_sorted)}</b>",
+        "",
+    ]
+    for entry in entries_sorted[:15]:
+        original = entry.get("original") or entry.get("file") or "—"
+        uploaded = entry.get("uploaded_at") or "—"
+        lines.append(f"• {h(original)} — {h(uploaded.replace('T', ' '))}")
+    kb = InlineKeyboardMarkup()
+    for entry in entries_sorted[:10]:
+        original = entry.get("original") or entry.get("file") or entry.get("id")
+        label = original if len(original) <= 32 else f"{original[:29]}…"
+        kb.add(
+            InlineKeyboardButton(
+                f"📥 {label}",
+                callback_data=f"adm_user_photo_send:{project_token(project)}:{entry.get('id')}"
+            )
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_photos"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_photo_send:"))
+async def adm_user_photo_send(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    parts = c.data.split(":", 2)
+    if len(parts) != 3:
+        return await c.answer()
+    token, photo_id = parts[1], parts[2]
+    data = await state.get_data()
+    mapping = dict(data.get("admin_user_photo_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    entries = load_project_photos(project)
+    target = data.get("target_uid")
+    entry = None
+    for candidate in entries:
+        if candidate.get("id") == photo_id and candidate.get("uploader_id") == target:
+            entry = candidate
+            break
+    if not entry:
+        return await c.answer("Фото не знайдено", show_alert=True)
+    stored = entry.get("file")
+    if not stored:
+        return await c.answer("Файл відсутній", show_alert=True)
+    path = os.path.join(proj_photos_dir(project), stored)
+    if not os.path.exists(path):
+        return await c.answer("Файл недоступний", show_alert=True)
+    original = entry.get("original") or stored
+    caption = f"📁 {h(original)}"
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+    ext = os.path.splitext(path)[1]
+    try:
+        if _should_send_as_photo(ext):
+            await bot.send_photo(c.message.chat.id, InputFile(path), caption=caption, reply_markup=kb)
+        else:
+            await bot.send_document(c.message.chat.id, InputFile(path), caption=caption, reply_markup=kb)
+    except Exception:
+        return await c.answer("Не вдалося відправити файл", show_alert=True)
+    await c.answer("Відправлено")
+
+
+@dp.callback_query_handler(
+    lambda c: c.data == "adm_edit_cancel",
+    state=[
+        AdminProfileEditFSM.waiting_last_name,
+        AdminProfileEditFSM.waiting_first_name,
+        AdminProfileEditFSM.waiting_middle_name,
+        AdminProfileEditFSM.waiting_birthdate,
+        AdminProfileEditFSM.waiting_region,
+        AdminProfileEditFSM.region_confirm,
+        AdminProfileEditFSM.waiting_phone,
+        AdminProfileEditFSM.waiting_photo,
+    ],
+)
+async def adm_edit_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    runtime = admin_edit_runtime(uid)
+    remove_keyboard = bool(runtime.pop("reply_keyboard", False))
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    if target:
+        await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    if remove_keyboard:
+        await admin_edit_notify(uid, tr(uid, "PROFILE_CANCELLED"), remove_keyboard=True)
+    else:
+        await c.answer(tr(uid, "PROFILE_CANCELLED"))
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_last")
+async def adm_edit_last_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_last_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_LAST_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_first")
+async def adm_edit_first_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_first_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_FIRST_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_middle")
+async def adm_edit_middle_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_middle_name.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_MIDDLE_NAME"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_birthdate")
+async def adm_edit_birthdate_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_birthdate.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_BIRTHDATE"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_region")
+async def adm_edit_region_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_region.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_REGION"), reply_markup=kb_admin_edit_region_prompt(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_open", state=AdminProfileEditFSM.waiting_region)
+async def adm_edit_region_open(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await admin_edit_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_admin_edit_region_picker(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_reg_pick:"), state=AdminProfileEditFSM.waiting_region)
+async def adm_edit_region_pick(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        idx = int(c.data.split(":", 1)[1])
+        region = UKRAINE_REGIONS[idx]
+    except Exception:
+        return await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+    await state.update_data(admin_region=region)
+    await admin_edit_send_prompt(
+        uid,
+        tr(uid, "REGISTER_REGION_SELECTED", region=h(region)),
+        reply_markup=kb_admin_edit_region_confirm(uid),
+    )
+    await AdminProfileEditFSM.region_confirm.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_confirm", state=AdminProfileEditFSM.region_confirm)
+async def adm_edit_region_confirm(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    region = data.get("admin_region")
+    if not target or not region:
+        return await c.answer(tr(uid, "REGISTER_REGION_REMIND"), show_alert=True)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["region"] = region
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_reg_back", state=AdminProfileEditFSM.region_confirm)
+async def adm_edit_region_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await AdminProfileEditFSM.waiting_region.set()
+    await admin_edit_send_prompt(uid, tr(uid, "REGISTER_REGION_PICK"), reply_markup=kb_admin_edit_region_picker(uid))
+    await c.answer()
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_region, content_types=ContentType.TEXT)
+async def adm_edit_region_text(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_REGION_REMIND"), reply_markup=kb_admin_edit_region_prompt(uid))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_phone")
+async def adm_edit_phone_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_phone.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHONE"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_photo")
+async def adm_edit_photo_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    if not (await state.get_data()).get("target_uid"):
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    await state.reset_state(with_data=False)
+    await AdminProfileEditFSM.waiting_photo.set()
+    await flow_clear_warnings(uid)
+    await admin_edit_send_prompt(uid, tr(uid, "PROFILE_PROMPT_PHOTO"), reply_markup=kb_admin_edit_cancel(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_edit_remove_photo")
+async def adm_edit_remove_photo(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    remove_profile_photo(target)
+    profile["photo"] = {}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await flow_clear_warnings(uid)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHOTO_REMOVED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+    await c.answer()
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_last_name, content_types=ContentType.TEXT)
+async def adm_edit_last_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not raw or not NAME_VALID_RE.match(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_LAST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["last_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile["last_name"], profile.get("first_name", ""), profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_first_name, content_types=ContentType.TEXT)
+async def adm_edit_first_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if not raw or not NAME_VALID_RE.match(raw):
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_FIRST_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["first_name"] = beautify_name(raw)
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile["first_name"], profile.get("middle_name"))
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_middle_name, content_types=ContentType.TEXT)
+async def adm_edit_middle_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    raw = normalize_person_name(m.text)
+    await flow_delete_message(uid, m)
+    if raw and raw.lower() in SKIP_KEYWORDS:
+        cleaned = ""
+    elif raw and NAME_VALID_RE.match(raw):
+        cleaned = beautify_name(raw)
+    else:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_MIDDLE_NAME_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["middle_name"] = cleaned
+    profile["fullname"] = compose_fullname(profile.get("last_name", ""), profile.get("first_name", ""), cleaned)
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_birthdate, content_types=ContentType.TEXT)
+async def adm_edit_birthdate_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    dt = parse_birthdate_text(m.text)
+    await flow_delete_message(uid, m)
+    if not dt:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_BIRTHDATE_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["birthdate"] = dt.strftime("%Y-%m-%d")
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_UPDATE_SUCCESS"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_phone, content_types=ContentType.TEXT)
+async def adm_edit_phone_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    phone = sanitize_phone_input(m.text)
+    await flow_delete_message(uid, m)
+    if not phone:
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["phone"] = phone
+    profile.setdefault("tg", {})
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    runtime = admin_edit_runtime(uid)
+    runtime.pop("reply_keyboard", None)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHONE_SAVED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_phone, content_types=ContentType.CONTACT)
+async def adm_edit_phone_contact(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHONE_TEXT_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_photo, content_types=ContentType.PHOTO)
+async def adm_edit_photo_receive(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, "Користувач не знайдений")
+        flow_track_warning(uid, warn)
+        return
+    photo = m.photo[-1] if m.photo else None
+    if not photo:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    try:
+        meta = await store_profile_photo(target, photo)
+    except Exception:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+        flow_track_warning(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    profile = load_user(target)
+    if not profile:
+        profile = ensure_user(target, {})
+    profile["photo"] = meta or {"status": "uploaded", "updated_at": datetime.now(timezone.utc).isoformat()}
+    profile["updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_user(profile)
+    await admin_edit_clear_prompt(uid)
+    await flow_clear_warnings(uid)
+    await state.reset_state(with_data=False)
+    await admin_edit_notify(uid, tr(uid, "PROFILE_PHOTO_UPDATED"))
+    await admin_show_user(uid, target, state, show_photo=False, edit_mode=True)
+
+
+@dp.message_handler(state=AdminProfileEditFSM.waiting_photo, content_types=ContentType.ANY)
+async def adm_edit_photo_invalid(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    if m.photo:
+        return
+    await flow_delete_message(uid, m)
+    warn = await bot.send_message(m.chat.id, tr(uid, "REGISTER_PHOTO_WARN"))
+    flow_track_warning(uid, warn)
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance")
+async def adm_user_finance_view(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    stats = admin_collect_user_stats(profile)
+    pending_requests = stats["pending_payouts"]
+    history_requests = stats["confirmed_payouts"]
+    fullname = h(profile.get("fullname", "—"))
+    bsu = h(profile.get("bsu", "—"))
+    debt_sum = stats.get("unpaid_sum", 0.0)
+    pending_sum = stats.get("pending_sum", 0.0)
+    unspecified_sum = stats.get("unspecified_sum", 0.0)
+    total_sum = stats.get("total_sum", 0.0)
+    total_count = stats.get("total_count", 0)
+    paid_sum = stats.get("paid_sum", 0.0)
+    lines = [
+        "💵 <b>Фінанси користувача</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"👤 {fullname} (BSU {bsu})",
+        f"🧾 Усього чеків: <b>{total_count}</b>",
+        f"💰 Сума чеків: <b>{fmt_money(total_sum)} грн</b>",
+        f"✅ Виплачено: <b>{fmt_money(paid_sum)} грн</b>",
+        f"💳 Борг до виплати: <b>{fmt_money(debt_sum)} грн</b>",
+    ]
+    if pending_sum > 0:
+        lines.append(f"⏳ Виплати в роботі: <b>{fmt_money(pending_sum)} грн</b>")
+    if unspecified_sum > 0:
+        lines.append(f"❔ Без статусу: <b>{fmt_money(unspecified_sum)} грн</b>")
+    lines.append(f"🏅 Баланс балів: <b>{fmt_points(points_total(target))}</b>")
+
+    focus_projects: List[str] = []
+    for payload in stats["projects"]:
+        proj_stats = payload.get("stats", {})
+        debt = proj_stats.get("unpaid", 0.0)
+        pending = proj_stats.get("pending", 0.0)
+        if debt <= 0 and pending <= 0:
+            continue
+        info = payload.get("info") or {}
+        display_name = info.get("name") or payload.get("name") or "—"
+        code = info.get("code") or payload.get("name") or "—"
+        pieces: List[str] = []
+        if debt > 0:
+            pieces.append(f"борг {fmt_money(debt)} грн")
+        if pending > 0:
+            pieces.append(f"в роботі {fmt_money(pending)} грн")
+        focus_projects.append(f"• {h(display_name)} (код {h(code)}): {', '.join(pieces)}")
+    if focus_projects:
+        lines.append("")
+        lines.append("📂 Об'єкти з боргами:")
+        lines.extend(focus_projects[:6])
+
+    if pending_requests:
+        lines.append("")
+        lines.append(f"📬 Запитів у роботі: <b>{len(pending_requests)}</b>")
+        for req in pending_requests[:6]:
+            code = req.get("code") or req.get("id")
+            amount = fmt_money(parse_amount(req.get("sum")))
+            project = h(req.get("project", "—"))
+            lines.append(f"• {h(code)} — {amount} грн — {project}")
+    if history_requests:
+        lines.append("")
+        lines.append(f"📗 Підтверджено/закрито: <b>{len(history_requests)}</b>")
+        for req in history_requests[-5:]:
+            code = req.get("code") or req.get("id")
+            amount = fmt_money(parse_amount(req.get("sum")))
+            project = h(req.get("project", "—"))
+            lines.append(f"• {h(code)} — {amount} грн — {project}")
+
+    project_token_map = {}
+    for payload in stats["projects"]:
+        raw_name = payload.get("name")
+        if not raw_name:
+            continue
+        project_token_map[project_token(raw_name)] = raw_name
+    await state.update_data(admin_finance_project_tokens=project_token_map)
+
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("📂 Об'єкти та статистика", callback_data="adm_user_finance_projects"))
+    kb.add(InlineKeyboardButton("🧾 Переглянути чеки", callback_data="adm_user_finance_receipts"))
+    kb.add(InlineKeyboardButton("💸 Запити на виплати", callback_data="adm_user_finance_requests"))
+    kb.add(InlineKeyboardButton("💵 Зробити виплату", callback_data="adm_user_finance_pay"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+async def admin_finance_show_pay_options(uid: int, target: int, project: str, state: FSMContext) -> bool:
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance_pay"))
+        await clear_then_anchor(uid, "ℹ️ Немає чеків, готових до виплати за цим проєктом.", kb)
+        return False
+    total = admin_finance_receipts_total(eligible)
+    info = load_project_info(project)
+    display_name = info.get("name") or project
+    code = info.get("code") or project
+    lines = [
+        "💵 <b>Формування виплати</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📂 Проєкт: <b>{h(display_name)}</b> (код {h(code)})",
+        f"🧾 Чеків до виплати: <b>{len(eligible)}</b>",
+        f"💰 Сума боргу: <b>{fmt_money(total)} грн</b>",
+        "",
+        "Виплатіть усю суму або введіть власне значення, якщо потрібно часткове закриття.",
+    ]
+    token = project_token(project)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton(f"💰 Виплатити {fmt_money(total)} грн", callback_data=f"adm_user_finance_pay_all:{token}"))
+    kb.add(InlineKeyboardButton("🔢 Вказати суму", callback_data=f"adm_user_finance_pay_custom:{token}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance_pay"))
+    await state.update_data(admin_finance_pay_project=project, admin_finance_pay_total=total)
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    return True
+
+
+async def finance_admin_apply_approval(obj: dict, admin_uid: int, *, note: Optional[str] = None) -> dict:
+    now_iso = datetime.now().isoformat()
+    obj["status"] = "approved"
+    obj["approved_by"] = admin_uid
+    obj["approved_at"] = now_iso
+    finance_update_items_status(obj, "approved", now_iso)
+    history_extra = {"by": admin_uid}
+    if note:
+        history_extra["note"] = note
+    finance_append_history(obj, "approved", history_extra)
+    finance_save_request(obj)
+    update_receipts_for_request(obj.get("user_id"), obj.get("project"), obj.get("files", []), "approved", obj)
+    finance_scope_set_state(obj, "approved")
+    return obj
+
+
+async def finance_admin_notify_approval(obj: dict) -> None:
+    user_id = obj.get("user_id")
+    if not user_id:
+        return
+    profile = load_user(user_id) or {}
+    chat_id = registration_chat_id(user_id, profile)
+    if not chat_id:
+        return
+    code = obj.get("code", obj.get("id"))
+    scope = finance_request_scope(obj)
+    scope_text = finance_scope_brief_text(scope)
+    code_disp = h(code)
+    amount_text = fmt_money(parse_amount_chain(obj.get("sum"), 0.0))
+    scope_snapshot = obj.get("scope_snapshot") or {}
+    summary_snapshot = scope_snapshot.get("__summary__", {})
+    mode_value = obj.get("mode")
+    show_remainder = finance_should_show_remainder(mode_value, summary_snapshot)
+    outstanding_before = summary_snapshot.get("outstanding_before")
+    outstanding_after = summary_snapshot.get("outstanding_after")
+    grouped_files: Dict[str, List[str]] = {}
+    for item in obj.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        fname = item.get("file")
+        proj_name = item.get("project") or obj.get("project")
+        if fname:
+            grouped_files.setdefault(proj_name, []).append(fname)
+    if not grouped_files and obj.get("files"):
+        grouped_files.setdefault(obj.get("project"), list(obj.get("files", [])))
+    lines: List[str] = []
+    for proj_name, files in grouped_files.items():
+        recs = user_project_receipts(user_id, proj_name)
+        by_file = {r.get("file"): r for r in recs}
+        proj_info = load_project_info(proj_name)
+        project_header = f"{h(proj_name)} (код {h((proj_info or {}).get('code') or '—')})"
+        lines.append(project_header)
+        for fname in files:
+            receipt = by_file.get(fname)
+            if receipt:
+                amount = receipt_amount(receipt)
+                lines.append(f"• {h(receipt.get('receipt_no','—'))} — {fmt_money(amount)} грн")
+            else:
+                lines.append(f"• {h(fname)}")
+    details = "\n".join(lines) if lines else "—"
+    user_lines = [
+        "💵 <b>Виплата погоджена</b>",
+        "",
+        f"Код: <b>{code_disp}</b>",
+        f"Об'єкти: {scope_text}",
+        f"💰 До видачі: <b>{amount_text} грн</b>",
+    ]
+    if outstanding_before is not None:
+        user_lines.append(f"🏦 Борг до виплати: <b>{fmt_money(float(outstanding_before))} грн</b>")
+    if show_remainder and outstanding_after is not None:
+        user_lines.append(f"📉 Залишок після: <b>{fmt_money(float(outstanding_after))} грн</b>")
+    user_lines.extend([
+        "",
+        "Як тільки отримаєте кошти — підтвердьте це кнопкою нижче.",
+        "",
+        "Чеки у виплаті:",
+        details,
+    ])
+    user_text = "\n".join(user_lines)
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("✅ Кошти отримано", callback_data=f"user_confirm_payout:{obj['id']}"))
+    kb.add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+    try:
+        await bot.send_message(chat_id, user_text, reply_markup=kb)
+    except Exception:
+        pass
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance_requests")
+async def adm_user_finance_requests(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    all_requests = [req for req in finance_list() if req.get("user_id") == target]
+    lines = [
+        "💸 <b>Запити користувача на виплати</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Усього записів: <b>{len(all_requests)}</b>",
+    ]
+    if not all_requests:
+        lines.append("")
+        lines.append("Користувач ще не подавав запити на виплату.")
+    else:
+        status_labels = {
+            "pending": "⏳ В обробці",
+            "approved": "✅ Одобрено (очікує підтвердження)",
+            "confirmed": "💰 Підтверджено користувачем",
+            "closed": "🔒 Закрито",
+            "rejected": "❌ Відхилено",
+        }
+        for req in sorted(all_requests, key=lambda r: r.get("created_at") or "")[-20:]:
+            code = h(req.get("code") or req.get("id") or "—")
+            status = status_labels.get(req.get("status"), req.get("status", "—"))
+            amount = fmt_money(parse_amount(req.get("sum")))
+            scope_text = finance_scope_brief_text(finance_request_scope(req))
+            lines.append(f"• {code} — {amount} грн — {status} — {scope_text}")
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance_pay")
+async def adm_user_finance_pay(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    stats = admin_collect_user_stats(profile)
+    outstanding: List[dict] = []
+    for payload in stats.get("projects") or []:
+        name = payload.get("name")
+        if not name:
+            continue
+        eligible = admin_finance_eligible_receipts(target, name)
+        if not eligible:
+            continue
+        total = admin_finance_receipts_total(eligible)
+        info = payload.get("info") or {}
+        outstanding.append({
+            "name": name,
+            "info": info,
+            "total": total,
+            "count": len(eligible),
+        })
+    if not outstanding:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+        await clear_then_anchor(
+            uid,
+            "✅ У співробітника немає боргів: усі чеки вже оплачені або очікують підтвердження.",
+            kb,
+        )
+        return await c.answer()
+
+    token_map = {project_token(item["name"]): item["name"] for item in outstanding}
+    await state.update_data(admin_finance_pay_tokens=token_map, admin_finance_pay_project=None)
+
+    if len(outstanding) == 1:
+        await admin_finance_show_pay_options(uid, target, outstanding[0]["name"], state)
+        return await c.answer()
+
+    lines = [
+        "💵 <b>Виберіть проєкт для виплати</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Оберіть об'єкт нижче, щоб сформувати виплату на конкретні чеки.",
+        "",
+    ]
+    kb = InlineKeyboardMarkup()
+    for item in outstanding:
+        info = item.get("info") or {}
+        display = info.get("name") or item["name"]
+        code = info.get("code") or item["name"]
+        total_text = fmt_money(item["total"])
+        count_text = item["count"]
+        lines.append(f"• {h(display)} (код {h(code)}) — {total_text} грн, чеків {count_text}")
+        kb.add(
+            InlineKeyboardButton(
+                f"{display} — {total_text} грн",
+                callback_data=f"adm_user_finance_pay_project:{project_token(item['name'])}"
+            )
+        )
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_finance_pay_project:"))
+async def adm_user_finance_pay_project(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_finance_pay_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    mapping[project_token(project)] = project
+    await state.update_data(admin_finance_pay_tokens=mapping)
+    await admin_finance_show_pay_options(uid, target, project, state)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_finance_pay_all:"))
+async def adm_user_finance_pay_all(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_finance_pay_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        return await c.answer("Немає чеків для виплати", show_alert=True)
+    grouped = finance_group_receipts(eligible)
+    snapshot = finance_scope_snapshot(target, [project], grouped)
+    request_obj = finance_new_request(
+        target,
+        project,
+        eligible,
+        scope=[project],
+        scope_snapshot=snapshot,
+    )
+    request_obj = await finance_admin_apply_approval(request_obj, uid, note="admin_full")
+    await finance_admin_notify_approval(request_obj)
+    info = load_project_info(project)
+    display = info.get("name") or project
+    code = info.get("code") or project
+    total = admin_finance_receipts_total(eligible)
+    await clear_then_anchor(
+        uid,
+        f"💵 Виплата на {fmt_money(total)} грн по об'єкту {h(display)} (код {h(code)}) сформована. Очікуємо підтвердження користувача.",
+        kb_admin_root(),
+    )
+    await state.update_data(admin_finance_pay_project=None)
+    await c.answer("Виплату сформовано")
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_user_finance_pay_custom:"))
+async def adm_user_finance_pay_custom(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split(":", 1)[1]
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    mapping = dict(data.get("admin_finance_pay_tokens") or {})
+    project = mapping.get(token) or project_from_token(token)
+    if not project:
+        return await c.answer("Проєкт не знайдений", show_alert=True)
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        return await c.answer("Немає чеків для виплати", show_alert=True)
+    total = admin_finance_receipts_total(eligible)
+    await AdminFinancePayFSM.waiting_amount.set()
+    await state.update_data(admin_finance_pay_tokens=mapping, admin_finance_pay_project=project, admin_finance_pay_total=total)
+    await flow_prepare_prompt(uid)
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        f"Введіть суму для виплати (доступно {fmt_money(total)} грн). Використовуйте крапку для копійок.",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data="adm_user_finance_pay_cancel")),
+    )
+    flow_store_prompt(uid, prompt)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_user_finance_pay_cancel", state=AdminFinancePayFSM.waiting_amount)
+async def adm_user_finance_pay_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    data = await state.get_data()
+    project = data.get("admin_finance_pay_project")
+    target = data.get("target_uid")
+    await flow_clear(uid)
+    await state.reset_state(with_data=False)
+    if project and target:
+        await admin_finance_show_pay_options(uid, target, project, state)
+    else:
+        await c.answer("Скасовано")
+        return
+    await c.answer("Скасовано")
+
+
+@dp.message_handler(state=AdminFinancePayFSM.waiting_amount, content_types=ContentType.TEXT)
+async def adm_user_finance_pay_amount(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    data = await state.get_data()
+    target = data.get("target_uid")
+    project = data.get("admin_finance_pay_project")
+    if not target or not project:
+        await state.reset_state(with_data=False)
+        return
+    text_value = (m.text or "").strip().replace(",", ".")
+    try:
+        amount = float(text_value)
+    except ValueError:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, "⚠️ Введіть числове значення суми у форматі 123.45", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close")))
+        flow_track(uid, warn)
+        return
+    amount = round(max(amount, 0.0), 2)
+    if amount <= 0:
+        await flow_delete_message(uid, m)
+        warn = await bot.send_message(m.chat.id, "⚠️ Сума має бути більшою за нуль.", reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close")))
+        flow_track(uid, warn)
+        return
+    eligible = admin_finance_eligible_receipts(target, project)
+    if not eligible:
+        await flow_delete_message(uid, m)
+        await state.reset_state(with_data=False)
+        await bot.send_message(m.chat.id, "⚠️ Немає чеків для виплати за вказаним проєктом.")
+        return
+    selection = admin_finance_pick_receipts_for_amount(eligible, amount)
+    if not selection:
+        await flow_delete_message(uid, m)
+        total = admin_finance_receipts_total(eligible)
+        warn = await bot.send_message(
+            m.chat.id,
+            f"⚠️ Не вдалося підібрати чеки на суму {fmt_money(amount)} грн. Спробуйте іншу суму або виплатіть усі {fmt_money(total)} грн.",
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close")),
+        )
+        flow_track(uid, warn)
+        return
+    await flow_delete_message(uid, m)
+    grouped = finance_group_receipts(selection)
+    snapshot = finance_scope_snapshot(target, [project], grouped)
+    request_obj = finance_new_request(
+        target,
+        project,
+        selection,
+        scope=[project],
+        scope_snapshot=snapshot,
+    )
+    request_obj = await finance_admin_apply_approval(request_obj, uid, note="admin_partial")
+    await finance_admin_notify_approval(request_obj)
+    info = load_project_info(project)
+    display = info.get("name") or project
+    code = info.get("code") or project
+    selected_total = admin_finance_receipts_total(selection)
+    await flow_clear(uid)
+    await state.reset_state(with_data=False)
+    await clear_then_anchor(
+        uid,
+        f"💵 Виплата на {fmt_money(selected_total)} грн по об'єкту {h(display)} (код {h(code)}) сформована та відправлена користувачу на підтвердження.",
+        kb_admin_root(),
+    )
+
+
+@dp.message_handler(state=AdminFinancePayFSM.waiting_amount, content_types=ContentType.ANY)
+async def adm_user_finance_pay_amount_other(m: types.Message, state: FSMContext):
+    await flow_delete_message(m.from_user.id, m)
 # ======= Admin: per-project stats / receipts (reuse from previous version) =======
-@dp.callback_query_handler(lambda c: c.data == "adm_stat_choose")
+@dp.callback_query_handler(lambda c: c.data in {"adm_stat_choose", "adm_user_finance_projects"})
 async def adm_stat_choose(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
-    target = (await state.get_data()).get("target_uid")
-    projs = sorted(list((load_user(target) or {}).get("receipts", {}).keys()))
+    data = await state.get_data()
+    target = data.get("target_uid")
+    if not target:
+        return await c.answer("Користувач не знайдений", show_alert=True)
+    profile = load_user(target) or {"user_id": target}
+    stats = admin_collect_user_stats(profile)
+    projects = stats.get("projects") or []
+    if not projects:
+        kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+        await clear_then_anchor(uid, "📂 Активних проєктів з чеками немає.", kb)
+        return await c.answer()
+
+    lines = [
+        "📊 <b>Проєкти та показники</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Оберіть об'єкт, щоб переглянути деталізацію чеків та сум.",
+        "",
+    ]
     kb = InlineKeyboardMarkup()
-    for p in projs: kb.add(InlineKeyboardButton(p, callback_data=f"adm_stat_{p}"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"adm_user_{target}"))
-    await clear_then_anchor(uid, "Выберите проект:", kb)
+    for payload in projects:
+        raw_name = payload.get("name") or "—"
+        info = payload.get("info") or {}
+        display_name = info.get("name") or raw_name
+        code = info.get("code") or raw_name
+        st = payload.get("stats") or {}
+        total = fmt_money(float(st.get("total", 0.0)))
+        debt = fmt_money(float(st.get("unpaid", 0.0)))
+        pending = fmt_money(float(st.get("pending", 0.0)))
+        count = st.get("count", 0)
+        lines.append(
+            f"• {h(display_name)} (код {h(code)}) — чеків {count}, сума {total} грн, борг {debt} грн, в роботі {pending} грн"
+        )
+        kb.add(InlineKeyboardButton(display_name, callback_data=f"adm_stat_{raw_name}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
 
 
@@ -8623,9 +16367,9 @@ async def adm_stat_show(c: types.CallbackQuery, state: FSMContext):
     proj = c.data.split("adm_stat_",1)[1]
     target = (await state.get_data()).get("target_uid")
     recs = user_project_receipts(target, proj)
-    cnt = len(recs); total = round(sum(float(r.get("sum", 0.0)) for r in recs), 2)
-    paid_sum = round(sum(float(r.get("sum", 0.0)) for r in recs if r.get("paid") is True), 2)
-    unpaid_sum = round(sum(float(r.get("sum", 0.0)) for r in recs if r.get("paid") is False), 2)
+    cnt = len(recs); total = round(sum(receipt_amount(r) for r in recs), 2)
+    paid_sum = round(sum(receipt_amount(r) for r in recs if r.get("paid") is True), 2)
+    unpaid_sum = round(sum(receipt_amount(r) for r in recs if r.get("paid") is False), 2)
     text = (f"📊 Статистика пользователя <b>{target}</b>\n"
             f"📂 Проект: <b>{h(proj)}</b>\n"
             f"• Чеков: <b>{cnt}</b>\n• Всего: <b>{fmt_money(total)} грн</b>\n"
@@ -8636,15 +16380,16 @@ async def adm_stat_show(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data == "adm_recs_choose")
+@dp.callback_query_handler(lambda c: c.data in {"adm_recs_choose", "adm_user_finance_receipts"})
 async def adm_recs_choose(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     target = (await state.get_data()).get("target_uid")
     projs = sorted(list((load_user(target) or {}).get("receipts", {}).keys()))
     kb = InlineKeyboardMarkup()
-    for p in projs: kb.add(InlineKeyboardButton(p, callback_data=f"adm_recs_{p}"))
-    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_"+str(target)))
-    await clear_then_anchor(uid, "Выберите проект:", kb)
+    for p in projs:
+        kb.add(InlineKeyboardButton(p, callback_data=f"adm_recs_{p}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
+    await clear_then_anchor(uid, "Оберіть проєкт для перегляду чеків:", kb)
     await c.answer()
 
 
@@ -8659,7 +16404,7 @@ async def adm_recs_show(c: types.CallbackQuery, state: FSMContext):
     lines = [f"📁 Чеки пользователя <b>{target}</b>", f"📂 Проект: <b>{h(proj)}</b>", ""]
     for r in recs[-30:]:
         status = "✅" if r.get("paid") is True else ("❌" if r.get("paid") is False else "⏳")
-        amount = float(r.get('sum') or 0.0)
+        amount = receipt_amount(r)
         desc_text = h(r.get('desc')) if r.get('desc') else "—"
         lines.append(
             f"• #{h(r.get('receipt_no',''))} — {h(r.get('date','—'))} {h(r.get('time',''))} — {fmt_money(amount)} грн {status} — {desc_text}"
@@ -8896,7 +16641,7 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
             udata = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
         except:
             continue
-        chat_id = users_runtime.get(udata["user_id"], {}).get("tg", {}).get("chat_id") or udata.get("tg", {}).get("chat_id")
+        chat_id = registration_chat_id(int(udata.get("user_id", 0)), udata)
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
             except Exception: pass
@@ -8962,7 +16707,7 @@ async def proj_finish_do(c: types.CallbackQuery):
             udata = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
         except:
             continue
-        chat_id = users_runtime.get(udata["user_id"], {}).get("tg", {}).get("chat_id") or udata.get("tg", {}).get("chat_id")
+        chat_id = registration_chat_id(int(udata.get("user_id", 0)), udata)
         if chat_id:
             try: await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
             except Exception: pass
