@@ -15518,8 +15518,18 @@ def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tupl
     combos: Dict[int, List[int]] = {0: []}
     over_target_best: Optional[Tuple[int, List[int]]] = None
     max_states = 200000
+    direct_partial_idx: Optional[int] = None
+    direct_partial_amount: Optional[int] = None
 
     for idx, (amount_cents, entry_idx) in enumerate(valid_pairs):
+        if amount_cents >= target_cents:
+            if (
+                direct_partial_amount is None
+                or amount_cents < direct_partial_amount
+                or (amount_cents == direct_partial_amount and (direct_partial_idx is None or entry_idx < direct_partial_idx))
+            ):
+                direct_partial_idx = entry_idx
+                direct_partial_amount = amount_cents
         snapshot = list(combos.items())
         for current_sum, selection in snapshot:
             new_sum = current_sum + amount_cents
@@ -15560,6 +15570,11 @@ def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tupl
                 best_sum += remainder_cents
         total = round(best_sum / 100, 2)
         return selected, total
+
+    if direct_partial_idx is not None:
+        amount_value = min(target_cents, amounts_cents[direct_partial_idx]) / 100
+        amount_value = round(amount_value, 2)
+        return [finalize(entries[direct_partial_idx], amount_value)], amount_value
 
     if over_target_best:
         indices = over_target_best[1]
