@@ -18699,6 +18699,16 @@ async def finance_admin_notify_approval(obj: dict) -> None:
     outstanding_before = summary_snapshot.get("outstanding_before")
     outstanding_after = summary_snapshot.get("outstanding_after")
     grouped_files: Dict[str, List[str]] = {}
+    item_amounts: Dict[Tuple[str, str], float] = {}
+    for item in obj.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        proj_name = item.get("project") or obj.get("project")
+        fname = item.get("file")
+        if not fname:
+            continue
+        key = (proj_name or "", fname)
+        item_amounts[key] = round(parse_amount(item.get("amount")), 2)
     for item in obj.get("items", []):
         if not isinstance(item, dict):
             continue
