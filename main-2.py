@@ -4277,6 +4277,16 @@ def normalize_profile_receipts(profile: dict) -> bool:
                 if locked_sum > outstanding_sum:
                     entry["locked_sum"] = round(outstanding_sum, 2)
                     changed = True
+                paid_partial = entry.get("paid_partial_sum")
+                normalized_partial = None
+                if isinstance(paid_partial, (int, float, str)):
+                    normalized_partial = round(max(parse_amount(paid_partial), 0.0), 2)
+                computed_partial = round(max(original_sum - entry["outstanding_sum"], 0.0), 2)
+                if normalized_partial is None or abs(normalized_partial - computed_partial) > 0.01:
+                    entry["paid_partial_sum"] = computed_partial
+                    changed = True
+                else:
+                    entry["paid_partial_sum"] = normalized_partial
                 if outstanding_sum <= 0.01:
                     if entry.get("paid") is not True:
                         entry["paid"] = True
@@ -5092,16 +5102,16 @@ def user_project_stats(uid: int, project: str) -> Dict[str, float]:
     for r in recs:
         original_amount = receipt_original_amount(r)
         outstanding_amount = receipt_outstanding_amount(r)
-        locked_amount = receipt_locked_amount(r)
+        locked_amount = min(receipt_locked_amount(r), outstanding_amount)
+        paid_so_far = round(max(original_amount - outstanding_amount, 0.0), 2)
         total += original_amount
+        paid_sum += paid_so_far
         payout_status = (r.get("payout") or {}).get("status") if isinstance(r.get("payout"), dict) else None
         if outstanding_amount <= 0.01:
-            paid_sum += original_amount
             continue
         if payout_status in ("pending", "approved") and locked_amount > 0.0:
-            locked = min(locked_amount, outstanding_amount)
-            pending_sum += locked
-            residual = outstanding_amount - locked
+            pending_sum += locked_amount
+            residual = round(outstanding_amount - locked_amount, 2)
             if residual > 0.01:
                 unpaid_sum += residual
         elif r.get("paid") is False or payout_status in (None, "closed", "rejected"):
@@ -5625,6 +5635,8 @@ def update_receipts_for_request(uid: int, project: Optional[str], files: List[st
                 })
                 entry["payout"] = payout
                 new_outstanding = round(max(outstanding_before - amount_value, 0.0), 2)
+                original_total = receipt_original_amount(entry)
+                entry["paid_partial_sum"] = round(max(original_total - new_outstanding, 0.0), 2)
                 entry["outstanding_sum"] = new_outstanding
                 entry["locked_sum"] = 0.0
                 entry["paid"] = new_outstanding <= 0.01
@@ -14022,24 +14034,79 @@ async def check_stats(c: types.CallbackQuery):
     proj = active_project["name"]
     recs = user_project_receipts(uid, proj)
     cnt = len(recs)
-    total = round(sum(receipt_amount(r) for r in recs), 2)
-    paid_recs = [r for r in recs if r.get("paid") is True]
-    unpaid_recs = [r for r in recs if r.get("paid") is False]
-    pending_recs = [r for r in recs if r.get("paid") is None]
-    paid_sum = round(sum(receipt_amount(r) for r in paid_recs), 2)
-    unpaid_sum = round(sum(receipt_amount(r) for r in unpaid_recs), 2)
-    pending_sum = round(sum(receipt_amount(r) for r in pending_recs), 2)
+    total = round(sum(receipt_original_amount(r) for r in recs), 2)
+    paid_total = 0.0
+    paid_full_total = 0.0
+    paid_full_count = 0
+    partial_receipts = 0
+    outstanding_ready_total = 0.0
+    outstanding_ready_count = 0
+    pending_total = 0.0
+    pending_count = 0
+    unspecified_total = 0.0
+    unspecified_count = 0
+    partial_outstanding_total = 0.0
+    for r in recs:
+        original = receipt_original_amount(r)
+        outstanding = receipt_outstanding_amount(r)
+        locked = min(receipt_locked_amount(r), outstanding)
+        paid_so_far = round(max(original - outstanding, 0.0), 2)
+        paid_total += paid_so_far
+        payout_status = (r.get("payout") or {}).get("status") if isinstance(r.get("payout"), dict) else None
+        if outstanding <= 0.01:
+            paid_full_total += original
+            paid_full_count += 1
+            continue
+        if paid_so_far > 0.01:
+            partial_receipts += 1
+            partial_outstanding_total += outstanding
+        if payout_status in ("pending", "approved") and locked > 0.0:
+            pending_total += locked
+            pending_count += 1
+            residual = round(outstanding - locked, 2)
+            if residual > 0.01:
+                outstanding_ready_total += residual
+                outstanding_ready_count += 1
+        elif r.get("paid") is False or payout_status in (None, "closed", "rejected"):
+            outstanding_ready_total += outstanding
+            outstanding_ready_count += 1
+        else:
+            unspecified_total += outstanding
+            unspecified_count += 1
+    partial_paid_amount = round(max(paid_total - paid_full_total, 0.0), 2)
+    awaiting_total = round(outstanding_ready_total + pending_total + unspecified_total, 2)
     summary_lines = [
         "📊 <b>Личная статистика по чекам</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"📂 Проект: <b>{h(proj)}</b>",
         f"🧾 Всего чеков: <b>{cnt}</b>",
         f"💰 Сумма чеков: <b>{fmt_money(total)} грн</b>",
-        f"💸 Оплачено фирмой: <b>{fmt_money(paid_sum)} грн</b> ({len(paid_recs)} шт.)",
-        f"⏳ Ожидает оплаты: <b>{fmt_money(unpaid_sum)} грн</b> ({len(unpaid_recs)} шт.)",
+        f"💸 От компании получено: <b>{fmt_money(paid_total)} грн</b>",
     ]
-    if pending_recs:
-        summary_lines.append(f"❔ Статус не указан: <b>{fmt_money(pending_sum)} грн</b> ({len(pending_recs)} шт.)")
+    details: List[str] = []
+    if paid_full_count:
+        details.append(f"закрыто {paid_full_count} шт.")
+    if partial_receipts:
+        details.append(f"частично оплачено {partial_receipts} шт. (выплачено {fmt_money(partial_paid_amount)} грн)")
+    if details:
+        summary_lines.append(f"   • {'; '.join(details)}")
+    summary_lines.append(f"⏳ Осталось получить: <b>{fmt_money(awaiting_total)} грн</b>")
+    if outstanding_ready_total > 0.01:
+        summary_lines.append(
+            f"   • Готово к запросу: {fmt_money(outstanding_ready_total)} грн ({outstanding_ready_count} шт.)"
+        )
+    if pending_total > 0.01:
+        summary_lines.append(
+            f"   • В запросах: {fmt_money(pending_total)} грн ({pending_count} шт.)"
+        )
+    if unspecified_total > 0.01:
+        summary_lines.append(
+            f"❔ Без статуса оплаты: <b>{fmt_money(unspecified_total)} грн</b> ({unspecified_count} шт.)"
+        )
+    if partial_receipts and partial_outstanding_total > 0.01:
+        summary_lines.append(
+            f"   • По частичным выплатам ещё осталось: {fmt_money(partial_outstanding_total)} грн"
+        )
     if cnt == 0:
         summary_lines.append("")
         summary_lines.append("Добавьте первый чек через кнопку «📷 Добавить чек», и здесь появится расширенная таблица с деталями.")
@@ -15363,24 +15430,38 @@ async def finance_unpaid_list(c: types.CallbackQuery):
         lines.append(f"❌ Готовы к запросу ({len(unpaid)} шт.):")
         total_unpaid = 0.0
         for r in unpaid:
-            amount = receipt_amount(r)
-            total_unpaid += amount
+            outstanding = receipt_outstanding_amount(r)
+            paid_so_far = round(max(receipt_original_amount(r) - outstanding, 0.0), 2)
+            total_unpaid += outstanding
             moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
             desc = r.get('desc')
             desc_text = h(desc) if desc else "—"
             rid = h(r.get('receipt_no', '—'))
-            lines.append(f"• {moment} — {fmt_money(amount)} грн — {desc_text} — #{rid}")
+            extras: List[str] = []
+            if paid_so_far > 0.01:
+                extras.append(f"выплачено {fmt_money(paid_so_far)} грн")
+            tail = f" ({'; '.join(extras)})" if extras else ""
+            lines.append(f"• {moment} — {fmt_money(outstanding)} грн к выплате{tail} — {desc_text} — #{rid}")
         lines.append(f"Итого к запросу: <b>{fmt_money(total_unpaid)} грн</b>")
         lines.append("")
     if pending:
         lines.append(f"⏳ Уже в запросах ({len(pending)} шт.):")
         total_pending = 0.0
         for r in pending:
-            amount = receipt_amount(r)
-            total_pending += amount
+            outstanding = receipt_outstanding_amount(r)
+            locked_amount = min(receipt_locked_amount(r), outstanding)
+            total_pending += locked_amount
+            residual = round(max(outstanding - locked_amount, 0.0), 2)
+            paid_so_far = round(max(receipt_original_amount(r) - outstanding, 0.0), 2)
             moment = f"{h(r.get('date','—'))} {h(r.get('time',''))}".strip()
             code = ((r.get("payout") or {}).get("code") or (r.get("payout") or {}).get("request_id")) if isinstance(r.get("payout"), dict) else None
-            lines.append(f"• {moment} — {fmt_money(amount)} грн — запрос {h(code) if code else '—'}")
+            extras: List[str] = []
+            if residual > 0.01:
+                extras.append(f"осталось {fmt_money(residual)} грн")
+            if paid_so_far > 0.01:
+                extras.append(f"выплачено {fmt_money(paid_so_far)} грн")
+            tail = f" ({'; '.join(extras)})" if extras else ""
+            lines.append(f"• {moment} — в запросе {fmt_money(locked_amount)} грн{tail} — запрос {h(code) if code else '—'}")
         lines.append(f"Всего в запросах: <b>{fmt_money(total_pending)} грн</b>")
     lines.append("")
     lines.append("Подайте новый запрос на выплату, чтобы закрыть чеки из раздела «Готовы к запросу».")
