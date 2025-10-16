@@ -2919,6 +2919,15 @@ class AdminRejectRequestFSM(StatesGroup):
     waiting_reason = State()
 
 
+class ManualClaimFSM(StatesGroup):
+    waiting_amount = State()
+    waiting_comment = State()
+
+
+class AdminManualClaimRejectFSM(StatesGroup):
+    waiting_comment = State()
+
+
 class ReceiptFSM(StatesGroup):
     waiting_photo = State()
     waiting_amount = State()
@@ -4998,6 +5007,7 @@ def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str] = None, phon
             "bsu": bsu,
             "counters": {"receipt_seq": 0},
             "receipts": {},
+            "manual_claims": [],
             "payouts": [],
             "points_total": 0.0,
             "lang": normalize_lang(lang) if lang else DEFAULT_LANG,
@@ -5019,6 +5029,7 @@ def ensure_user(uid: int, tg_payload: dict, fullname: Optional[str] = None, phon
         prof.setdefault("photo", {})
         prof.setdefault("counters", {"receipt_seq": 0})
         prof.setdefault("receipts", {})
+        prof.setdefault("manual_claims", [])
         prof.setdefault("payouts", [])
         prof.setdefault("points_total", 0.0)
         prof.setdefault("lang", DEFAULT_LANG)
@@ -5126,6 +5137,101 @@ def user_project_stats(uid: int, project: str) -> Dict[str, float]:
         "pending": round(pending_sum, 2),
         "unspecified": round(unspecified_sum, 2)
     }
+
+
+def ensure_profile_claims(profile: dict) -> List[dict]:
+    claims = profile.get("manual_claims")
+    if not isinstance(claims, list):
+        claims = []
+        profile["manual_claims"] = claims
+    return claims
+
+
+def manual_claim_generate_id(uid: int) -> str:
+    token = secrets.token_hex(4).upper()
+    return f"CLM-{uid}-{token}"
+
+
+def user_manual_claim_add(uid: int, project: str, amount: float, comment: str) -> dict:
+    prof = load_user(uid) or {"user_id": uid}
+    claims = ensure_profile_claims(prof)
+    now_iso = datetime.now().isoformat()
+    claim_id = manual_claim_generate_id(uid)
+    payload = {
+        "id": claim_id,
+        "project": project,
+        "amount": round(float(amount), 2),
+        "comment": comment,
+        "status": "pending",
+        "history": [{"status": "pending", "timestamp": now_iso}],
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "user_id": uid,
+    }
+    claims.append(payload)
+    save_user(prof)
+    return payload
+
+
+def user_manual_claim_get(uid: int, claim_id: str) -> Tuple[Optional[dict], Optional[dict]]:
+    prof = load_user(uid) or {"user_id": uid}
+    claims = ensure_profile_claims(prof)
+    for claim in claims:
+        if isinstance(claim, dict) and claim.get("id") == claim_id:
+            return claim, prof
+    return None, prof
+
+
+def user_manual_claim_update(profile: dict, claim: dict, status: str, *, admin_id: Optional[int] = None, comment: Optional[str] = None) -> dict:
+    now_iso = datetime.now().isoformat()
+    claim["status"] = status
+    claim["updated_at"] = now_iso
+    entry = {"status": status, "timestamp": now_iso}
+    if admin_id is not None:
+        entry["by"] = admin_id
+    if comment:
+        claim["admin_comment"] = comment
+        entry["comment"] = comment
+    history = claim.setdefault("history", [])
+    history.append(entry)
+    save_user(profile)
+    return claim
+
+
+def create_manual_receipt_from_claim(profile: dict, claim: dict) -> dict:
+    project = claim.get("project")
+    if not project:
+        raise ValueError("Claim must have a project to create a receipt")
+    ensure_profile_claims(profile)
+    recmap = profile.setdefault("receipts", {})
+    entries = recmap.setdefault(project, [])
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M")
+    amount = round(float(claim.get("amount") or 0.0), 2)
+    desc_text = (claim.get("comment") or "Без коментаря").strip()
+    receipt_no = next_receipt_no(profile)
+    entry = {
+        "date": date_str,
+        "time": time_str,
+        "sum": amount,
+        "outstanding_sum": amount,
+        "locked_sum": 0.0,
+        "file": f"manual_claim_{claim['id']}",
+        "desc": f"Без чеку: {desc_text}",
+        "paid": False,
+        "receipt_no": receipt_no,
+        "payout": None,
+        "payout_history": [],
+        "paid_partial_sum": 0.0,
+        "source": "manual_claim",
+        "manual_claim_id": claim.get("id"),
+    }
+    entries.append(entry)
+    claim["receipt_no"] = receipt_no
+    claim["receipt_created_at"] = datetime.now().isoformat()
+    save_user(profile)
+    return entry
 
 
 def iter_user_payout_refs(prof: dict) -> List[dict]:
@@ -5448,6 +5554,253 @@ def finance_list(filter_status: Optional[str]=None) -> List[dict]:
                 out.append(finance_request_defaults(req) or req)
     out.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return out
+
+
+def manual_claim_admin_text(claim: dict, profile: dict) -> str:
+    uid = profile.get("user_id")
+    project = claim.get("project") or "—"
+    proj_info = load_project_info(project) or {}
+    project_code = h(proj_info.get("code") or "—")
+    fullname = h(profile.get("fullname", "—"))
+    bsu_code = h(profile.get("bsu", "—"))
+    phone = h(profile.get("phone", "—"))
+    username_raw = (profile.get("tg", {}) or {}).get("username")
+    username_display = format_username_link(username_raw)
+    lines = [
+        "📥 <b>Нова заява на борг</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"ID: <code>{h(claim.get('id'))}</code>",
+        f"Проект: <b>{h(project)}</b> (код {project_code})",
+        f"Сума: <b>{fmt_money(parse_amount(claim.get('amount')))} грн</b>",
+    ]
+    comment = (claim.get("comment") or "—").strip()
+    lines.append(f"Коментар: {h(comment)}")
+    lines.extend([
+        "",
+        f"👤 {fullname} (ID {uid}, {bsu_code})",
+        f"📱 {phone}",
+        f"🆔 {username_display}",
+        "",
+        "Підтвердіть, щоб нарахувати борг без чека, або відхиліть із поясненням.",
+    ])
+    status = claim.get("status")
+    if status and status != "pending":
+        status_labels = {"approved": "схвалено", "rejected": "відхилено", "pending": "в очікуванні"}
+        status_text = status_labels.get(status, status)
+        lines.append("")
+        lines.append(f"Статус: <b>{h(status_text)}</b>")
+        if claim.get("admin_comment"):
+            lines.append(f"Коментар адміністратора: {h(claim.get('admin_comment'))}")
+    return "\n".join(lines)
+
+
+async def notify_admin_manual_claim(claim: dict, profile: dict) -> None:
+    uid = profile.get("user_id")
+    if not uid:
+        return
+    for admin_id in list(admins):
+        admin_profile = load_user(admin_id) or {}
+        chat_id = registration_chat_id(admin_id, admin_profile)
+        if not chat_id:
+            continue
+        kb = InlineKeyboardMarkup()
+        kb.add(
+            InlineKeyboardButton(
+                "✅ Нарахувати борг",
+                callback_data=f"adm_claim_approve:{uid}:{claim.get('id')}"
+            )
+        )
+        kb.add(
+            InlineKeyboardButton(
+                "❌ Відхилити",
+                callback_data=f"adm_claim_reject:{uid}:{claim.get('id')}"
+            )
+        )
+        kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
+        text = manual_claim_admin_text(claim, profile)
+        try:
+            await bot.send_message(chat_id, text, reply_markup=kb)
+        except Exception:
+            continue
+
+
+def admin_claim_runtime(admin_id: int) -> dict:
+    runtime = users_runtime.setdefault(admin_id, {})
+    return runtime.setdefault("manual_claims", {})
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_claim_approve:"))
+async def admin_manual_claim_approve(c: types.CallbackQuery):
+    admin_id = c.from_user.id
+    if admin_id not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        _, user_part, claim_part = c.data.split(":", 2)
+        user_id = int(user_part)
+        claim_id = claim_part
+    except Exception:
+        return await c.answer("Некоректні дані", show_alert=True)
+    claim, profile = user_manual_claim_get(user_id, claim_id)
+    if not claim:
+        return await c.answer("Заявку не знайдено", show_alert=True)
+    if claim.get("status") != "pending":
+        return await c.answer("Запит вже опрацьовано", show_alert=True)
+    receipt_entry = create_manual_receipt_from_claim(profile, claim)
+    user_manual_claim_update(profile, claim, "approved", admin_id=admin_id)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
+    text = manual_claim_admin_text(claim, profile)
+    try:
+        await bot.edit_message_text(
+            text,
+            c.message.chat.id,
+            c.message.message_id,
+            reply_markup=kb,
+            parse_mode='HTML',
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        pass
+    await c.answer("Борг нараховано.")
+    chat_id = registration_chat_id(user_id, profile)
+    if chat_id:
+        user_lines = [
+            "💰 <b>Борг підтверджено</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            f"Код запиту: <b>{h(claim.get('id'))}</b>",
+            f"Проект: <b>{h(claim.get('project') or '—')}</b>",
+            f"Сума: <b>{fmt_money(parse_amount(claim.get('amount')))} грн</b>",
+            f"Коментар: {h(claim.get('comment') or '—')}",
+            "",
+            "Сума додана до ваших чеків і доступна для запиту на виплату.",
+            f"Номер запису: <b>{h(receipt_entry.get('receipt_no'))}</b>",
+        ]
+        user_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ У фінанси", callback_data="menu_finance"))
+        try:
+            await bot.send_message(chat_id, "\n".join(user_lines), reply_markup=user_kb)
+        except Exception:
+            pass
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_claim_reject:"))
+async def admin_manual_claim_reject(c: types.CallbackQuery, state: FSMContext):
+    admin_id = c.from_user.id
+    if admin_id not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        _, user_part, claim_part = c.data.split(":", 2)
+        user_id = int(user_part)
+        claim_id = claim_part
+    except Exception:
+        return await c.answer("Некоректні дані", show_alert=True)
+    claim, profile = user_manual_claim_get(user_id, claim_id)
+    if not claim:
+        return await c.answer("Заявку не знайдено", show_alert=True)
+    if claim.get("status") != "pending":
+        return await c.answer("Запит вже опрацьовано", show_alert=True)
+    data = admin_claim_runtime(admin_id)
+    data["reject"] = {
+        "user_id": user_id,
+        "claim_id": claim_id,
+        "message": (c.message.chat.id if c.message else None, c.message.message_id if c.message else None),
+    }
+    await state.finish()
+    await AdminManualClaimRejectFSM.waiting_comment.set()
+    prompt_lines = [
+        "❌ <b>Відхилення запиту</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        "Введіть причину, яку отримає користувач.",
+    ]
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data="adm_claim_reject_cancel"))
+    msg = await bot.send_message(c.message.chat.id, "\n".join(prompt_lines), reply_markup=kb)
+    data["reject"]["prompt"] = (msg.chat.id, msg.message_id)
+    await c.answer()
+
+
+@dp.message_handler(state=AdminManualClaimRejectFSM.waiting_comment, content_types=ContentType.TEXT)
+async def admin_manual_claim_reject_comment(m: types.Message, state: FSMContext):
+    admin_id = m.from_user.id
+    if admin_id not in admins:
+        await state.finish()
+        return await m.reply("⛔")
+    data = admin_claim_runtime(admin_id).get("reject")
+    if not data:
+        await state.finish()
+        return await m.reply("Немає активної заявки для відхилення.")
+    comment = (m.text or "").strip()
+    if len(comment) < 3:
+        return await m.reply("Коментар повинен містити хоча б 3 символи.")
+    user_id = data.get("user_id")
+    claim_id = data.get("claim_id")
+    claim, profile = user_manual_claim_get(user_id, claim_id)
+    if not claim:
+        admin_claim_runtime(admin_id).pop("reject", None)
+        await state.finish()
+        return await m.reply("Заявку не знайдено.")
+    if claim.get("status") != "pending":
+        admin_claim_runtime(admin_id).pop("reject", None)
+        await state.finish()
+        return await m.reply("Запит вже опрацьовано раніше.")
+    user_manual_claim_update(profile, claim, "rejected", admin_id=admin_id, comment=comment)
+    text = manual_claim_admin_text(claim, profile)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
+    message_chat, message_id = data.get("message", (None, None))
+    if message_chat and message_id:
+        try:
+            await bot.edit_message_text(
+                text,
+                message_chat,
+                message_id,
+                reply_markup=kb,
+                parse_mode='HTML',
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+    prompt_chat, prompt_id = data.get("prompt", (None, None))
+    if prompt_chat and prompt_id:
+        try:
+            await bot.delete_message(prompt_chat, prompt_id)
+        except Exception:
+            pass
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    admin_claim_runtime(admin_id).pop("reject", None)
+    await state.finish()
+    await m.answer("Запит відхилено.")
+    chat_id = registration_chat_id(user_id, profile)
+    if chat_id:
+        user_lines = [
+            "ℹ️ <b>Запит відхилено</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            f"Код запиту: <b>{h(claim.get('id'))}</b>",
+            f"Проект: <b>{h(claim.get('project') or '—')}</b>",
+            f"Сума: <b>{fmt_money(parse_amount(claim.get('amount')))} грн</b>",
+            f"Коментар користувача: {h(claim.get('comment') or '—')}",
+            "",
+            f"Відповідь адміністратора: {h(comment)}",
+        ]
+        user_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ У фінанси", callback_data="menu_finance"))
+        try:
+            await bot.send_message(chat_id, "\n".join(user_lines), reply_markup=user_kb)
+        except Exception:
+            pass
+
+
+@dp.callback_query_handler(lambda c: c.data == "adm_claim_reject_cancel", state="*")
+async def admin_manual_claim_reject_cancel(c: types.CallbackQuery, state: FSMContext):
+    admin_id = c.from_user.id
+    data = admin_claim_runtime(admin_id).pop("reject", None)
+    await state.finish()
+    if data:
+        prompt_chat, prompt_id = data.get("prompt", (None, None))
+        if prompt_chat and prompt_id:
+            try:
+                await bot.delete_message(prompt_chat, prompt_id)
+            except Exception:
+                pass
+    await c.answer("Скасовано")
 
 
 def project_fin_state_file(name: str) -> str:
@@ -15228,6 +15581,7 @@ def kb_finance_root(
         kb.add(InlineKeyboardButton("✅ Подтвердить получение выплат", callback_data="fin_confirm_list"))
     kb.add(InlineKeyboardButton("⏳ Неоплаченные чеки", callback_data="fin_unpaid_list"))
     kb.add(InlineKeyboardButton("📨 Запросить выплату", callback_data="fin_request_payout"))
+    kb.add(InlineKeyboardButton("➕ Додати борг без чека", callback_data="fin_manual_claim"))
     kb.add(InlineKeyboardButton("📚 История выплат", callback_data="fin_history"))
     kb.add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
     return kb
@@ -15846,6 +16200,108 @@ def finance_reset_payout_runtime(uid: int) -> None:
     runtime.pop("payout_draft", None)
 
 
+def finance_reset_manual_claim(uid: int) -> None:
+    runtime = finance_runtime(uid)
+    runtime.pop("manual_claim", None)
+
+
+@dp.callback_query_handler(lambda c: c.data == "fin_manual_claim")
+async def finance_manual_claim(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    project = finance_selected_project(uid)
+    if not project:
+        return await c.answer("Спершу оберіть проект у фінансах.", show_alert=True)
+    runtime = finance_runtime(uid)
+    runtime["manual_claim"] = {"project": project}
+    await state.finish()
+    await ManualClaimFSM.waiting_amount.set()
+    prompt_lines = [
+        "➕ <b>Новий борг без чека</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Проект: <b>{h(project)}</b>",
+        "Введіть суму у гривнях, яку компанія заборгувала.",
+    ]
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data="fin_claim_cancel"))
+    msg = await bot.send_message(c.message.chat.id, "\n".join(prompt_lines), reply_markup=kb)
+    flow_track(uid, msg)
+    await c.answer()
+
+
+@dp.message_handler(state=ManualClaimFSM.waiting_amount, content_types=ContentType.TEXT)
+async def finance_manual_claim_amount(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    runtime = finance_runtime(uid)
+    draft = runtime.get("manual_claim")
+    if not draft:
+        await state.finish()
+        return await m.reply("Спроба створити заявку не вдалася. Відкрийте меню фінансів повторно.")
+    text = (m.text or "").replace(",", ".").strip()
+    try:
+        amount_value = round(float(text), 2)
+    except ValueError:
+        return await m.reply("Будь ласка, введіть число у форматі 123.45")
+    if amount_value <= 0:
+        return await m.reply("Сума повинна бути більшою за нуль.")
+    draft["amount"] = amount_value
+    runtime["manual_claim"] = draft
+    await ManualClaimFSM.waiting_comment.set()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    prompt_lines = [
+        "✍️ Додайте короткий опис без чека",
+        "━━━━━━━━━━━━━━━━━━",
+        "Опишіть покупку або причину боргу. Коментар обов'язковий для розгляду адміністратором.",
+    ]
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data="fin_claim_cancel"))
+    msg = await bot.send_message(m.chat.id, "\n".join(prompt_lines), reply_markup=kb)
+    flow_track(uid, msg)
+
+
+@dp.message_handler(state=ManualClaimFSM.waiting_comment, content_types=ContentType.TEXT)
+async def finance_manual_claim_comment(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    runtime = finance_runtime(uid)
+    draft = runtime.get("manual_claim")
+    if not draft:
+        await state.finish()
+        return await m.reply("Дані заявки втрачено. Спробуйте ще раз з меню фінансів.")
+    comment = (m.text or "").strip()
+    if len(comment) < 3:
+        return await m.reply("Коментар повинен містити хоча б 3 символи.")
+    amount_value = float(draft.get("amount", 0.0))
+    project = draft.get("project")
+    await state.finish()
+    finance_reset_manual_claim(uid)
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    claim = user_manual_claim_add(uid, project, amount_value, comment)
+    prof = load_user(uid) or {}
+    summary_lines = [
+        "✅ <b>Заявку на борг надіслано</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Код запиту: <b>{h(claim.get('id'))}</b>",
+        f"Проект: <b>{h(project)}</b>",
+        f"Сума: <b>{fmt_money(amount_value)} грн</b>",
+        f"Коментар: {h(comment)}",
+        "",
+        "Адміністратор перевірить запит і підтвердить або відхилить його з коментарем.",
+    ]
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Повернутися", callback_data="menu_finance"))
+    await clear_then_anchor(uid, "\n".join(summary_lines), kb)
+    await notify_admin_manual_claim(claim, prof)
+
+
+@dp.callback_query_handler(lambda c: c.data == "fin_claim_cancel", state="*")
+async def finance_manual_claim_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await state.finish()
+    finance_reset_manual_claim(uid)
+    await finance_menu(c)
+
 @dp.callback_query_handler(lambda c: c.data == "fin_request_payout")
 async def finance_request_payout(c: types.CallbackQuery):
     uid = c.from_user.id
@@ -16319,7 +16775,29 @@ async def fin_hist_open(c: types.CallbackQuery):
         lines.append("")
         lines.append("📂 Об'єкти у виплаті:")
         lines.append("• —")
-    lines.append(f"Связанных чеков: {len(obj.get('files', []))}")
+    item_lines: List[str] = []
+    for item in obj.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        amount_value = parse_amount_chain(item.get("amount"), item.get("selected_amount"), item.get("sum"))
+        amount_text = fmt_money(amount_value)
+        rid_text = h(item.get("receipt_no") or "—")
+        desc_text = h(item.get("desc") or "—")
+        proj_text = h(item.get("project") or obj.get("project") or "—")
+        partial_flag = " (частково)" if item.get("partial") or item.get("selected_partial") else ""
+        remainder_info = ""
+        before_val = item.get("selected_outstanding_before")
+        if before_val not in (None, ""):
+            before_amount = parse_amount(before_val)
+            if before_amount > amount_value + 0.01:
+                remainder_info = f" (залишок {fmt_money(round(before_amount - amount_value, 2))} грн)"
+        line = f"• #{rid_text} — {amount_text} грн{partial_flag}{remainder_info} — {desc_text} — {proj_text}"
+        item_lines.append(line)
+    if item_lines:
+        lines.append("")
+        lines.append("🧾 Записи у виплаті:")
+        lines.extend(item_lines)
+    lines.append(f"Записів: {len(obj.get('items', []))}; файлів: {len(obj.get('files', []))}")
     lines.append("")
     def fmt_ts(value: Optional[str]) -> str:
         if not value:
