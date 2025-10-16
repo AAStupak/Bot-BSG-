@@ -15634,8 +15634,6 @@ def finance_scope_snapshot(uid: int, scope: List[str], grouped: Dict[str, List[d
 
 
 def finance_should_show_remainder(mode: Optional[str], snapshot: Optional[dict]) -> bool:
-    if mode == "auto":
-        return False
     if not isinstance(snapshot, dict):
         return False
     before_raw = snapshot.get("outstanding_before")
@@ -15644,7 +15642,12 @@ def finance_should_show_remainder(mode: Optional[str], snapshot: Optional[dict])
         return False
     before_val = parse_amount(before_raw)
     after_val = parse_amount(after_raw)
-    return abs(before_val - after_val) > 0.01
+    if abs(before_val - after_val) <= 0.01:
+        return False
+    if mode == "auto":
+        selected_val = parse_amount(snapshot.get("selected_total"))
+        return selected_val < before_val - 0.01
+    return True
 
 
 def finance_scope_lines(scope: List[str]) -> List[str]:
