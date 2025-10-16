@@ -4257,6 +4257,36 @@ def normalize_profile_receipts(profile: dict) -> bool:
                 if not isinstance(history, list):
                     entry["payout_history"] = []
                     changed = True
+                original_sum = parse_amount(entry.get("sum"))
+                outstanding_sum = entry.get("outstanding_sum")
+                locked_sum = entry.get("locked_sum")
+                if outstanding_sum is None or not isinstance(outstanding_sum, (int, float, str)):
+                    entry["outstanding_sum"] = round(max(original_sum, 0.0), 2)
+                    outstanding_sum = entry["outstanding_sum"]
+                    changed = True
+                else:
+                    entry["outstanding_sum"] = round(max(parse_amount(outstanding_sum), 0.0), 2)
+                    outstanding_sum = entry["outstanding_sum"]
+                if locked_sum is None or not isinstance(locked_sum, (int, float, str)):
+                    entry["locked_sum"] = 0.0
+                    locked_sum = 0.0
+                    changed = True
+                else:
+                    entry["locked_sum"] = round(max(parse_amount(locked_sum), 0.0), 2)
+                    locked_sum = entry["locked_sum"]
+                if locked_sum > outstanding_sum:
+                    entry["locked_sum"] = round(outstanding_sum, 2)
+                    changed = True
+                if outstanding_sum <= 0.01:
+                    if entry.get("paid") is not True:
+                        entry["paid"] = True
+                        changed = True
+                    entry["outstanding_sum"] = 0.0
+                    entry["locked_sum"] = 0.0
+                else:
+                    if entry.get("paid") is True:
+                        entry["paid"] = False
+                        changed = True
     return changed
 
 
@@ -5031,6 +5061,8 @@ def user_append_receipt(uid: int, project: str, date: str, time: str, amount: fl
         "date": date,
         "time": time,
         "sum": float(amount),
+        "outstanding_sum": round(float(amount), 2),
+        "locked_sum": 0.0,
         "file": filename,
         "desc": desc or "",
         "paid": paid,
@@ -5058,19 +5090,24 @@ def user_project_stats(uid: int, project: str) -> Dict[str, float]:
     pending_sum = 0.0
     unspecified_sum = 0.0
     for r in recs:
-        amount = receipt_amount(r)
-        total += amount
-        paid_flag = r.get("paid")
+        original_amount = receipt_original_amount(r)
+        outstanding_amount = receipt_outstanding_amount(r)
+        locked_amount = receipt_locked_amount(r)
+        total += original_amount
         payout_status = (r.get("payout") or {}).get("status") if isinstance(r.get("payout"), dict) else None
-        if paid_flag is True:
-            paid_sum += amount
-        elif paid_flag is False:
-            if payout_status in ("pending", "approved"):
-                pending_sum += amount
-            else:
-                unpaid_sum += amount
+        if outstanding_amount <= 0.01:
+            paid_sum += original_amount
+            continue
+        if payout_status in ("pending", "approved") and locked_amount > 0.0:
+            locked = min(locked_amount, outstanding_amount)
+            pending_sum += locked
+            residual = outstanding_amount - locked
+            if residual > 0.01:
+                unpaid_sum += residual
+        elif r.get("paid") is False or payout_status in (None, "closed", "rejected"):
+            unpaid_sum += outstanding_amount
         else:
-            unspecified_sum += amount
+            unspecified_sum += outstanding_amount
     return {
         "count": len(recs),
         "total": round(total, 2),
@@ -5260,14 +5297,21 @@ def finance_new_request(
         project_hint = rec.get("project") or storage_key
         if file_name:
             files.append(file_name)
-        amount = receipt_amount(rec)
+        amount = receipt_selected_amount(rec)
         total_receipts += amount
+        original_amount = receipt_original_amount(rec)
+        outstanding_before = rec.get("selected_outstanding_before") if isinstance(rec, dict) else None
+        locked_before = rec.get("selected_locked_before") if isinstance(rec, dict) else None
         items.append({
             "file": file_name,
             "project": project_hint,
             "receipt_no": rec.get("receipt_no"),
             "amount": round(amount, 2),
             "desc": rec.get("desc"),
+            "original_amount": round(original_amount, 2) if math.isfinite(original_amount) else None,
+            "outstanding_before": round(parse_amount(outstanding_before), 2) if outstanding_before not in (None, "") else None,
+            "locked_before": round(parse_amount(locked_before), 2) if locked_before not in (None, "") else None,
+            "partial": bool(rec.get("selected_partial")),
             "status": "pending",
             "updated_at": now_iso
         })
@@ -5507,6 +5551,7 @@ def update_receipts_for_request(uid: int, project: Optional[str], files: List[st
     req_code = request.get("code") or req_id
     changed = False
     grouped: Dict[str, Set[str]] = {}
+    amount_map: Dict[Tuple[str, str], float] = {}
     for item in request.get("items", []):
         if not isinstance(item, dict):
             continue
@@ -5515,6 +5560,9 @@ def update_receipts_for_request(uid: int, project: Optional[str], files: List[st
         if not fname or fname not in files:
             continue
         grouped.setdefault(proj_name or "", set()).add(fname)
+        key = (proj_name or "", fname)
+        amount_value = parse_amount(item.get("amount"))
+        amount_map[key] = round(amount_map.get(key, 0.0) + max(amount_value, 0.0), 2)
     if not grouped and project and files:
         grouped[project] = set(files)
     for proj_name, file_set in grouped.items():
@@ -5524,26 +5572,40 @@ def update_receipts_for_request(uid: int, project: Optional[str], files: List[st
         for entry in recs:
             if entry.get("file") not in file_set:
                 continue
+            key = (proj_name or "", entry.get("file"))
+            amount_for_item = amount_map.get(key)
+            if amount_for_item is None:
+                continue
             history = entry.get("payout_history")
             if not isinstance(history, list):
                 history = []
                 entry["payout_history"] = history
-            amount_value = receipt_amount(entry)
+            outstanding_before = receipt_outstanding_amount(entry)
+            locked_before = receipt_locked_amount(entry)
+            amount_value = round(min(max(amount_for_item, 0.0), outstanding_before + locked_before), 2)
+            if amount_value <= 0:
+                continue
             history.append({
                 "status": status,
                 "timestamp": now_iso,
                 "request_id": req_id,
                 "code": req_code,
                 "project": proj_name,
-                "amount": amount_value
+                "amount": amount_value,
+                "outstanding_before": outstanding_before,
+                "locked_before": locked_before,
+                "partial": amount_value + 0.01 < receipt_original_amount(entry)
             })
             payout = entry.get("payout") if isinstance(entry.get("payout"), dict) else {}
             if status in ("pending", "approved"):
+                locked_amount = min(amount_value, receipt_outstanding_amount(entry))
+                entry["locked_sum"] = round(locked_amount, 2)
                 payout.update({
                     "request_id": req_id,
                     "code": req_code,
                     "status": status,
-                    "updated_at": now_iso
+                    "updated_at": now_iso,
+                    "locked_amount": round(locked_amount, 2)
                 })
                 if status == "pending":
                     payout.setdefault("assigned_at", now_iso)
@@ -5558,14 +5620,24 @@ def update_receipts_for_request(uid: int, project: Optional[str], files: List[st
                     "updated_at": now_iso,
                     "confirmed_at": now_iso,
                     "assigned_at": payout.get("assigned_at", now_iso),
-                    "approved_at": payout.get("approved_at")
+                    "approved_at": payout.get("approved_at"),
+                    "paid_amount": amount_value
                 })
                 entry["payout"] = payout
-                entry["paid"] = True
-                entry["paid_at"] = now_iso
-                entry["paid_request_id"] = req_id
-                entry["paid_request_code"] = req_code
+                new_outstanding = round(max(outstanding_before - amount_value, 0.0), 2)
+                entry["outstanding_sum"] = new_outstanding
+                entry["locked_sum"] = 0.0
+                entry["paid"] = new_outstanding <= 0.01
+                if entry["paid"]:
+                    entry["paid_at"] = now_iso
+                    entry["paid_request_id"] = req_id
+                    entry["paid_request_code"] = req_code
+                else:
+                    entry.pop("paid_at", None)
+                    entry.pop("paid_request_id", None)
+                    entry.pop("paid_request_code", None)
             elif status in {"closed", "rejected"}:
+                entry["locked_sum"] = 0.0
                 if entry.get("paid") is not True:
                     entry.pop("paid_request_id", None)
                     entry.pop("paid_request_code", None)
@@ -5679,6 +5751,10 @@ def parse_amount(value: Any) -> float:
 
 def receipt_amount(entry: Any) -> float:
     if isinstance(entry, dict):
+        if "selected_amount" in entry and entry["selected_amount"] not in (None, ""):
+            amount_value = parse_amount(entry["selected_amount"])
+            if math.isfinite(amount_value):
+                return amount_value
         for key in ("sum", "amount", "calc_sum", "value"):
             if key in entry and entry[key] not in (None, ""):
                 amount_value = parse_amount(entry[key])
@@ -5686,6 +5762,65 @@ def receipt_amount(entry: Any) -> float:
         return 0.0
     value = parse_amount(entry)
     return value if math.isfinite(value) else 0.0
+
+
+def receipt_original_amount(entry: Any) -> float:
+    if isinstance(entry, dict):
+        for key in ("sum", "amount", "calc_sum", "value"):
+            if key in entry and entry[key] not in (None, ""):
+                value = parse_amount(entry[key])
+                return value if math.isfinite(value) else 0.0
+        return 0.0
+    value = parse_amount(entry)
+    return value if math.isfinite(value) else 0.0
+
+
+def receipt_outstanding_amount(entry: Any) -> float:
+    if isinstance(entry, dict):
+        if "outstanding_sum" in entry:
+            value = parse_amount(entry.get("outstanding_sum"))
+            if math.isfinite(value):
+                return round(max(value, 0.0), 2)
+        original = receipt_original_amount(entry)
+        paid_total = parse_amount(entry.get("paid_partial_sum")) if isinstance(entry.get("paid_partial_sum"), (int, float, str)) else 0.0
+        if not math.isfinite(paid_total):
+            paid_total = 0.0
+        value = original - paid_total
+        return round(max(value, 0.0), 2)
+    return 0.0
+
+
+def receipt_locked_amount(entry: Any) -> float:
+    if isinstance(entry, dict):
+        if "locked_sum" in entry:
+            value = parse_amount(entry.get("locked_sum"))
+            if math.isfinite(value):
+                return round(max(value, 0.0), 2)
+        payout = entry.get("payout") if isinstance(entry.get("payout"), dict) else {}
+        if payout:
+            value = parse_amount(payout.get("locked_amount"))
+            if math.isfinite(value):
+                return round(max(value, 0.0), 2)
+    return 0.0
+
+
+def receipt_requestable_amount(entry: Any) -> float:
+    outstanding = receipt_outstanding_amount(entry)
+    locked = receipt_locked_amount(entry)
+    value = outstanding - locked
+    return round(max(value, 0.0), 2)
+
+
+def receipt_selected_amount(entry: Any) -> float:
+    if isinstance(entry, dict) and entry.get("selected_amount") not in (None, ""):
+        value = parse_amount(entry.get("selected_amount"))
+        if math.isfinite(value):
+            return round(max(value, 0.0), 2)
+    requestable = receipt_requestable_amount(entry)
+    if requestable > 0:
+        return requestable
+    original = receipt_original_amount(entry)
+    return round(max(original, 0.0), 2)
 
 
 def parse_amount_chain(*candidates: Any) -> float:
@@ -6377,6 +6512,14 @@ def format_receipt_caption(receipt: dict, project: Optional[str] = None) -> str:
         lines.append(f"📂 Проект: <b>{h(project)}</b>")
     lines.append(date_line)
     lines.append(f"💰 {fmt_money(amount)} грн")
+    outstanding_value = receipt_outstanding_amount(receipt)
+    locked_value = receipt_locked_amount(receipt)
+    if outstanding_value > 0.01 and outstanding_value + 0.01 < amount:
+        lines.append(f"📉 Залишок: {fmt_money(outstanding_value)} грн")
+    elif outstanding_value > 0.01 and receipt.get("paid") is not True:
+        lines.append(f"📉 Залишок: {fmt_money(outstanding_value)} грн")
+    if locked_value > 0.01:
+        lines.append(f"🔒 У запиті: {fmt_money(locked_value)} грн")
     lines.append(f"📝 {desc_text}")
     lines.append(f"🔖 {receipt_status_text(receipt.get('paid'))}")
     lines.append(f"📄 {file_text}")
@@ -15256,18 +15399,24 @@ def finance_collect_outstanding(uid: int) -> Tuple[List[dict], List[dict]]:
         eligible: List[dict] = []
         locked_total = 0.0
         for entry in recs:
-            if entry.get("paid") is not False:
+            outstanding = receipt_outstanding_amount(entry)
+            if outstanding <= 0.01:
                 continue
             payout_status = (entry.get("payout") or {}).get("status") if isinstance(entry.get("payout"), dict) else None
+            locked_amount = receipt_locked_amount(entry)
             if payout_status in ("pending", "approved"):
-                locked_total += receipt_amount(entry)
+                locked_total += locked_amount or 0.0
+            available_amount = receipt_requestable_amount(entry)
+            if available_amount <= 0.01:
                 continue
             clone = dict(entry)
             clone["project"] = project
+            clone["available_amount"] = available_amount
+            clone["_requestable"] = available_amount
             eligible.append(clone)
         if not eligible:
             continue
-        total = sum(receipt_amount(item) for item in eligible)
+        total = sum(receipt_requestable_amount(item) for item in eligible)
         entry_payload = {
             "project": project,
             "receipts": eligible,
@@ -15286,20 +15435,154 @@ def finance_collect_outstanding(uid: int) -> Tuple[List[dict], List[dict]]:
     return available, blocked
 
 
-def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tuple[List[dict], float]:
-    cleaned: List[Tuple[float, dict]] = []
-    for rec in receipts:
-        amount = receipt_amount(rec)
-        cleaned.append((amount, rec))
-    cleaned.sort(key=lambda x: x[0])
-    selected: List[dict] = []
-    total = 0.0
-    for amount, rec in cleaned:
-        selected.append(rec)
-        total += amount
-        if target is not None and total + 0.01 >= target:
+def _finance_prune_combo_states(states: Dict[int, List[int]], target_cents: int, limit: int = 200000) -> Dict[int, List[int]]:
+    """Keep the number of cached sums within a reasonable bound."""
+    if len(states) <= limit:
+        return states
+    items = sorted(states.items())
+    kept: Dict[int, List[int]] = {}
+    if 0 in states:
+        kept[0] = states[0]
+    step = max(1, len(items) // limit)
+    for idx, (total, selection) in enumerate(items):
+        if total == 0:
+            continue
+        if idx % step == 0 or total >= target_cents:
+            kept[total] = selection
+        if len(kept) >= limit:
             break
-    return selected, round(total, 2)
+    if target_cents not in kept:
+        best = max((item for item in items if item[0] <= target_cents), default=None, key=lambda kv: kv[0])
+        if best:
+            kept[best[0]] = best[1]
+    return kept
+
+
+def finance_pick_receipts(receipts: List[dict], target: Optional[float]) -> Tuple[List[dict], float]:
+    if not receipts:
+        return [], 0.0
+
+    entries: List[dict] = []
+    for rec in receipts:
+        available = rec.get("_requestable") if isinstance(rec, dict) else None
+        if available is None:
+            available = receipt_requestable_amount(rec)
+        available_value = round(max(parse_amount(available), 0.0), 2)
+        if available_value <= 0:
+            continue
+        clone = dict(rec)
+        clone["_requestable"] = available_value
+        clone["_outstanding_total"] = round(receipt_outstanding_amount(rec), 2)
+        entries.append(clone)
+
+    if not entries:
+        return [], 0.0
+
+    def finalize(entry: dict, amount: float) -> dict:
+        clone = dict(entry)
+        requestable = round(entry.get("_requestable", amount), 2)
+        rounded_amount = round(amount, 2)
+        clone["selected_amount"] = rounded_amount
+        clone["selected_partial"] = rounded_amount + 0.01 < requestable
+        clone["selected_original_requestable"] = requestable
+        clone["selected_outstanding_before"] = round(entry.get("_outstanding_total", requestable), 2)
+        clone["selected_locked_before"] = round(receipt_locked_amount(entry), 2)
+        clone.pop("_requestable", None)
+        clone.pop("_outstanding_total", None)
+        return clone
+
+    total_available = round(sum(entry["_requestable"] for entry in entries), 2)
+    if target is None:
+        return [finalize(entry, entry["_requestable"]) for entry in entries], total_available
+
+    try:
+        target_value = float(target)
+    except (TypeError, ValueError):
+        target_value = total_available
+    if target_value <= 0:
+        return [], 0.0
+
+    target_cents = int(round(target_value * 100))
+    if target_cents <= 0:
+        return [], 0.0
+
+    amounts_cents: List[int] = [int(round(entry["_requestable"] * 100)) for entry in entries]
+    valid_pairs = [(amt, idx) for idx, amt in enumerate(amounts_cents) if amt > 0]
+    if not valid_pairs:
+        return [], 0.0
+
+    total_cents = sum(amt for amt, _ in valid_pairs)
+    if target_cents >= total_cents:
+        return [finalize(entries[idx], amounts_cents[idx] / 100) for _, idx in valid_pairs], total_available
+
+    combos: Dict[int, List[int]] = {0: []}
+    over_target_best: Optional[Tuple[int, List[int]]] = None
+    max_states = 200000
+
+    for idx, (amount_cents, entry_idx) in enumerate(valid_pairs):
+        snapshot = list(combos.items())
+        for current_sum, selection in snapshot:
+            new_sum = current_sum + amount_cents
+            new_selection = selection + [entry_idx]
+            if new_sum > target_cents:
+                if over_target_best is None or new_sum < over_target_best[0] or (
+                    over_target_best and new_sum == over_target_best[0] and len(new_selection) < len(over_target_best[1])
+                ):
+                    over_target_best = (new_sum, new_selection)
+                continue
+            existing = combos.get(new_sum)
+            if existing is None or len(new_selection) < len(existing):
+                combos[new_sum] = new_selection
+        if len(combos) > max_states:
+            combos = _finance_prune_combo_states(combos, target_cents, limit=max_states)
+
+    best_sum = max((s for s in combos.keys() if 0 < s <= target_cents), default=0)
+    if best_sum > 0:
+        indices = combos[best_sum]
+        used_entries: Set[int] = set(indices)
+        selected: List[dict] = [finalize(entries[idx], amounts_cents[idx] / 100) for idx in indices]
+        remainder_cents = target_cents - best_sum
+        if remainder_cents >= 1:
+            partial_candidate: Optional[int] = None
+            min_overflow: Optional[int] = None
+            for idx, amount_cents in enumerate(amounts_cents):
+                if idx in used_entries:
+                    continue
+                if amount_cents < remainder_cents:
+                    continue
+                overflow = amount_cents - remainder_cents
+                if min_overflow is None or overflow < min_overflow:
+                    min_overflow = overflow
+                    partial_candidate = idx
+            if partial_candidate is not None:
+                partial_amount = remainder_cents / 100
+                selected.append(finalize(entries[partial_candidate], partial_amount))
+                best_sum += remainder_cents
+        total = round(best_sum / 100, 2)
+        return selected, total
+
+    if over_target_best:
+        indices = over_target_best[1]
+        selected = [finalize(entries[idx], amounts_cents[idx] / 100) for idx in indices]
+        total = round(sum(amounts_cents[idx] for idx in indices) / 100, 2)
+        return selected, total
+
+    # Fallback: pick the closest single receipt, allowing partial payout.
+    best_partial_idx: Optional[int] = None
+    min_gap: Optional[int] = None
+    for idx, amount_cents in enumerate(amounts_cents):
+        if amount_cents <= 0:
+            continue
+        gap = abs(amount_cents - target_cents)
+        if min_gap is None or gap < min_gap:
+            min_gap = gap
+            best_partial_idx = idx
+    if best_partial_idx is not None:
+        amount_cents = min(amounts_cents[best_partial_idx], target_cents)
+        partial_amount = amount_cents / 100
+        return [finalize(entries[best_partial_idx], partial_amount)], round(partial_amount, 2)
+
+    return [], 0.0
 
 
 def finance_group_receipts(receipts: List[dict]) -> Dict[str, List[dict]]:
@@ -15311,7 +15594,11 @@ def finance_group_receipts(receipts: List[dict]) -> Dict[str, List[dict]]:
 
 
 def finance_receipts_total(receipts: List[dict]) -> float:
-    total = sum(receipt_amount(rec) for rec in receipts if isinstance(rec, dict))
+    total = 0.0
+    for rec in receipts:
+        if not isinstance(rec, dict):
+            continue
+        total += receipt_selected_amount(rec)
     return round(total, 2)
 
 
@@ -15398,6 +15685,13 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
     lines.append(f"💰 Сума до виплати: <b>{fmt_money(total)} грн</b>")
     if requested is not None and abs(requested - total) > 0.01:
         lines.append(f"Запитувана сума: {fmt_money(requested)} грн")
+        diff = round(total - requested, 2)
+        if diff > 0.01:
+            lines.append(f"⚠️ За доступними чеками можна сформувати лише {fmt_money(total)} грн.")
+        elif diff < -0.01:
+            lines.append(
+                f"⚠️ Сума перевищує запитувану на {fmt_money(abs(diff))} грн через номінали чеків."
+            )
     lines.append(f"Чеків у запиті: <b>{len(selected)}</b>")
     grouped = finance_group_receipts(selected)
     snapshot = finance_scope_snapshot(uid, scope, grouped)
@@ -15427,8 +15721,15 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
     preview: List[str] = []
     for rec in selected[:8]:
         rid = h(rec.get("receipt_no", "—"))
-        amt = fmt_money(receipt_amount(rec))
-        preview.append(f"#{rid} — {amt} грн")
+        amt_value = receipt_selected_amount(rec)
+        amt = fmt_money(amt_value)
+        line = f"#{rid} — {amt} грн"
+        if rec.get("selected_partial"):
+            before_val = parse_amount(rec.get("selected_outstanding_before"))
+            remainder = round(max(before_val - amt_value, 0.0), 2)
+            if remainder > 0.01:
+                line += f" (залишок {fmt_money(remainder)} грн)"
+        preview.append(line)
     if preview:
         lines.append("")
         lines.append("Чеки у вибірці:")
@@ -15747,6 +16048,15 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     if abs(requested_sum - calc_sum) > 0.01:
         user_lines.append(f"💰 Запитана сума: <b>{fmt_money(requested_sum)} грн</b>")
         user_lines.append(f"📄 Чеки у вибірці: {fmt_money(calc_sum)} грн")
+        diff_value = round(calc_sum - requested_sum, 2)
+        if diff_value < -0.01:
+            user_lines.append(
+                f"⚠️ Зафіксовано виплату на {fmt_money(calc_sum)} грн — менше запитуваного значення через наявні чеки."
+            )
+        elif diff_value > 0.01:
+            user_lines.append(
+                f"⚠️ Сума за обраними чеками перевищує запит на {fmt_money(diff_value)} грн."
+            )
     else:
         user_lines.append(f"💰 Сума до виплати: <b>{fmt_money(calc_sum)} грн</b>")
     if outstanding_before is not None:
@@ -15770,6 +16080,15 @@ async def finance_request_confirm(c: types.CallbackQuery, state: FSMContext):
     ]
     if abs(requested_sum - calc_sum) > 0.01:
         admin_lines.append(f"• Чеки у вибірці: {fmt_money(calc_sum)} грн")
+        diff_value = round(calc_sum - requested_sum, 2)
+        if diff_value < -0.01:
+            admin_lines.append(
+                f"• ⚠️ Сформовано на меншу суму ({fmt_money(calc_sum)} грн) через наявні чеки."
+            )
+        elif diff_value > 0.01:
+            admin_lines.append(
+                f"• ⚠️ Перевищення запиту на {fmt_money(diff_value)} грн з огляду на вибрані чеки."
+            )
     admin_lines.append(f"• Кількість чеків: {len(receipts)}")
     if outstanding_before is not None:
         admin_lines.append(f"• Борг до запиту: {fmt_money(float(outstanding_before))} грн")
@@ -15932,6 +16251,16 @@ async def fin_hist_view(c: types.CallbackQuery):
     code = obj.get("code", req_id)
     scope = finance_request_scope(obj)
     grouped_files: Dict[str, List[str]] = {}
+    item_amounts: Dict[Tuple[str, str], float] = {}
+    for item in obj.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        proj_name = item.get("project") or obj.get("project")
+        fname = item.get("file")
+        if not fname:
+            continue
+        key = (proj_name or "", fname)
+        item_amounts[key] = round(parse_amount(item.get("amount")), 2)
     for item in obj.get("items", []):
         if not isinstance(item, dict):
             continue
@@ -15957,7 +16286,11 @@ async def fin_hist_view(c: types.CallbackQuery):
         for fname in files:
             r = by_file.get(fname)
             if r:
-                amount = fmt_money(receipt_amount(r))
+                amount_key = (proj_name or "", fname)
+                amount_value = item_amounts.get(amount_key)
+                if amount_value is None:
+                    amount_value = receipt_selected_amount(r)
+                amount = fmt_money(amount_value)
                 desc = h(r.get("desc")) if r.get("desc") else "—"
                 rid = h(r.get("receipt_no", "—"))
                 lines.append(f"• #{rid} — {amount} грн — {desc}")
@@ -16282,13 +16615,17 @@ async def adm_hist_view_checks(c: types.CallbackQuery):
         "",
     ]
     grouped_files: Dict[str, List[str]] = {}
+    item_amounts: Dict[Tuple[str, str], float] = {}
     for item in obj.get("items", []):
         if not isinstance(item, dict):
             continue
         fname = item.get("file")
         proj_name = item.get("project") or obj.get("project")
-        if fname:
-            grouped_files.setdefault(proj_name, []).append(fname)
+        if not fname:
+            continue
+        grouped_files.setdefault(proj_name, []).append(fname)
+        key = (proj_name or "", fname)
+        item_amounts[key] = round(parse_amount(item.get("amount")), 2)
     if not grouped_files and files:
         grouped_files.setdefault(obj.get("project"), list(files))
     for proj_name, file_list in grouped_files.items():
@@ -18381,7 +18718,10 @@ async def finance_admin_notify_approval(obj: dict) -> None:
         for fname in files:
             receipt = by_file.get(fname)
             if receipt:
-                amount = receipt_amount(receipt)
+                amount_key = (proj_name or "", fname)
+                amount = item_amounts.get(amount_key)
+                if amount is None:
+                    amount = receipt_selected_amount(receipt)
                 lines.append(f"• {h(receipt.get('receipt_no','—'))} — {fmt_money(amount)} грн")
             else:
                 lines.append(f"• {h(fname)}")
