@@ -3168,6 +3168,75 @@ def _ensure_catalog_link(link_path: str, target: str) -> None:
             os.makedirs(link_path, exist_ok=True)
 
 
+def _prune_empty_catalog_dirs(start_path: str) -> None:
+    if not start_path:
+        return
+    base = os.path.abspath(PROJECT_CATALOG_BASE)
+    current = os.path.abspath(start_path)
+    while current.startswith(base):
+        if current == base:
+            break
+        try:
+            if os.listdir(current):
+                break
+            os.rmdir(current)
+        except Exception:
+            break
+        current = os.path.dirname(current)
+
+
+def project_catalog_unbind(storage_path: str, preserve: Optional[str] = None) -> None:
+    if not storage_path:
+        return
+    ensure_dirs()
+    base = os.path.abspath(PROJECT_CATALOG_BASE)
+    if not os.path.exists(base):
+        return
+    preserve_norm = os.path.normpath(preserve) if preserve else None
+    storage_candidates: Set[str] = set()
+    try:
+        storage_candidates.add(os.path.normpath(storage_path))
+    except Exception:
+        if storage_path:
+            storage_candidates.add(str(storage_path))
+    try:
+        storage_candidates.add(os.path.normpath(proj_path(storage_path)))
+    except Exception:
+        pass
+    for root, dirs, files in os.walk(base, topdown=False):
+        if "_project.json" not in files:
+            continue
+        if preserve_norm and os.path.normpath(root) == preserve_norm:
+            continue
+        meta_path = os.path.join(root, "_project.json")
+        try:
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+        except Exception:
+            meta = {}
+        stored = meta.get("storage") or meta.get("storage_path") or meta.get("project")
+        try:
+            stored_norm = os.path.normpath(stored)
+        except Exception:
+            stored_norm = stored
+        if stored_norm not in storage_candidates:
+            continue
+        for alias in ("pdf", "photos", "receipts"):
+            alias_path = os.path.join(root, alias)
+            try:
+                if os.path.islink(alias_path) or os.path.isfile(alias_path):
+                    os.unlink(alias_path)
+                elif os.path.isdir(alias_path):
+                    shutil.rmtree(alias_path)
+            except Exception:
+                pass
+        try:
+            os.remove(meta_path)
+        except Exception:
+            pass
+        _prune_empty_catalog_dirs(root)
+
+
 def project_catalog_bind(name: str, info: dict) -> None:
     if not name or not isinstance(info, dict):
         return
@@ -3182,6 +3251,7 @@ def project_catalog_bind(name: str, info: dict) -> None:
     region_dir = os.path.join(category_dir, region_slug)
     project_dir = os.path.join(region_dir, project_slug)
     os.makedirs(project_dir, exist_ok=True)
+    project_catalog_unbind(name, preserve=os.path.abspath(project_dir))
     atomic_write_json(os.path.join(category_dir, "_category.json"), {"name": category_name, "slug": category_slug})
     atomic_write_json(os.path.join(region_dir, "_region.json"), {"name": region_name, "slug": region_slug})
     atomic_write_json(
