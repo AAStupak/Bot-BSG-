@@ -5781,7 +5781,7 @@ async def admin_manual_claim_reject_comment(m: types.Message, state: FSMContext)
             "",
             f"Відповідь адміністратора: {h(comment)}",
         ]
-        user_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ У фінанси", callback_data="menu_finance"))
+        user_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
         try:
             await bot.send_message(chat_id, "\n".join(user_lines), reply_markup=user_kb)
         except Exception:
@@ -16215,6 +16215,7 @@ async def finance_manual_claim(c: types.CallbackQuery, state: FSMContext):
     runtime["manual_claim"] = {"project": project}
     await state.finish()
     await ManualClaimFSM.waiting_amount.set()
+    await flow_clear(uid)
     prompt_lines = [
         "➕ <b>Новий борг без чека</b>",
         "━━━━━━━━━━━━━━━━━━",
@@ -16245,6 +16246,7 @@ async def finance_manual_claim_amount(m: types.Message, state: FSMContext):
     draft["amount"] = amount_value
     runtime["manual_claim"] = draft
     await ManualClaimFSM.waiting_comment.set()
+    await flow_clear(uid)
     try:
         await bot.delete_message(m.chat.id, m.message_id)
     except Exception:
@@ -16300,6 +16302,7 @@ async def finance_manual_claim_cancel(c: types.CallbackQuery, state: FSMContext)
     uid = c.from_user.id
     await state.finish()
     finance_reset_manual_claim(uid)
+    await flow_clear(uid)
     await finance_menu(c)
 
 @dp.callback_query_handler(lambda c: c.data == "fin_request_payout")
