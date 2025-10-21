@@ -16235,14 +16235,26 @@ async def finance_manual_claim_amount(m: types.Message, state: FSMContext):
     draft = runtime.get("manual_claim")
     if not draft:
         await state.finish()
-        return await m.reply("Спроба створити заявку не вдалася. Відкрийте меню фінансів повторно.")
+        warn_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+        warn = await m.reply(
+            "Спроба створити заявку не вдалася. Відкрийте меню фінансів повторно.",
+            reply_markup=warn_kb,
+        )
+        flow_track_warning(uid, warn)
+        return
     text = (m.text or "").replace(",", ".").strip()
     try:
         amount_value = round(float(text), 2)
     except ValueError:
-        return await m.reply("Будь ласка, введіть число у форматі 123.45")
+        warn_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+        warn = await m.reply("Будь ласка, введіть число у форматі 123.45", reply_markup=warn_kb)
+        flow_track_warning(uid, warn)
+        return
     if amount_value <= 0:
-        return await m.reply("Сума повинна бути більшою за нуль.")
+        warn_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+        warn = await m.reply("Сума повинна бути більшою за нуль.", reply_markup=warn_kb)
+        flow_track_warning(uid, warn)
+        return
     draft["amount"] = amount_value
     runtime["manual_claim"] = draft
     await ManualClaimFSM.waiting_comment.set()
@@ -16268,10 +16280,19 @@ async def finance_manual_claim_comment(m: types.Message, state: FSMContext):
     draft = runtime.get("manual_claim")
     if not draft:
         await state.finish()
-        return await m.reply("Дані заявки втрачено. Спробуйте ще раз з меню фінансів.")
+        warn_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+        warn = await m.reply(
+            "Дані заявки втрачено. Спробуйте ще раз з меню фінансів.",
+            reply_markup=warn_kb,
+        )
+        flow_track_warning(uid, warn)
+        return
     comment = (m.text or "").strip()
     if len(comment) < 3:
-        return await m.reply("Коментар повинен містити хоча б 3 символи.")
+        warn_kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+        warn = await m.reply("Коментар повинен містити хоча б 3 символи.", reply_markup=warn_kb)
+        flow_track_warning(uid, warn)
+        return
     amount_value = float(draft.get("amount", 0.0))
     project = draft.get("project")
     await state.finish()
