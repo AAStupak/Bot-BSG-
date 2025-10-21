@@ -5147,6 +5147,22 @@ def ensure_profile_claims(profile: dict) -> List[dict]:
     return claims
 
 
+def list_pending_manual_claims() -> List[Tuple[dict, dict]]:
+    pending: List[Tuple[dict, dict]] = []
+    for profile in load_all_users():
+        if not isinstance(profile, dict):
+            continue
+        claims = ensure_profile_claims(profile)
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            if (claim.get("status") or "").lower() != "pending":
+                continue
+            pending.append((claim, profile))
+    pending.sort(key=lambda pair: pair[0].get("created_at") or "", reverse=True)
+    return pending
+
+
 def manual_claim_generate_id(uid: int) -> str:
     token = secrets.token_hex(4).upper()
     return f"CLM-{uid}-{token}"
@@ -15581,6 +15597,7 @@ def kb_finance_root(
         kb.add(InlineKeyboardButton("✅ Подтвердить получение выплат", callback_data="fin_confirm_list"))
     kb.add(InlineKeyboardButton("⏳ Неоплаченные чеки", callback_data="fin_unpaid_list"))
     kb.add(InlineKeyboardButton("📨 Запросить выплату", callback_data="fin_request_payout"))
+    kb.add(InlineKeyboardButton("🕒 Запити в обробці", callback_data="fin_pending_requests"))
     kb.add(InlineKeyboardButton("➕ Додати борг без чека", callback_data="fin_manual_claim"))
     kb.add(InlineKeyboardButton("📚 История выплат", callback_data="fin_history"))
     kb.add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
@@ -15820,6 +15837,115 @@ async def finance_unpaid_list(c: types.CallbackQuery):
     lines.append("")
     lines.append("Подайте новый запрос на выплату, чтобы закрыть чеки из раздела «Готовы к запросу».")
     await clear_then_anchor(uid, "\n".join(lines), finance_root_keyboard(uid))
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "fin_pending_requests")
+async def fin_pending_requests(c: types.CallbackQuery):
+    uid = c.from_user.id
+    prof = load_user(uid) or {}
+    pending_requests: List[dict] = []
+    for ref in iter_user_payout_refs(prof):
+        req = finance_load_request(ref.get("id"), ref.get("project"))
+        if not req:
+            continue
+        if req.get("user_id") != uid:
+            continue
+        if (req.get("status") or "").lower() != "pending":
+            continue
+        pending_requests.append(req)
+    pending_requests.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+    pending_claims = []
+    for claim in ensure_profile_claims(prof):
+        if not isinstance(claim, dict):
+            continue
+        if (claim.get("status") or "").lower() != "pending":
+            continue
+        pending_claims.append(claim)
+    pending_claims.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+    if not pending_requests and not pending_claims:
+        lines = [
+            "🕒 <b>Запити в обробці</b>",
+            "━━━━━━━━━━━━━━━━━━",
+            "Немає активних звернень, що очікують підтвердження адміністратора.",
+            "Створіть запит на виплату або додайте борг без чека, щоб вони з'явилися тут.",
+        ]
+        await clear_then_anchor(uid, "\n".join(lines), finance_root_keyboard(uid))
+        return await c.answer()
+    lines = [
+        "🕒 <b>Запити в обробці</b>",
+        "━━━━━━━━━━━━━━━━━━",
+    ]
+    if pending_requests:
+        lines.append(f"💸 Запитів на виплату: <b>{len(pending_requests)}</b>")
+    if pending_claims:
+        lines.append(f"➕ Боргів без чека: <b>{len(pending_claims)}</b>")
+    lines.append("")
+    lines.append("Натисніть на потрібний запис, щоб переглянути деталі.")
+    kb = InlineKeyboardMarkup()
+    for req in pending_requests[:10]:
+        code = h(req.get("code") or req.get("id") or "—")
+        amount = fmt_money(parse_amount(req.get("sum")))
+        scope_text = finance_scope_brief_text(finance_request_scope(req))
+        lines.append(f"• 💸 {code} — {amount} грн — {scope_text}")
+        kb.add(InlineKeyboardButton(f"💸 {code}", callback_data=f"fin_hist_open:{req['id']}"))
+    if len(pending_requests) > 10:
+        lines.append(f"… та ще {len(pending_requests) - 10} запит(ів)")
+    if pending_requests and pending_claims:
+        lines.append("")
+    for claim in pending_claims[:10]:
+        claim_id = h(claim.get("id") or "—")
+        amount = fmt_money(parse_amount(claim.get("amount")))
+        project = h(claim.get("project") or "—")
+        lines.append(f"• ➕ {claim_id} — {amount} грн — {project}")
+        kb.add(InlineKeyboardButton(f"➕ {claim_id}", callback_data=f"fin_claim_view:{claim.get('id')}"))
+    if len(pending_claims) > 10:
+        lines.append(f"… та ще {len(pending_claims) - 10} заяв(ок)")
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_finance"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("fin_claim_view:"))
+async def fin_claim_view(c: types.CallbackQuery):
+    uid = c.from_user.id
+    claim_id = c.data.split(":", 1)[1]
+    claim, profile = user_manual_claim_get(uid, claim_id)
+    if not claim:
+        return await c.answer("Запис не знайдено", show_alert=True)
+
+    def fmt_ts(value: Optional[str]) -> str:
+        if not value:
+            return "—"
+        try:
+            return datetime.fromisoformat(value).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return value
+
+    status_labels = {
+        "pending": "Очікує рішення",
+        "approved": "Схвалено",
+        "rejected": "Відхилено",
+    }
+    status_key = (claim.get("status") or "pending").lower()
+    status_text = status_labels.get(status_key, claim.get("status", "—"))
+    lines = [
+        "➕ <b>Заявка без чека</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"Код: <b>{h(claim.get('id') or '—')}</b>",
+        f"Статус: <b>{h(status_text)}</b>",
+        f"Проект: <b>{h(claim.get('project') or '—')}</b>",
+        f"Сума: <b>{fmt_money(parse_amount(claim.get('amount')))} грн</b>",
+        f"Коментар: {h(claim.get('comment') or '—')}",
+        f"Створено: <b>{fmt_ts(claim.get('created_at'))}</b>",
+        f"Оновлено: <b>{fmt_ts(claim.get('updated_at'))}</b>",
+    ]
+    if claim.get("admin_comment"):
+        lines.append(f"Відповідь адміністратора: {h(claim.get('admin_comment'))}")
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="fin_pending_requests"))
+    kb.add(InlineKeyboardButton("❌ Закрити", callback_data="broadcast_close"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
     await c.answer()
 
 
@@ -17077,12 +17203,13 @@ async def adm_requests(c: types.CallbackQuery):
     uid = c.from_user.id
     if uid not in admins: return await c.answer("⛔", show_alert=True)
     lst = finance_list("pending")
-    if not lst:
+    pending_claims = list_pending_manual_claims()
+    if not lst and not pending_claims:
         await clear_then_anchor(
             uid,
             "\n".join(
                 [
-                    "💵 <b>Запитів на виплату немає</b>",
+                    "💵 <b>Запитів для опрацювання немає</b>",
                     "━━━━━━━━━━━━━━━━━━",
                     "Усі звернення співробітників уже опрацьовані.",
                 ]
@@ -17090,15 +17217,32 @@ async def adm_requests(c: types.CallbackQuery):
             kb_admin_root()
         ); return await c.answer()
     kb = InlineKeyboardMarkup()
+    lines = [
+        "📬 <b>Запити, що очікують дій</b>",
+        "━━━━━━━━━━━━━━━━━━",
+    ]
+    if lst:
+        lines.append(f"💸 На виплату: <b>{len(lst)}</b>")
+    if pending_claims:
+        lines.append(f"➕ Борги без чека: <b>{len(pending_claims)}</b>")
+    lines.append("")
+    lines.append("Оберіть запис, щоб переглянути деталі та прийняти рішення.")
     for r in lst[:20]:
         code = r.get("code", r['id'])
         amount = parse_amount(r.get('sum'))
         scope_text = finance_scope_brief_text(finance_request_scope(r))
         kb.add(InlineKeyboardButton(f"{code} • {fmt_money(amount)} грн • {scope_text}", callback_data=f"adm_req_open:{r['id']}"))
+    for claim, profile in pending_claims[:20]:
+        user_id = profile.get("user_id")
+        claim_id = claim.get("id")
+        amount = fmt_money(parse_amount(claim.get("amount")))
+        project = h(claim.get("project") or "—")
+        label = f"➕ {claim_id} • {amount} грн • {project}"
+        kb.add(InlineKeyboardButton(label, callback_data=f"adm_claim_review:{user_id}:{claim_id}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_finance"))
     await clear_then_anchor(
         uid,
-        "📬 <b>Запросы на выплату</b>\n━━━━━━━━━━━━━━━━━━\nВыберите обращение, чтобы изучить детали и принять решение.",
+        "\n".join(lines),
         kb
     )
     await c.answer()
@@ -17320,6 +17464,31 @@ async def adm_req_open(c: types.CallbackQuery):
     akb.add(InlineKeyboardButton("❌ Відхилити", callback_data=f"adm_req_close:{req_id}"))
     akb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_requests"))
     await clear_then_anchor(uid, text, akb)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("adm_claim_review:"))
+async def adm_claim_review(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    try:
+        _, user_part, claim_part = c.data.split(":", 2)
+        user_id = int(user_part)
+        claim_id = claim_part
+    except Exception:
+        return await c.answer("Некоректні дані", show_alert=True)
+    claim, profile = user_manual_claim_get(user_id, claim_id)
+    if not claim:
+        return await c.answer("Заявку не знайдено", show_alert=True)
+    text = manual_claim_admin_text(claim, profile)
+    kb = InlineKeyboardMarkup()
+    if (claim.get("status") or "").lower() == "pending":
+        kb.add(InlineKeyboardButton("✅ Нарахувати борг", callback_data=f"adm_claim_approve:{user_id}:{claim_id}"))
+        kb.add(InlineKeyboardButton("❌ Відхилити", callback_data=f"adm_claim_reject:{user_id}:{claim_id}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_requests"))
+    kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="admin_notice_close"))
+    await clear_then_anchor(uid, text, kb)
     await c.answer()
 
 
