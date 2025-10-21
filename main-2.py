@@ -3036,6 +3036,40 @@ def slugify_segment(value: Optional[str], fallback: str) -> str:
     return slug or fallback.lower()
 
 
+def project_storage_segment(value: Optional[str], fallback: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        raw = fallback
+    cleaned = []
+    for ch in raw:
+        if ch in "\\/:*?\"<>|":
+            cleaned.append("_")
+        elif ch.isspace():
+            cleaned.append("_")
+        elif ord(ch) < 32:
+            continue
+        else:
+            cleaned.append(ch)
+    segment = re.sub(r"_+", "_", "".join(cleaned)).strip("_ ")
+    if not segment:
+        fallback_segment = (fallback or "segment").strip() or "segment"
+        segment = re.sub(r"_+", "_", fallback_segment.replace(" ", "_")).strip("_ ") or "segment"
+    return segment[:80]
+
+
+def project_storage_allocate(category_name: Optional[str], region_name: Optional[str], project_title: Optional[str]) -> Tuple[str, str, str, str]:
+    category_segment = project_storage_segment(category_name or "Без категорії", "category")
+    region_segment = project_storage_segment(region_name or "Без області", "region")
+    project_base = project_storage_segment(project_title or "Проект", "project") or "project"
+    candidate = os.path.join(category_segment, region_segment, project_base)
+    counter = 2
+    while os.path.exists(os.path.join(BASE_PATH, candidate)):
+        project_variant = f"{project_base}_{counter}"
+        candidate = os.path.join(category_segment, region_segment, project_variant)
+        counter += 1
+    return candidate, category_segment, region_segment, os.path.basename(candidate)
+
+
 def load_project_categories() -> dict:
     ensure_dirs()
     os.makedirs(PROJECT_CATALOG_BASE, exist_ok=True)
@@ -3144,12 +3178,12 @@ def project_catalog_bind(name: str, info: dict) -> None:
     region_slug = slugify_segment(region_name or "region", info.get("region_slug") or "region")
     category_slug = slugify_segment(category_name or "category", info.get("category_slug") or "category")
     project_slug = slugify_segment(info.get("project_slug") or info.get("code") or name, info.get("project_slug") or "project")
-    region_dir = os.path.join(PROJECT_CATALOG_BASE, region_slug)
-    category_dir = os.path.join(region_dir, category_slug)
-    project_dir = os.path.join(category_dir, project_slug)
+    category_dir = os.path.join(PROJECT_CATALOG_BASE, category_slug)
+    region_dir = os.path.join(category_dir, region_slug)
+    project_dir = os.path.join(region_dir, project_slug)
     os.makedirs(project_dir, exist_ok=True)
-    atomic_write_json(os.path.join(region_dir, "_region.json"), {"name": region_name, "slug": region_slug})
     atomic_write_json(os.path.join(category_dir, "_category.json"), {"name": category_name, "slug": category_slug})
+    atomic_write_json(os.path.join(region_dir, "_region.json"), {"name": region_name, "slug": region_slug})
     atomic_write_json(
         os.path.join(project_dir, "_project.json"),
         {
@@ -3157,6 +3191,7 @@ def project_catalog_bind(name: str, info: dict) -> None:
             "code": info.get("code"),
             "category": category_name,
             "region": region_name,
+            "storage": name,
             "canonical_path": proj_path(name),
         },
     )
@@ -3755,9 +3790,7 @@ def project_token(name: str) -> str:
 def _project_existing_codes(exclude: Optional[str] = None) -> Set[str]:
     ensure_dirs()
     codes: Set[str] = set()
-    if not os.path.exists(BASE_PATH):
-        return codes
-    for d in os.listdir(BASE_PATH):
+    for d in list_projects():
         if exclude and d == exclude:
             continue
         info_path = proj_info_file(d)
@@ -4077,13 +4110,31 @@ def ensure_project_structure(name: str):
             "region_slug": slugify_segment("", "region"),
             "category_slug": slugify_segment("", "category"),
             "project_slug": slugify_segment(name, "project"),
+            "storage_path": name,
+            "storage_category_dir": name.split("/")[0] if "/" in name else "",
+            "storage_region_dir": name.split("/")[1] if name.count("/") >= 2 else "",
+            "storage_project_dir": name.split("/")[-1],
         }
         atomic_write_json(proj_info_file(name), info)
     _alerts_ensure_storage(name)
 
 def list_projects() -> List[str]:
     ensure_dirs()
-    return [d for d in os.listdir(BASE_PATH) if os.path.isdir(os.path.join(BASE_PATH, d))]
+    projects: List[str] = []
+    if not os.path.exists(BASE_PATH):
+        return projects
+    for root, dirs, files in os.walk(BASE_PATH):
+        rel = os.path.relpath(root, BASE_PATH)
+        if rel == ".":
+            dirs[:] = [d for d in dirs if not d.startswith("_") and not d.startswith(".")]
+            continue
+        if "project.json" in files:
+            projects.append(rel.replace(os.sep, "/"))
+            dirs[:] = []
+        else:
+            dirs[:] = [d for d in dirs if not d.startswith("_") and not d.startswith(".")]
+    projects.sort()
+    return projects
 
 
 def project_from_token(token: str) -> Optional[str]:
@@ -4135,6 +4186,32 @@ def load_project_info(name: str) -> dict:
     if not info.get("category_id") and category_slug:
         info["category_id"] = category_slug
         updated = True
+    segments = name.split("/") if name else []
+    if len(segments) >= 3:
+        cat_dir = segments[0]
+        reg_dir = segments[1]
+    elif len(segments) == 2:
+        cat_dir = segments[0]
+        reg_dir = ""
+    elif len(segments) == 1:
+        cat_dir = ""
+        reg_dir = ""
+    else:
+        cat_dir = ""
+        reg_dir = ""
+    proj_dir = segments[-1] if segments else name
+    if info.get("storage_path") != name:
+        info["storage_path"] = name
+        updated = True
+    if info.get("storage_category_dir") != cat_dir:
+        info["storage_category_dir"] = cat_dir
+        updated = True
+    if info.get("storage_region_dir") != reg_dir:
+        info["storage_region_dir"] = reg_dir
+        updated = True
+    if info.get("storage_project_dir") != proj_dir:
+        info["storage_project_dir"] = proj_dir
+        updated = True
     if updated:
         save_project_info(name, info)
     return info
@@ -4150,12 +4227,45 @@ def save_project_info(name: str, info: dict):
     normalized["region_slug"] = slugify_segment(region_name or "region", normalized.get("region_slug") or "region")
     normalized["category_slug"] = slugify_segment(category_name or "category", normalized.get("category_slug") or "category")
     normalized["project_slug"] = slugify_segment(normalized.get("project_slug") or code_value, normalized.get("project_slug") or "project")
+    segments = name.split("/") if name else []
+    if len(segments) >= 3:
+        cat_dir, reg_dir, proj_dir = segments[0], segments[1], segments[-1]
+    elif len(segments) == 2:
+        cat_dir, reg_dir, proj_dir = segments[0], "", segments[-1]
+    elif len(segments) == 1:
+        cat_dir, reg_dir, proj_dir = "", "", segments[0]
+    else:
+        cat_dir, reg_dir, proj_dir = "", "", name
+    normalized["storage_path"] = name
+    normalized["storage_category_dir"] = normalized.get("storage_category_dir") or cat_dir
+    normalized["storage_region_dir"] = normalized.get("storage_region_dir") or reg_dir
+    normalized["storage_project_dir"] = normalized.get("storage_project_dir") or proj_dir
     if not normalized.get("category_name") and category_name:
         normalized["category_name"] = category_name
     if not normalized.get("category_id"):
         normalized["category_id"] = normalized.get("category_slug")
     atomic_write_json(proj_info_file(name), normalized)
     project_catalog_bind(name, normalized)
+
+
+def project_display_name(project: Optional[str], info: Optional[dict] = None) -> str:
+    if info and isinstance(info, dict):
+        title = str(info.get("name") or "").strip()
+        if title:
+            return title
+    if project:
+        try:
+            details = load_project_info(project)
+            title = str(details.get("name") or "").strip()
+            if title:
+                return title
+        except Exception:
+            pass
+        tail = project.split("/")[-1]
+        if tail:
+            return tail
+        return project
+    return "—"
 
 def _autosize(ws):
     for col in ws.columns:
@@ -5805,6 +5915,7 @@ def manual_claim_admin_text(claim: dict, profile: dict) -> str:
     project = claim.get("project") or "—"
     proj_info = load_project_info(project) or {}
     project_code = h(proj_info.get("code") or "—")
+    project_title = h(project_display_name(project, proj_info))
     fullname = h(profile.get("fullname", "—"))
     bsu_code = h(profile.get("bsu", "—"))
     phone = h(profile.get("phone", "—"))
@@ -5814,7 +5925,7 @@ def manual_claim_admin_text(claim: dict, profile: dict) -> str:
         "📥 <b>Нова заява на борг</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"ID: <code>{h(claim.get('id'))}</code>",
-        f"Проект: <b>{h(project)}</b> (код {project_code})",
+        f"Проект: <b>{project_title}</b> (код {project_code})",
         f"Сума: <b>{fmt_money(parse_amount(claim.get('amount')))} грн</b>",
     ]
     comment = (claim.get("comment") or "—").strip()
@@ -7118,7 +7229,7 @@ def format_receipt_caption(receipt: dict, project: Optional[str] = None) -> str:
     file_text = h(file_name) if file_name else "—"
     lines = [f"🆔 Номер: <b>{h(receipt.get('receipt_no', '—'))}</b>"]
     if project:
-        lines.append(f"📂 Проект: <b>{h(project)}</b>")
+        lines.append(f"📂 Проект: <b>{h(project_display_name(project))}</b>")
     lines.append(date_line)
     lines.append(f"💰 {fmt_money(amount)} грн")
     outstanding_value = receipt_outstanding_amount(receipt)
@@ -13835,7 +13946,7 @@ async def profile_points_overview(c: types.CallbackQuery):
             extra: List[str] = []
             project = meta.get("project")
             if project:
-                extra.append(h(project))
+                extra.append(h(project_display_name(project)))
             if meta.get("object"):
                 extra.append(h(str(meta.get("object"))))
             details = f" ({', '.join(extra)})" if extra else ""
@@ -14644,6 +14755,7 @@ async def check_stats(c: types.CallbackQuery):
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
+    proj_label = project_display_name(proj)
     recs = user_project_receipts(uid, proj)
     cnt = len(recs)
     total = round(sum(receipt_original_amount(r) for r in recs), 2)
@@ -14687,10 +14799,11 @@ async def check_stats(c: types.CallbackQuery):
             unspecified_count += 1
     partial_paid_amount = round(max(paid_total - paid_full_total, 0.0), 2)
     awaiting_total = round(outstanding_ready_total + pending_total + unspecified_total, 2)
+    proj_label = project_display_name(proj)
     summary_lines = [
         "📊 <b>Личная статистика по чекам</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"📂 Проект: <b>{h(proj)}</b>",
+        f"📂 Проект: <b>{h(proj_label)}</b>",
         f"🧾 Всего чеков: <b>{cnt}</b>",
         f"💰 Сумма чеков: <b>{fmt_money(total)} грн</b>",
         f"💸 От компании получено: <b>{fmt_money(paid_total)} грн</b>",
@@ -14770,7 +14883,7 @@ async def check_list(c: types.CallbackQuery):
     header = (
         "📁 <b>Все загруженные чеки</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        f"📂 Проект: <b>{h(proj)}</b>\n"
+        f"📂 Проект: <b>{h(proj_label)}</b>\n"
         f"🧾 Всего чеков: <b>{total}</b>\n\n"
         "Просматривайте карточки ниже. Для чеков без статуса оплаты появятся кнопки, чтобы указать «Фирма оплатила» или «Фирма не оплатила»."
     )
@@ -14812,11 +14925,12 @@ async def check_history(c: types.CallbackQuery):
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
+    proj_label = project_display_name(proj)
     recs = user_project_receipts(uid, proj)
     if not recs:
         await clear_then_anchor(
             uid,
-            f"🗂 История чеков пока пуста.\n📂 Проект: <b>{h(proj)}</b>\n\nДобавьте первый чек через кнопку «📷 Добавить чек», и здесь появится полный журнал операций.",
+            f"🗂 История чеков пока пуста.\n📂 Проект: <b>{h(proj_label)}</b>\n\nДобавьте первый чек через кнопку «📷 Добавить чек», и здесь появится полный журнал операций.",
             kb_checks(uid)
         )
         return await c.answer()
@@ -14832,7 +14946,7 @@ async def check_history(c: types.CallbackQuery):
     lines = [
         "🗂 <b>История чеков и оплат</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"📂 Проект: <b>{h(proj)}</b>",
+        f"📂 Проект: <b>{h(proj_label)}</b>",
         f"🗂 Записей в подборке: <b>{len(display_recs)}</b>",
         "",
         "Последние операции перечислены ниже в хронологическом порядке. Значки справа подсказывают текущий статус выплат.",
@@ -15274,7 +15388,7 @@ async def rcp_preview_actions(c: types.CallbackQuery, state: FSMContext):
         caption = (
             "✅ Чек сохранён!\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            f"📂 Проект: <b>{h(proj)}</b>\n"
+            f"📂 Проект: <b>{h(proj_name)}</b>\n"
             f"🆔 Номер: <b>{h(rid)}</b>\n"
             f"📅 Дата сохранения: {now.strftime('%Y-%m-%d %H:%M')}\n"
             f"💰 Сумма: {fmt_money(float(data['amount']))} грн\n"
@@ -15732,18 +15846,19 @@ async def menu_docs(c: types.CallbackQuery):
     if not active_project["name"]:
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
+    proj_label = project_display_name(proj)
     folder = proj_pdf_dir(proj)
     pdfs = [f for f in os.listdir(folder) if f.lower().endswith(".pdf")] if os.path.exists(folder) else []
     if not pdfs:
         await clear_then_anchor(
             uid,
-            f"📑 Документы проекта <b>{h(proj)}</b>\n━━━━━━━━━━━━━━━━━━\nПока нет загруженных файлов. Обратитесь к администратору, если ожидаете документацию.",
+            f"📑 Документы проекта <b>{h(proj_label)}</b>\n━━━━━━━━━━━━━━━━━━\nПока нет загруженных файлов. Обратитесь к администратору, если ожидаете документацию.",
             kb=InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
         )
         return await c.answer()
     await clear_then_anchor(
         uid,
-        f"📑 Документы проекта <b>{h(proj)}</b>\n━━━━━━━━━━━━━━━━━━\nДоступно файлов: <b>{len(pdfs)}</b>. Откройте нужный документ из списка ниже.",
+        f"📑 Документы проекта <b>{h(proj_label)}</b>\n━━━━━━━━━━━━━━━━━━\nДоступно файлов: <b>{len(pdfs)}</b>. Откройте нужный документ из списка ниже.",
         kb=InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
     )
     for f in pdfs[:10]:
@@ -15834,7 +15949,7 @@ def kb_finance_root(
 ) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     if projects:
-        label = f"📂 Проект: {h(project)}" if project else "📂 Выбрать проект"
+        label = f"📂 Проект: {h(project_display_name(project))}" if project else "📂 Выбрать проект"
         kb.add(InlineKeyboardButton(label, callback_data="fin_select_project"))
     if user_has_pending_confirm:
         kb.add(InlineKeyboardButton("✅ Подтвердить получение выплат", callback_data="fin_confirm_list"))
@@ -15893,10 +16008,12 @@ def finance_dashboard_view(uid: int) -> Tuple[str, InlineKeyboardMarkup, bool]:
     company_due = stats["unpaid"] + stats["pending"]
     pending_flag = user_has_approved_not_confirmed(uid)
 
+    project_label = project_display_name(project) if project else "—"
+
     lines = [
         "💵 <b>Финансовый раздел</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"📂 Проект: <b>{h(project) if project else '—'}</b>",
+        f"📂 Проект: <b>{h(project_label)}</b>",
         f"🧾 Загружено чеков: <b>{stats['count']}</b>",
         f"💰 Общая сумма чеков: <b>{fmt_money(stats['total'])} грн</b>",
         f"✅ Выплачено компанией: <b>{fmt_money(stats['paid'])} грн</b>",
@@ -15940,7 +16057,7 @@ def finance_dashboard_view(uid: int) -> Tuple[str, InlineKeyboardMarkup, bool]:
             overview = f"всего {fmt_money(other_stats['total'])} грн"
             if outstanding:
                 overview += f", ожидает {fmt_money(outstanding)} грн"
-            lines.append(f"• {h(other)} — {overview}")
+            lines.append(f"• {h(project_display_name(other))} — {overview}")
 
     lines.append("")
     lines.append("Выберите действие ниже, чтобы посмотреть детали чеков, отправить запрос на выплату или подтвердить получение средств.")
@@ -15986,7 +16103,7 @@ async def finance_select_project(c: types.CallbackQuery):
         stats = user_project_stats(uid, name)
         outstanding = stats["unpaid"] + stats["pending"]
         total = stats["total"]
-        label_parts = [h(name)]
+        label_parts = [h(project_display_name(name))]
         if outstanding:
             label_parts.append(f"⏳ {fmt_money(outstanding)} грн")
         elif total:
@@ -16037,7 +16154,7 @@ async def finance_unpaid_list(c: types.CallbackQuery):
     lines = [
         "⏳ <b>Неоплаченные чеки и запросы</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"📂 Проект: <b>{h(project)}</b>",
+        f"📂 Проект: <b>{h(project_display_name(project))}</b>",
         ""
     ]
     if unpaid:
@@ -16528,7 +16645,8 @@ def finance_render_confirmation(uid: int, draft: dict) -> str:
             lines.append(f"📉 Залишок після: <b>{fmt_money(parse_amount(after))} грн</b>")
     for proj, recs in grouped.items():
         subtotal = finance_receipts_total(recs)
-        proj_line = f"• {h(proj)} — {fmt_money(subtotal)} грн ({len(recs)} шт.)"
+        proj_label = project_display_name(proj)
+        proj_line = f"• {h(proj_label)} — {fmt_money(subtotal)} грн ({len(recs)} шт.)"
         info_snapshot = snapshot.get(proj) or {}
         extras: List[str] = []
         before_val = info_snapshot.get("outstanding_before")
@@ -16585,10 +16703,11 @@ async def finance_manual_claim(c: types.CallbackQuery, state: FSMContext):
     await state.finish()
     await ManualClaimFSM.waiting_amount.set()
     await flow_clear(uid)
+    project_label = project_display_name(project)
     prompt_lines = [
         "➕ <b>Новий борг без чека</b>",
         "━━━━━━━━━━━━━━━━━━",
-        f"Проект: <b>{h(project)}</b>",
+        f"Проект: <b>{h(project_label)}</b>",
         "Введіть суму у гривнях, яку компанія заборгувала.",
     ]
     kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Скасувати", callback_data="fin_claim_cancel"))
@@ -16672,11 +16791,12 @@ async def finance_manual_claim_comment(m: types.Message, state: FSMContext):
         pass
     claim = user_manual_claim_add(uid, project, amount_value, comment)
     prof = load_user(uid) or {}
+    project_label = project_display_name(project)
     summary_lines = [
         "✅ <b>Заявку на борг надіслано</b>",
         "━━━━━━━━━━━━━━━━━━",
         f"Код запиту: <b>{h(claim.get('id'))}</b>",
-        f"Проект: <b>{h(project)}</b>",
+        f"Проект: <b>{h(project_label)}</b>",
         f"Сума: <b>{fmt_money(amount_value)} грн</b>",
         f"Коментар: {h(comment)}",
         "",
@@ -16712,7 +16832,7 @@ async def finance_request_payout(c: types.CallbackQuery):
                 active = entry.get("blocked") or {}
                 code = active.get("code", active.get("id", "—"))
                 status_txt = active.get("status", "—")
-                lines.append(f"• {h(entry['project'])} — {h(code)} ({h(status_txt)})")
+                lines.append(f"• {h(project_display_name(entry['project']))} — {h(code)} ({h(status_txt)})")
         await clear_then_anchor(uid, "\n".join(lines), finance_root_keyboard(uid))
         return await c.answer("Даних недостатньо", show_alert=True)
     options: List[dict] = []
@@ -20111,8 +20231,9 @@ async def adm_stat_show(c: types.CallbackQuery, state: FSMContext):
     cnt = len(recs); total = round(sum(receipt_amount(r) for r in recs), 2)
     paid_sum = round(sum(receipt_amount(r) for r in recs if r.get("paid") is True), 2)
     unpaid_sum = round(sum(receipt_amount(r) for r in recs if r.get("paid") is False), 2)
+    proj_label = project_display_name(proj)
     text = (f"📊 Статистика пользователя <b>{target}</b>\n"
-            f"📂 Проект: <b>{h(proj)}</b>\n"
+            f"📂 Проект: <b>{h(proj_label)}</b>\n"
             f"• Чеков: <b>{cnt}</b>\n• Всего: <b>{fmt_money(total)} грн</b>\n"
             f"• ✅ Оплачено: <b>{fmt_money(paid_sum)} грн</b>\n"
             f"• ❌ Не оплачено: <b>{fmt_money(unpaid_sum)} грн</b>")
@@ -20128,7 +20249,7 @@ async def adm_recs_choose(c: types.CallbackQuery, state: FSMContext):
     projs = sorted(list((load_user(target) or {}).get("receipts", {}).keys()))
     kb = InlineKeyboardMarkup()
     for p in projs:
-        kb.add(InlineKeyboardButton(p, callback_data=f"adm_recs_{p}"))
+        kb.add(InlineKeyboardButton(project_display_name(p), callback_data=f"adm_recs_{p}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_user_finance"))
     await clear_then_anchor(uid, "Оберіть проєкт для перегляду чеків:", kb)
     await c.answer()
@@ -20142,7 +20263,8 @@ async def adm_recs_show(c: types.CallbackQuery, state: FSMContext):
     recs = user_project_receipts(target, proj)
     if not recs:
         return await c.answer("Чеков нет.", show_alert=True)
-    lines = [f"📁 Чеки пользователя <b>{target}</b>", f"📂 Проект: <b>{h(proj)}</b>", ""]
+    proj_label = project_display_name(proj)
+    lines = [f"📁 Чеки пользователя <b>{target}</b>", f"📂 Проект: <b>{h(proj_label)}</b>", ""]
     for r in recs[-30:]:
         status = "✅" if r.get("paid") is True else ("❌" if r.get("paid") is False else "⏳")
         amount = receipt_amount(r)
@@ -20186,8 +20308,9 @@ async def proj_list_cb(c: types.CallbackQuery):
         start = format_project_date_display(info.get("start_date"))
         end = format_project_date_display(info.get("end_date"))
         category = info.get("category_name") or "—"
+        display_name = info.get("name") or p.split("/")[-1]
         lines.append(
-            f"• <b>{h(p)}</b>{flag}\n"
+            f"• <b>{h(display_name)}</b>{flag}\n"
             f"  🆔 {h(info.get('code') or '—')}\n"
             f"  🌍 {h(info.get('region') or '—')}\n"
             f"  📍 {h(info.get('location') or '—')}\n"
@@ -20295,7 +20418,7 @@ async def proj_enter_loc(m: types.Message, state: FSMContext):
         warn = await bot.send_message(m.chat.id, "❗ Некорректное название.")
         flow_track(uid, warn); return
     await clear_step_prompt(state)
-    await state.update_data(name=name)
+    await state.update_data(title=name)
     msg = await bot.send_message(m.chat.id, "🌍 Выберите область проекта:", reply_markup=kb_region_select())
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
@@ -20475,7 +20598,19 @@ async def proj_pdf_prompt(m: types.Message, state: FSMContext):
     await clear_step_prompt(state)
     await state.update_data(end_date=ed)
     data = await state.get_data()
-    ensure_project_structure(data["name"])
+    title = data.get("title") or data.get("name") or "Проект"
+    region_name = data.get("region") or ""
+    category_name = data.get("category_name") or ""
+    storage_name = data.get("storage_name")
+    if not storage_name:
+        storage_name, cat_dir, reg_dir, project_dir = project_storage_allocate(category_name, region_name, title)
+        await state.update_data(
+            storage_name=storage_name,
+            storage_category_dir=cat_dir,
+            storage_region_dir=reg_dir,
+            storage_project_dir=project_dir,
+        )
+    ensure_project_structure(storage_name)
     tip = await bot.send_message(m.chat.id, "📑 Загружайте PDF-файлы проекта (можно несколько). Когда закончите — нажмите «✅ Завершить».")
     flow_track(uid, tip)
     await state.update_data(step_prompt=None)
@@ -20486,12 +20621,21 @@ async def proj_pdf_prompt(m: types.Message, state: FSMContext):
 @dp.message_handler(content_types=ContentType.DOCUMENT, state=ProjectCreateFSM.upload_pdf)
 async def proj_pdf_upload(m: types.Message, state: FSMContext):
     uid = m.from_user.id
-    data = await state.get_data(); name = data["name"]
+    data = await state.get_data()
+    name = data.get("storage_name") or data.get("name")
     if not (m.document and (m.document.mime_type and "pdf" in m.document.mime_type.lower() or m.document.file_name.lower().endswith(".pdf"))):
         warn = await bot.send_message(m.chat.id, "⚠️ Допускаются только PDF.")
         flow_track(uid, warn)
         try: await bot.delete_message(m.chat.id, m.message_id)
         except: pass
+        return
+    if not name:
+        warn = await bot.send_message(m.chat.id, "❗ Не удалось определить папку проекта. Попробуйте создать объект заново.")
+        flow_track(uid, warn)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
         return
     dst = os.path.join(proj_pdf_dir(name), m.document.file_name)
     os.makedirs(proj_pdf_dir(name), exist_ok=True)
@@ -20512,9 +20656,16 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
     if c.data == "pdf_more":
         await anchor_show_text(uid, "📑 Пришлите следующий PDF или «✅ Завершить».", kb_pdf_upload())
         return await c.answer("Жду файл")
-    data = await state.get_data(); name = data["name"]
+    data = await state.get_data()
+    name = data.get("storage_name") or data.get("name")
+    if not name:
+        await state.finish()
+        await clear_then_anchor(uid, "⚠️ Не удалось сохранить проект. Попробуйте создать его заново.", kb_admin_projects())
+        return await c.answer("Ошибка")
     info = load_project_info(name)
+    title = data.get("title") or info.get("name") or name.split("/")[-1]
     info.update({
+        "name": title,
         "location": data["location"],
         "description": data.get("description") or "",
         "region": data.get("region") or "",
@@ -20524,10 +20675,14 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
         "category_id": data.get("category_id") or info.get("category_id") or info.get("category_slug"),
         "category_name": data.get("category_name") or info.get("category_name") or "",
         "category": data.get("category_id") or info.get("category") or "",
+        "storage_path": name,
+        "storage_category_dir": data.get("storage_category_dir") or info.get("storage_category_dir") or "",
+        "storage_region_dir": data.get("storage_region_dir") or info.get("storage_region_dir") or "",
+        "storage_project_dir": data.get("storage_project_dir") or info.get("storage_project_dir") or name.split("/")[-1],
     })
     save_project_info(name, info); set_active_project(name)
     await state.finish()
-    await clear_then_anchor(uid, f"✅ Проект «{h(name)}» (код {h(info.get('code') or '—')}) создан и активирован.", kb_admin_projects())
+    await clear_then_anchor(uid, f"✅ Проект «{h(title)}» (код {h(info.get('code') or '—')}) создан и активирован.", kb_admin_projects())
     await c.answer("Готово")
     await update_all_anchors()
     start_display = format_project_date_display(info.get("start_date"))
@@ -20535,7 +20690,7 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
     category_display = h(info.get("category_name") or "—")
     text = (
         f"🏗 <b>Старт нового проекта!</b>\n\n"
-        f"📂 <b>{h(name)}</b>\n"
+        f"📂 <b>{h(title)}</b>\n"
         f"🆔 Код объекта: {h(info.get('code') or '—')}\n"
         f"🌍 Область: {h(info.get('region') or '—')}\n"
         f"📍 Локация: {h(info.get('location') or '—')}\n"
@@ -20563,7 +20718,10 @@ async def proj_activate(c: types.CallbackQuery):
     if not projs:
         await clear_then_anchor(uid, "❗ Нет проектов.", kb_admin_projects()); return await c.answer()
     kb = InlineKeyboardMarkup()
-    for p in projs: kb.add(InlineKeyboardButton(p, callback_data=f"proj_act_{p}"))
+    for p in projs:
+        info = load_project_info(p)
+        display = info.get("name") or p.split("/")[-1]
+        kb.add(InlineKeyboardButton(display, callback_data=f"proj_act_{p}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_projects"))
     await clear_then_anchor(uid, "Выберите проект для активации:", kb)
     await c.answer()
@@ -20576,7 +20734,8 @@ async def proj_activate_do(c: types.CallbackQuery):
     ensure_project_structure(name)
     info = load_project_info(name); info["active"] = True; save_project_info(name, info)
     set_active_project(name)
-    await clear_then_anchor(uid, f"✅ Активирован проект: <b>{h(name)}</b> (код {h(info.get('code') or '—')})", kb_admin_projects())
+    display = info.get("name") or name.split("/")[-1]
+    await clear_then_anchor(uid, f"✅ Активирован проект: <b>{h(display)}</b> (код {h(info.get('code') or '—')})", kb_admin_projects())
     await c.answer("Активирован")
     await update_all_anchors()
 
@@ -20588,7 +20747,10 @@ async def proj_finish(c: types.CallbackQuery):
     if not projs:
         await clear_then_anchor(uid, "❗ Нет проектов.", kb_admin_projects()); return await c.answer()
     kb = InlineKeyboardMarkup()
-    for p in projs: kb.add(InlineKeyboardButton(p, callback_data=f"proj_fin_{p}"))
+    for p in projs:
+        info = load_project_info(p)
+        display = info.get("name") or p.split("/")[-1]
+        kb.add(InlineKeyboardButton(display, callback_data=f"proj_fin_{p}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_projects"))
     await clear_then_anchor(uid, "Выберите проект для завершения:", kb)
     await c.answer()
@@ -20600,14 +20762,15 @@ async def proj_finish_do(c: types.CallbackQuery):
     name = c.data.split("proj_fin_",1)[1]
     info = load_project_info(name); info["active"] = False; save_project_info(name, info)
     if active_project["name"] == name: set_active_project(None)
-    await clear_then_anchor(uid, f"✅ Проект «{h(name)}» (код {h(info.get('code') or '—')}) помечен как завершён.", kb_admin_projects())
+    display = info.get("name") or name.split("/")[-1]
+    await clear_then_anchor(uid, f"✅ Проект «{h(display)}» (код {h(info.get('code') or '—')}) помечен как завершён.", kb_admin_projects())
     await c.answer("Завершён")
     await update_all_anchors()
     code = info.get("code") or "—"
     variants = [
-        f"🎉 <b>Проект «{h(name)}» (код {h(code)}) завершён!</b>\n\nСпасибо за отличную работу.",
-        f"✅ <b>Объект «{h(name)}» (код {h(code)}) закрыт.</b>\n\nБлагодарим каждого!",
-        f"✨ <b>Завершили «{h(name)}»!</b>\n\nКод объекта: {h(code)}. До встречи на новых проектах."
+        f"🎉 <b>Проект «{h(display)}» (код {h(code)}) завершён!</b>\n\nСпасибо за отличную работу.",
+        f"✅ <b>Объект «{h(display)}» (код {h(code)}) закрыт.</b>\n\nБлагодарим каждого!",
+        f"✨ <b>Завершили «{h(display)}»!</b>\n\nКод объекта: {h(code)}. До встречи на новых проектах."
     ]
     text = random.choice(variants)
     for f in os.listdir(USERS_PATH):
