@@ -99,6 +99,9 @@ POINTS_PHOTO_AWARD = 0.5
 POINTS_PARCEL_AWARD = 1.0
 WORK_REQUEST_POINTS_REWARD = 5.0
 
+PROJECT_CATEGORY_FILE = os.path.join(BASE_PATH, "_categories.json")
+PROJECT_CATALOG_BASE = os.path.join(BASE_PATH, "_catalog")
+
 def _normalize_chat_identifier(raw: Any) -> Optional[Union[int, str]]:
     if raw is None:
         return None
@@ -315,11 +318,11 @@ TEXTS: Dict[str, Dict[str, str]] = {
         "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n🔍 Активный объект пока не выбран.\nПопросите администратора включить проект, чтобы открыть рабочие разделы.\n\n📋 <b>Меню действий</b>\nИспользуйте кнопки ниже, чтобы изучить доступные возможности.",
     },
     "ANCHOR_PROJECT": {
-        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Область: {region}\n📍 Локація: {location}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
-        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Oblast: {region}\n📍 Location: {location}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
-        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Oblast: {region}\n📍 Standort: {location}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
-        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Obwód: {region}\n📍 Lokalizacja: {location}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
-        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Область: {region}\n📍 Локация: {location}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
+        "uk": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Код проєкту: {code}\n🌍 Область: {region}\n📍 Локація: {location}\n🏷 Категорія: {category}\n🖼 Фотоархів: <b>{photos}</b> шт.\n🗓 Період робіт: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню дій</b>\nОберіть потрібний розділ нижче, щоб додати чек, переглянути документи або перевірити фінанси.",
+        "en": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Project code: {code}\n🌍 Oblast: {region}\n📍 Location: {location}\n🏷 Category: {category}\n🖼 Photo archive: <b>{photos}</b> items\n🗓 Work period: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Actions</b>\nChoose the section below to add receipts, open documents, or review finance details.",
+        "de": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Projektcode: {code}\n🌍 Oblast: {region}\n📍 Standort: {location}\n🏷 Kategorie: {category}\n🖼 Fotoarchiv: <b>{photos}</b> Elemente\n🗓 Arbeitszeitraum: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Aktionen</b>\nWählen Sie unten einen Bereich, um Belege hinzuzufügen, Dokumente zu öffnen oder Finanzdaten einzusehen.",
+        "pl": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Kod projektu: {code}\n🌍 Obwód: {region}\n📍 Lokalizacja: {location}\n🏷 Kategoria: {category}\n🖼 Archiwum zdjęć: <b>{photos}</b> szt.\n🗓 Okres prac: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Menu działań</b>\nWybierz sekcję poniżej, aby dodać paragon, otworzyć dokumenty lub sprawdzić finanse.",
+        "ru": "🏗 <b>{bot}</b>\n━━━━━━━━━━━━━━━━━━\n{points_line}\n📂 <b>{name}</b>\n🆔 Код проекта: {code}\n🌍 Область: {region}\n📍 Локация: {location}\n🏷 Категория: {category}\n🖼 Фотоархив: <b>{photos}</b> шт.\n🗓 Период работ: {start} → {end}\n{bsg_section}\n{alerts_section}\n\n📋 <b>Меню действий</b>\nВыберите нужный раздел ниже, чтобы добавить чек, открыть документы или проверить финансы.",
     },
     "ANCHOR_POINTS_LINE": {
         "uk": "🏅 Балів: <b>{points}</b>",
@@ -2938,6 +2941,8 @@ class ReceiptFSM(StatesGroup):
 class ProjectCreateFSM(StatesGroup):
     enter_name = State()
     enter_region = State()
+    choose_category = State()
+    enter_category_name = State()
     enter_location = State()
     enter_description = State()
     enter_start_date = State()
@@ -2978,6 +2983,10 @@ class WorkRequestAppendFSM(StatesGroup):
     collecting = State()
 
 
+class ProjectCategoryManageFSM(StatesGroup):
+    entering_name = State()
+
+
 
 # ========================== FS HELPERS ==========================
 def ensure_dirs():
@@ -2990,6 +2999,7 @@ def ensure_dirs():
     os.makedirs(OBJECT_CONTROL_PATH, exist_ok=True)
     os.makedirs(ALERTS_STORAGE_BASE, exist_ok=True)
     os.makedirs(REGISTRATION_GATE_DIR, exist_ok=True)
+    os.makedirs(PROJECT_CATALOG_BASE, exist_ok=True)
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
@@ -3002,6 +3012,166 @@ def proj_photos_meta(name: str) -> str: return os.path.join(proj_photos_dir(name
 def user_file(uid: int) -> str: return os.path.join(USERS_PATH, f"{uid}.json")
 
 
+def slugify_segment(value: Optional[str], fallback: str) -> str:
+    base = (value or "").strip()
+    if not base:
+        base = fallback
+    normalized = unicodedata.normalize("NFKD", base)
+    cleaned = []
+    for ch in normalized:
+        category = unicodedata.category(ch)
+        if category.startswith("M"):
+            continue
+        if ch.isalnum():
+            cleaned.append(ch.lower())
+        elif ch in (" ", "-", "_"):
+            cleaned.append("-")
+        else:
+            cleaned.append("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", "".join(cleaned))
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    if not slug:
+        fallback_slug = re.sub(r"[^a-z0-9]+", "", base.lower())
+        slug = fallback_slug or fallback.lower()
+    return slug or fallback.lower()
+
+
+def load_project_categories() -> dict:
+    ensure_dirs()
+    os.makedirs(PROJECT_CATALOG_BASE, exist_ok=True)
+    if not os.path.exists(PROJECT_CATEGORY_FILE):
+        atomic_write_json(PROJECT_CATEGORY_FILE, {"categories": []})
+    try:
+        data = json.load(open(PROJECT_CATEGORY_FILE, "r", encoding="utf-8"))
+    except Exception:
+        data = {"categories": []}
+    if not isinstance(data, dict):
+        data = {"categories": []}
+    categories = data.get("categories")
+    if not isinstance(categories, list):
+        data["categories"] = []
+    return data
+
+
+def save_project_categories(payload: dict) -> None:
+    ensure_dirs()
+    atomic_write_json(PROJECT_CATEGORY_FILE, payload or {"categories": []})
+
+
+def project_categories_all() -> List[dict]:
+    data = load_project_categories()
+    categories = [item for item in data.get("categories", []) if isinstance(item, dict) and item.get("id")]
+    categories.sort(key=lambda item: (item.get("name") or "").lower())
+    return categories
+
+
+def project_category_by_id(cat_id: Optional[str]) -> Optional[dict]:
+    if not cat_id:
+        return None
+    cat_id = str(cat_id)
+    for item in project_categories_all():
+        if item.get("id") == cat_id:
+            return item
+    return None
+
+
+def project_category_create(name: str) -> dict:
+    title = (name or "").strip()
+    data = load_project_categories()
+    categories = data.get("categories", [])
+    existing_ids = {item.get("id") for item in categories if isinstance(item, dict)}
+    base_id = slugify_segment(title or "category", "category")
+    candidate = base_id
+    counter = 2
+    while candidate in existing_ids:
+        candidate = f"{base_id}-{counter}"
+        counter += 1
+    entry = {
+        "id": candidate,
+        "name": title or "Категория",
+        "created": datetime.now().isoformat(),
+    }
+    categories.append(entry)
+    data["categories"] = categories
+    save_project_categories(data)
+    return entry
+
+
+def project_category_usage_counts() -> Dict[str, int]:
+    counts = {item.get("id"): 0 for item in project_categories_all() if item.get("id")}
+    for name in list_projects():
+        try:
+            info = load_project_info(name)
+        except Exception:
+            continue
+        cat_id = info.get("category_id") or info.get("category_slug") or info.get("category")
+        if cat_id in counts:
+            counts[cat_id] = counts.get(cat_id, 0) + 1
+    return counts
+
+
+def _ensure_catalog_link(link_path: str, target: str) -> None:
+    if not target:
+        return
+    if os.path.islink(link_path):
+        current = os.readlink(link_path)
+        if current != target:
+            try:
+                os.unlink(link_path)
+            except Exception:
+                pass
+            try:
+                os.symlink(target, link_path)
+            except Exception:
+                os.makedirs(link_path, exist_ok=True)
+        return
+    if os.path.exists(link_path):
+        return
+    try:
+        os.symlink(target, link_path)
+    except Exception:
+        if os.path.isdir(target):
+            os.makedirs(link_path, exist_ok=True)
+
+
+def project_catalog_bind(name: str, info: dict) -> None:
+    if not name or not isinstance(info, dict):
+        return
+    ensure_dirs()
+    os.makedirs(PROJECT_CATALOG_BASE, exist_ok=True)
+    region_name = (info.get("region") or "Без області").strip()
+    category_name = (info.get("category_name") or info.get("category") or "Без категорії").strip()
+    region_slug = slugify_segment(region_name or "region", info.get("region_slug") or "region")
+    category_slug = slugify_segment(category_name or "category", info.get("category_slug") or "category")
+    project_slug = slugify_segment(info.get("project_slug") or info.get("code") or name, info.get("project_slug") or "project")
+    region_dir = os.path.join(PROJECT_CATALOG_BASE, region_slug)
+    category_dir = os.path.join(region_dir, category_slug)
+    project_dir = os.path.join(category_dir, project_slug)
+    os.makedirs(project_dir, exist_ok=True)
+    atomic_write_json(os.path.join(region_dir, "_region.json"), {"name": region_name, "slug": region_slug})
+    atomic_write_json(os.path.join(category_dir, "_category.json"), {"name": category_name, "slug": category_slug})
+    atomic_write_json(
+        os.path.join(project_dir, "_project.json"),
+        {
+            "name": info.get("name") or name,
+            "code": info.get("code"),
+            "category": category_name,
+            "region": region_name,
+            "canonical_path": proj_path(name),
+        },
+    )
+    base_path = proj_path(name)
+    link_map = {
+        "pdf": proj_pdf_dir(name),
+        "photos": proj_photos_dir(name),
+        "receipts": os.path.join(base_path, "receipts"),
+    }
+    for alias, source in link_map.items():
+        if not source or not os.path.exists(source):
+            continue
+        target = os.path.abspath(source)
+        link_path = os.path.join(project_dir, alias)
+        _ensure_catalog_link(link_path, target)
 def work_request_dir(request_id: str) -> str:
     return os.path.join(REQUESTS_PATH, request_id)
 
@@ -3891,10 +4061,24 @@ def ensure_project_structure(name: str):
         save_project_photos(name, [])
     if not os.path.exists(proj_info_file(name)):
         existing_codes = _project_existing_codes(exclude=name)
-        info = {"name": name, "location": "", "description": "",
-                "start_date": "", "end_date": "", "region": "", "code": generate_project_code(name, existing_codes),
-                "active": False, "pdf": [], "created": datetime.now().isoformat()}
-        json.dump(info, open(proj_info_file(name), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        info = {
+            "name": name,
+            "location": "",
+            "description": "",
+            "start_date": "",
+            "end_date": "",
+            "region": "",
+            "code": generate_project_code(name, existing_codes),
+            "active": False,
+            "pdf": [],
+            "created": datetime.now().isoformat(),
+            "category_id": "",
+            "category_name": "",
+            "region_slug": slugify_segment("", "region"),
+            "category_slug": slugify_segment("", "category"),
+            "project_slug": slugify_segment(name, "project"),
+        }
+        atomic_write_json(proj_info_file(name), info)
     _alerts_ensure_storage(name)
 
 def list_projects() -> List[str]:
@@ -3918,16 +4102,60 @@ def load_project_info(name: str) -> dict:
     if "region" not in info:
         info["region"] = ""
         updated = True
+    if "category_id" not in info:
+        legacy = info.get("category") or ""
+        info["category_id"] = legacy
+        updated = True
+    if "category_name" not in info:
+        cat = project_category_by_id(info.get("category_id")) if info.get("category_id") else None
+        if isinstance(cat, dict):
+            info["category_name"] = cat.get("name") or ""
+        else:
+            info["category_name"] = info.get("category") or ""
+        updated = True
     if not info.get("code"):
         existing_codes = _project_existing_codes(exclude=name)
         info["code"] = generate_project_code(info.get("name") or name, existing_codes)
+        updated = True
+    region_name = (info.get("region") or "").strip()
+    category_name = (info.get("category_name") or "").strip()
+    code_value = info.get("code") or name
+    region_slug = slugify_segment(region_name or "region", info.get("region_slug") or "region")
+    category_slug = slugify_segment(category_name or "category", info.get("category_slug") or "category")
+    project_slug = slugify_segment(info.get("project_slug") or code_value, info.get("project_slug") or "project")
+    if info.get("region_slug") != region_slug:
+        info["region_slug"] = region_slug
+        updated = True
+    if info.get("category_slug") != category_slug:
+        info["category_slug"] = category_slug
+        updated = True
+    if info.get("project_slug") != project_slug:
+        info["project_slug"] = project_slug
+        updated = True
+    if not info.get("category_id") and category_slug:
+        info["category_id"] = category_slug
         updated = True
     if updated:
         save_project_info(name, info)
     return info
 
 def save_project_info(name: str, info: dict):
-    json.dump(info, open(proj_info_file(name), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    if not isinstance(info, dict):
+        info = {}
+    normalized = dict(info)
+    normalized.setdefault("name", name)
+    region_name = (normalized.get("region") or "").strip()
+    category_name = (normalized.get("category_name") or normalized.get("category") or "").strip()
+    code_value = normalized.get("code") or name
+    normalized["region_slug"] = slugify_segment(region_name or "region", normalized.get("region_slug") or "region")
+    normalized["category_slug"] = slugify_segment(category_name or "category", normalized.get("category_slug") or "category")
+    normalized["project_slug"] = slugify_segment(normalized.get("project_slug") or code_value, normalized.get("project_slug") or "project")
+    if not normalized.get("category_name") and category_name:
+        normalized["category_name"] = category_name
+    if not normalized.get("category_id"):
+        normalized["category_id"] = normalized.get("category_slug")
+    atomic_write_json(proj_info_file(name), normalized)
+    project_catalog_bind(name, normalized)
 
 def _autosize(ws):
     for col in ws.columns:
@@ -7150,8 +7378,9 @@ def project_status_text(uid: int) -> str:
         name = h(info.get("name", "—")) or "—"
         region = h(info.get("region") or "—")
         location = h(info.get("location", "—")) or "—"
-        start = h(info.get("start_date", "—")) or "—"
-        end = h(info.get("end_date", "—")) or "—"
+        start = h(format_project_date_display(info.get("start_date"))) or "—"
+        end = h(format_project_date_display(info.get("end_date"))) or "—"
+        category = h(info.get("category_name") or "—")
         code = h(info.get("code") or "—")
         base = tr(
             uid,
@@ -7165,6 +7394,7 @@ def project_status_text(uid: int) -> str:
             photos=photo_total,
             start=start,
             end=end,
+            category=category,
             bsg_section=bsg_section,
             alerts_section=alerts_section,
         )
@@ -7739,6 +7969,7 @@ def kb_admin_projects() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("📋 Список", callback_data="proj_list"))
     kb.add(InlineKeyboardButton("➕ Создать", callback_data="proj_create"))
+    kb.add(InlineKeyboardButton("🏷 Категории", callback_data="proj_categories"))
     kb.add(InlineKeyboardButton("🔄 Активировать", callback_data="proj_activate"))
     kb.add(InlineKeyboardButton("✅ Завершить", callback_data="proj_finish"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
@@ -7906,6 +8137,18 @@ def kb_region_select() -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=2)
     for idx, region in enumerate(UKRAINE_REGIONS):
         kb.insert(InlineKeyboardButton(region, callback_data=f"proj_region_{idx}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="proj_create_cancel"))
+    return kb
+
+
+def kb_project_category_select() -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    categories = project_categories_all()
+    if categories:
+        for item in categories:
+            title = item.get("name") or item.get("id") or "Категория"
+            kb.add(InlineKeyboardButton(f"🏷 {title}", callback_data=f"proj_cat_use:{item.get('id')}"))
+    kb.add(InlineKeyboardButton("➕ Новая категория", callback_data="proj_cat_new"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="proj_create_cancel"))
     return kb
 
@@ -19940,12 +20183,16 @@ async def proj_list_cb(c: types.CallbackQuery):
     for p in projs:
         info = load_project_info(p)
         flag = " (★ активный)" if p == act else ""
+        start = format_project_date_display(info.get("start_date"))
+        end = format_project_date_display(info.get("end_date"))
+        category = info.get("category_name") or "—"
         lines.append(
             f"• <b>{h(p)}</b>{flag}\n"
             f"  🆔 {h(info.get('code') or '—')}\n"
             f"  🌍 {h(info.get('region') or '—')}\n"
             f"  📍 {h(info.get('location') or '—')}\n"
-            f"  📅 {h(info.get('start_date') or '?')} → {h(info.get('end_date') or '?')}"
+            f"  🏷 {h(category)}\n"
+            f"  📅 {h(start)} → {h(end)}"
         )
     await clear_then_anchor(uid, "\n".join(lines), kb_admin_projects())
     await c.answer()
@@ -19960,6 +20207,74 @@ async def proj_create_begin(c: types.CallbackQuery):
     await c.answer()
 
 
+async def admin_render_category_list(uid: int) -> None:
+    cats = project_categories_all()
+    usage = project_category_usage_counts()
+
+    def _projects_word(value: int) -> str:
+        if value % 10 == 1 and value % 100 != 11:
+            return "проект"
+        if value % 10 in {2, 3, 4} and value % 100 not in {12, 13, 14}:
+            return "проекта"
+        return "проектов"
+
+    lines = ["🏷 <b>Категории проектов</b>", ""]
+    if not cats:
+        lines.append("Категории ещё не созданы. Добавьте первую, чтобы упорядочить объекты по направлениям.")
+    else:
+        for item in cats:
+            name = h(item.get("name") or item.get("id") or "Категория")
+            count = int(usage.get(item.get("id"), 0) or 0)
+            lines.append(f"• {name} — {count} {_projects_word(count)}")
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("➕ Добавить категорию", callback_data="proj_categories_add"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_projects"))
+    await clear_then_anchor(uid, "\n".join(lines), kb)
+
+
+@dp.callback_query_handler(lambda c: c.data == "proj_categories", state="*")
+async def proj_categories_view(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await clear_step_prompt(state)
+    await state.finish()
+    await admin_render_category_list(uid)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "proj_categories_add", state="*")
+async def proj_categories_add(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await clear_step_prompt(state)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="proj_categories"))
+    msg = await bot.send_message(c.message.chat.id, "✏️ Введите <b>название</b> категории.", reply_markup=kb)
+    flow_track(uid, msg)
+    await remember_step_prompt(state, msg)
+    await ProjectCategoryManageFSM.entering_name.set()
+    await c.answer()
+
+
+@dp.message_handler(state=ProjectCategoryManageFSM.entering_name, content_types=ContentType.TEXT)
+async def proj_categories_add_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    title = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    if not title:
+        warn = await bot.send_message(m.chat.id, "❗ Название категории не может быть пустым.")
+        flow_track(uid, warn)
+        return
+    entry = project_category_create(title)
+    await clear_step_prompt(state)
+    await state.finish()
+    notice = await bot.send_message(m.chat.id, f"✅ Категория «{h(entry.get('name') or entry.get('id'))}» создана.")
+    flow_track(uid, notice)
+    await admin_render_category_list(uid)
 @dp.callback_query_handler(lambda c: c.data == "proj_create_cancel", state="*")
 async def proj_create_cancel(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
@@ -19998,12 +20313,72 @@ async def proj_select_region(c: types.CallbackQuery, state: FSMContext):
         return await c.answer("Неизвестная область", show_alert=True)
     region = UKRAINE_REGIONS[idx]
     await clear_step_prompt(state)
-    await state.update_data(region=region)
+    await state.update_data(region=region, category_id=None, category_name=None)
+    msg = await bot.send_message(c.message.chat.id, "🏷 Выберите <b>категорию</b> проекта:", reply_markup=kb_project_category_select())
+    flow_track(uid, msg)
+    await remember_step_prompt(state, msg)
+    await ProjectCreateFSM.choose_category.set()
+    await c.answer(region)
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("proj_cat_use:"), state=ProjectCreateFSM.choose_category)
+async def proj_select_category(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    cat_id = c.data.split("proj_cat_use:", 1)[1]
+    entry = project_category_by_id(cat_id)
+    if not entry:
+        return await c.answer("Категория не найдена", show_alert=True)
+    await clear_step_prompt(state)
+    await state.update_data(category_id=entry.get("id"), category_name=entry.get("name"))
     msg = await bot.send_message(c.message.chat.id, "📍 Укажите <b>локацию</b> (город/адрес).")
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
     await ProjectCreateFSM.enter_location.set()
-    await c.answer(region)
+    await c.answer(entry.get("name") or "Категория выбрана")
+
+
+@dp.callback_query_handler(lambda c: c.data == "proj_cat_new", state=ProjectCreateFSM.choose_category)
+async def proj_category_new_prompt(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await clear_step_prompt(state)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="proj_cat_back"))
+    msg = await bot.send_message(c.message.chat.id, "✏️ Введите <b>название</b> новой категории.", reply_markup=kb)
+    flow_track(uid, msg)
+    await remember_step_prompt(state, msg)
+    await ProjectCreateFSM.enter_category_name.set()
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "proj_cat_back", state=ProjectCreateFSM.enter_category_name)
+async def proj_category_back(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    await clear_step_prompt(state)
+    msg = await bot.send_message(c.message.chat.id, "🏷 Выберите <b>категорию</b> проекта:", reply_markup=kb_project_category_select())
+    flow_track(uid, msg)
+    await remember_step_prompt(state, msg)
+    await ProjectCreateFSM.choose_category.set()
+    await c.answer()
+
+
+@dp.message_handler(state=ProjectCreateFSM.enter_category_name, content_types=ContentType.TEXT)
+async def proj_category_create_input(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    title = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    if not title:
+        warn = await bot.send_message(m.chat.id, "❗ Название категории не может быть пустым.")
+        flow_track(uid, warn)
+        return
+    entry = project_category_create(title)
+    await clear_step_prompt(state)
+    await state.update_data(category_id=entry.get("id"), category_name=entry.get("name"))
+    msg = await bot.send_message(m.chat.id, "📍 Укажите <b>локацию</b> (город/адрес).")
+    flow_track(uid, msg)
+    await remember_step_prompt(state, msg)
+    await ProjectCreateFSM.enter_location.set()
 
 
 @dp.message_handler(state=ProjectCreateFSM.enter_location, content_types=ContentType.TEXT)
@@ -20031,15 +20406,44 @@ async def proj_enter_start(m: types.Message, state: FSMContext):
     except: pass
     await clear_step_prompt(state)
     await state.update_data(description=desc)
-    msg = await bot.send_message(m.chat.id, "📅 Введите <b>дату начала</b> (YYYY-MM-DD):")
+    msg = await bot.send_message(m.chat.id, "📅 Введите <b>дату начала</b> (ДД.ММ.ГГГГ):")
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
     await ProjectCreateFSM.enter_start_date.set()
 
 
 def _parse_date(text: str) -> Optional[str]:
-    try: return datetime.strptime(text, "%Y-%m-%d").strftime("%Y-%m-%d")
-    except Exception: return None
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    normalized = raw.replace("/", ".").replace("-", ".")
+    parts = [part for part in normalized.split(".") if part]
+    dt: Optional[datetime] = None
+    try:
+        if len(parts) == 3:
+            first, second, third = parts
+            if len(first) == 4 and len(third) <= 2:
+                year, month, day = first, second, third
+            else:
+                day, month, year = first, second, third
+            if len(year) == 2:
+                year = "20" + year if int(year) < 50 else "19" + year
+            dt = datetime(int(year), int(month), int(day))
+        else:
+            dt = datetime.strptime(raw, "%Y-%m-%d")
+    except Exception:
+        return None
+    return dt.strftime("%Y-%m-%d") if dt else None
+
+
+def format_project_date_display(value: Optional[str]) -> str:
+    if not value:
+        return "—"
+    try:
+        dt = datetime.strptime(value, "%Y-%m-%d")
+    except Exception:
+        return value
+    return dt.strftime("%d.%m.%Y")
 
 
 @dp.message_handler(state=ProjectCreateFSM.enter_start_date, content_types=ContentType.TEXT)
@@ -20049,11 +20453,11 @@ async def proj_enter_end(m: types.Message, state: FSMContext):
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
     if not sd:
-        warn = await bot.send_message(m.chat.id, "❗ Неверный формат. Пример: 2025-09-21")
+        warn = await bot.send_message(m.chat.id, "❗ Неверный формат. Пример: 21.09.2025")
         flow_track(uid, warn); return
     await clear_step_prompt(state)
     await state.update_data(start_date=sd)
-    msg = await bot.send_message(m.chat.id, "📅 Введите <b>дату окончания</b> (YYYY-MM-DD):")
+    msg = await bot.send_message(m.chat.id, "📅 Введите <b>дату окончания</b> (ДД.ММ.ГГГГ):")
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
     await ProjectCreateFSM.enter_end_date.set()
@@ -20066,7 +20470,7 @@ async def proj_pdf_prompt(m: types.Message, state: FSMContext):
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
     if not ed:
-        warn = await bot.send_message(m.chat.id, "❗ Неверный формат. Пример: 2025-12-31")
+        warn = await bot.send_message(m.chat.id, "❗ Неверный формат. Пример: 31.12.2025")
         flow_track(uid, warn); return
     await clear_step_prompt(state)
     await state.update_data(end_date=ed)
@@ -20116,20 +20520,27 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
         "region": data.get("region") or "",
         "start_date": data["start_date"],
         "end_date": data["end_date"],
-        "active": True
+        "active": True,
+        "category_id": data.get("category_id") or info.get("category_id") or info.get("category_slug"),
+        "category_name": data.get("category_name") or info.get("category_name") or "",
+        "category": data.get("category_id") or info.get("category") or "",
     })
     save_project_info(name, info); set_active_project(name)
     await state.finish()
     await clear_then_anchor(uid, f"✅ Проект «{h(name)}» (код {h(info.get('code') or '—')}) создан и активирован.", kb_admin_projects())
     await c.answer("Готово")
     await update_all_anchors()
+    start_display = format_project_date_display(info.get("start_date"))
+    end_display = format_project_date_display(info.get("end_date"))
+    category_display = h(info.get("category_name") or "—")
     text = (
         f"🏗 <b>Старт нового проекта!</b>\n\n"
         f"📂 <b>{h(name)}</b>\n"
         f"🆔 Код объекта: {h(info.get('code') or '—')}\n"
         f"🌍 Область: {h(info.get('region') or '—')}\n"
         f"📍 Локация: {h(info.get('location') or '—')}\n"
-        f"📅 Сроки: {h(info.get('start_date') or '—')} → {h(info.get('end_date') or '—')}\n"
+        f"🏷 Категория: {category_display}\n"
+        f"📅 Сроки: {h(start_display)} → {h(end_display)}\n"
         f"ℹ️ {h(info.get('description') or 'Документы — в разделе «📑 Документы»')}\n\n"
         f"Добавляйте чеки через «🧾 Чеки» → «📷 Добавить чек»."
     )
