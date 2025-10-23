@@ -26,7 +26,7 @@ BSG › botSYSTEM — Telegram Bot (SINGLE FILE, FULL PROJECT)
   Пользователь подтверждает получение — статус запроса → confirmed, сохраняется в файле запроса и в профиле; админу приходит «Пользователь подтвердил получение ...».
   В «Финансы» пользователя до подтверждения висит метка: «⚠️ Есть одобренные выплаты, подтвердите получение денег».
 - Excel Ledger (улучшено «красиво»):
-  • Главная книга: data/projects/<P>/ledger.xlsx
+  • Главная книга: projects/<Категория>/<Регион>/<Проект>/ledger.xlsx
   • Лист "Ledger": столбцы → Дата, Время, Пользователь, BSU, Номер чека, Сумма, Файл, Описание, Оплачен(1/0/None)
   • Отдельные ЛИСТЫ по каждому пользователю (по имени + BSU) с такими же столбцами.
   • В Excel записывается ИМЯ пользователя, а не ID.
@@ -78,7 +78,9 @@ WORKSPACE_BRAND = "BSG › SYSTEM"
 BOT_VERSION = "18.0.0"
 BOT_REVISION = "sr-bot-2025-10-05-finance2"
 
-BASE_PATH = "data/projects"
+PROJECTS_ROOT = "projects"
+LEGACY_PROJECTS_ROOT = os.path.join("data", "projects")
+BASE_PATH = PROJECTS_ROOT
 USERS_PATH = "data/users"
 BOT_FILE = "data/bot.json"
 FIN_PATH = "data/finances"  # запросы/история выплат (файлово)
@@ -2989,8 +2991,81 @@ class ProjectCategoryManageFSM(StatesGroup):
 
 
 # ========================== FS HELPERS ==========================
+def _legacy_conflict_path(directory: str, name: str) -> str:
+    base, ext = os.path.splitext(name)
+    counter = 1
+    while True:
+        suffix = "_legacy" if counter == 1 else f"_legacy{counter}"
+        candidate_dir = directory or ""
+        candidate_name = f"{base}{suffix}{ext}"
+        candidate_path = os.path.join(candidate_dir, candidate_name) if candidate_dir else candidate_name
+        if not os.path.exists(candidate_path):
+            return candidate_path
+        counter += 1
+
+
+def _merge_legacy_entry(source: str, destination: str) -> None:
+    if os.path.isdir(source):
+        if os.path.exists(destination) and not os.path.isdir(destination):
+            base_dir = os.path.dirname(destination)
+            stem, _ = os.path.splitext(os.path.basename(destination))
+            replacement = _legacy_conflict_path(base_dir, stem)
+            _merge_legacy_entry(source, replacement)
+            return
+        os.makedirs(destination, exist_ok=True)
+        for child in os.listdir(source):
+            _merge_legacy_entry(os.path.join(source, child), os.path.join(destination, child))
+        try:
+            os.rmdir(source)
+        except OSError:
+            pass
+        return
+
+    final_target = destination
+    if os.path.isdir(final_target):
+        final_target = os.path.join(final_target, os.path.basename(source))
+    parent_dir = os.path.dirname(final_target)
+    if parent_dir and parent_dir != ".":
+        os.makedirs(parent_dir, exist_ok=True)
+    if os.path.exists(final_target):
+        final_target = _legacy_conflict_path(os.path.dirname(final_target), os.path.basename(final_target))
+        new_parent = os.path.dirname(final_target)
+        if new_parent and new_parent != ".":
+            os.makedirs(new_parent, exist_ok=True)
+    shutil.move(source, final_target)
+
+
+def migrate_legacy_projects_root() -> None:
+    if BASE_PATH == LEGACY_PROJECTS_ROOT:
+        return
+    if not os.path.exists(LEGACY_PROJECTS_ROOT):
+        return
+    try:
+        entries = os.listdir(LEGACY_PROJECTS_ROOT)
+    except OSError:
+        return
+    if not entries:
+        try:
+            os.rmdir(LEGACY_PROJECTS_ROOT)
+        except OSError:
+            pass
+        return
+    os.makedirs(BASE_PATH, exist_ok=True)
+    for name in entries:
+        source_path = os.path.join(LEGACY_PROJECTS_ROOT, name)
+        if not os.path.exists(source_path):
+            continue
+        target_path = os.path.join(BASE_PATH, name)
+        _merge_legacy_entry(source_path, target_path)
+    try:
+        shutil.rmtree(LEGACY_PROJECTS_ROOT)
+    except OSError:
+        pass
+
+
 def ensure_dirs():
     os.makedirs("data", exist_ok=True)
+    migrate_legacy_projects_root()
     os.makedirs(BASE_PATH, exist_ok=True)
     os.makedirs(USERS_PATH, exist_ok=True)
     os.makedirs(FIN_PATH, exist_ok=True)
