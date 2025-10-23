@@ -20866,16 +20866,28 @@ async def proj_activate(c: types.CallbackQuery):
     for p in projs:
         info = load_project_info(p)
         display = info.get("name") or p.split("/")[-1]
-        kb.add(InlineKeyboardButton(display, callback_data=f"proj_act_{p}"))
+        token = project_token(p)
+        kb.add(InlineKeyboardButton(display, callback_data=f"proj_act:{token}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_projects"))
     await clear_then_anchor(uid, "Выберите проект для активации:", kb)
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("proj_act_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("proj_act:") or c.data.startswith("proj_act_"))
 async def proj_activate_do(c: types.CallbackQuery):
     uid = c.from_user.id
-    name = c.data.split("proj_act_",1)[1]
+    token: Optional[str] = None
+    name: Optional[str] = None
+    if c.data.startswith("proj_act:"):
+        token = c.data.split("proj_act:", 1)[1]
+        name = project_from_token(token)
+    if not name and c.data.startswith("proj_act_"):
+        # Backward compatibility for previously sent keyboards
+        legacy_name = c.data.split("proj_act_", 1)[1]
+        if legacy_name:
+            name = legacy_name
+    if not name:
+        return await c.answer("Проект не найден", show_alert=True)
     ensure_project_structure(name)
     info = load_project_info(name); info["active"] = True; save_project_info(name, info)
     set_active_project(name)
@@ -20895,16 +20907,27 @@ async def proj_finish(c: types.CallbackQuery):
     for p in projs:
         info = load_project_info(p)
         display = info.get("name") or p.split("/")[-1]
-        kb.add(InlineKeyboardButton(display, callback_data=f"proj_fin_{p}"))
+        token = project_token(p)
+        kb.add(InlineKeyboardButton(display, callback_data=f"proj_fin:{token}"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_projects"))
     await clear_then_anchor(uid, "Выберите проект для завершения:", kb)
     await c.answer()
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("proj_fin_"))
+@dp.callback_query_handler(lambda c: c.data.startswith("proj_fin:") or c.data.startswith("proj_fin_"))
 async def proj_finish_do(c: types.CallbackQuery):
     uid = c.from_user.id
-    name = c.data.split("proj_fin_",1)[1]
+    token: Optional[str] = None
+    name: Optional[str] = None
+    if c.data.startswith("proj_fin:"):
+        token = c.data.split("proj_fin:", 1)[1]
+        name = project_from_token(token)
+    if not name and c.data.startswith("proj_fin_"):
+        legacy_name = c.data.split("proj_fin_", 1)[1]
+        if legacy_name:
+            name = legacy_name
+    if not name:
+        return await c.answer("Проект не найден", show_alert=True)
     info = load_project_info(name); info["active"] = False; save_project_info(name, info)
     if active_project["name"] == name: set_active_project(None)
     display = info.get("name") or name.split("/")[-1]
