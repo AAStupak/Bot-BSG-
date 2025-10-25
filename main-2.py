@@ -5020,7 +5020,12 @@ def normalize_profile_receipts(profile: dict) -> bool:
     return changed
 
 
-NAME_ALLOWED_CHARS = "A-Za-zА-Яа-яЁёЇїІіЄєҐґʼ'’\-\s"
+NAME_ALLOWED_CHARS = (
+    "A-Za-z"
+    "А-Яа-яЁёЇїІіЄєҐґ"
+    "ʼ'’"
+    r"\-\s"
+)
 NAME_VALID_RE = re.compile(rf"^[{NAME_ALLOWED_CHARS}]+$")
 SKIP_KEYWORDS = {"нет", "немає", "нема", "no", "skip", "none", "n/a", "-"}
 
