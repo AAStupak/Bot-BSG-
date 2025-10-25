@@ -2989,6 +2989,10 @@ class ProjectCategoryManageFSM(StatesGroup):
     entering_name = State()
 
 
+class ProjectFilesFSM(StatesGroup):
+    waiting_comment = State()
+    uploading = State()
+
 
 # ========================== FS HELPERS ==========================
 def _legacy_conflict_path(directory: str, name: str) -> str:
@@ -3078,7 +3082,13 @@ def ensure_dirs():
 
 def proj_path(name: str) -> str: return os.path.join(BASE_PATH, name)
 def proj_info_file(name: str) -> str: return os.path.join(proj_path(name), "project.json")
-def proj_pdf_dir(name: str) -> str: return os.path.join(proj_path(name), "pdf")
+def proj_docs_dir(name: str) -> str: return os.path.join(proj_path(name), "documents")
+def proj_docs_meta(name: str) -> str: return os.path.join(proj_docs_dir(name), "files.json")
+
+
+def proj_pdf_dir(name: str) -> str:
+    """Backward-compatible alias for legacy code that expects a PDF directory."""
+    return proj_docs_dir(name)
 def proj_ledger(name: str) -> str: return os.path.join(proj_path(name), "ledger.xlsx")
 def proj_finance_file(name: str) -> str: return os.path.join(proj_path(name), "finance.json")
 def proj_receipts_dir(name: str, uid: int) -> str: return os.path.join(proj_path(name), "receipts", str(uid))
@@ -3342,6 +3352,7 @@ def project_catalog_bind(name: str, info: dict) -> None:
     )
     base_path = proj_path(name)
     link_map = {
+        "documents": proj_docs_dir(name),
         "pdf": proj_pdf_dir(name),
         "photos": proj_photos_dir(name),
         "receipts": os.path.join(base_path, "receipts"),
@@ -4223,9 +4234,43 @@ def save_project_photos(name: str, items: List[dict]):
     os.makedirs(proj_photos_dir(name), exist_ok=True)
     json.dump(items, open(proj_photos_meta(name), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
+
+def ensure_project_documents(name: str):
+    docs_dir = proj_docs_dir(name)
+    os.makedirs(docs_dir, exist_ok=True)
+    legacy_dir = os.path.join(proj_path(name), "pdf")
+    if os.path.isdir(legacy_dir) and os.path.abspath(legacy_dir) != os.path.abspath(docs_dir):
+        for entry in os.listdir(legacy_dir):
+            legacy_path = os.path.join(legacy_dir, entry)
+            target_path = os.path.join(docs_dir, entry)
+            if os.path.isdir(legacy_path):
+                shutil.copytree(legacy_path, target_path, dirs_exist_ok=True)
+                shutil.rmtree(legacy_path, ignore_errors=True)
+                continue
+            if not os.path.exists(target_path):
+                try:
+                    shutil.move(legacy_path, target_path)
+                except Exception:
+                    try:
+                        shutil.copy2(legacy_path, target_path)
+                    except Exception:
+                        pass
+            try:
+                if os.path.exists(legacy_path):
+                    os.remove(legacy_path)
+            except Exception:
+                pass
+        try:
+            os.rmdir(legacy_dir)
+        except OSError:
+            pass
+    if not os.path.exists(proj_docs_meta(name)):
+        atomic_write_json(proj_docs_meta(name), [])
+
+
 def ensure_project_structure(name: str):
     os.makedirs(proj_path(name), exist_ok=True)
-    os.makedirs(proj_pdf_dir(name), exist_ok=True)
+    ensure_project_documents(name)
     os.makedirs(os.path.join(proj_path(name), "receipts"), exist_ok=True)
     os.makedirs(proj_photos_dir(name), exist_ok=True)
     if not os.path.exists(proj_finance_file(name)):
@@ -4262,6 +4307,189 @@ def ensure_project_structure(name: str):
         }
         atomic_write_json(proj_info_file(name), info)
     _alerts_ensure_storage(name)
+
+
+def project_document_path(name: str, rel_path: str) -> str:
+    return os.path.join(proj_docs_dir(name), rel_path)
+
+
+def load_project_documents(name: str) -> List[dict]:
+    ensure_project_structure(name)
+    meta_path = proj_docs_meta(name)
+    try:
+        raw_items = json.load(open(meta_path, "r", encoding="utf-8")) if os.path.exists(meta_path) else []
+    except Exception:
+        raw_items = []
+    items: List[dict] = []
+    seen: set = set()
+    changed = False
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+        entry = dict(raw)
+        doc_id = entry.get("id") or f"DOC-{secrets.token_hex(6).upper()}"
+        while doc_id in seen:
+            doc_id = f"DOC-{secrets.token_hex(6).upper()}"
+        if doc_id != entry.get("id"):
+            entry["id"] = doc_id
+            changed = True
+        seen.add(doc_id)
+        stored = entry.get("file") or entry.get("path") or entry.get("stored")
+        if not stored:
+            continue
+        entry.setdefault("original", os.path.basename(stored))
+        entry.setdefault("uploaded_at", entry.get("created_at") or now_iso)
+        entry.setdefault("uploader_id", entry.get("author_id"))
+        entry.setdefault("uploader_name", entry.get("author"))
+        entry.setdefault("comment", entry.get("note") or "")
+        batch_id = entry.get("batch") or entry.get("batch_id") or "default"
+        entry["batch_id"] = batch_id
+        entry.setdefault("batch_label", entry.get("batch_label") or entry.get("batch_name") or "")
+        entry.setdefault("batch_at", entry.get("batch_at") or entry["uploaded_at"])
+        entry.setdefault("mime", entry.get("mime") or "")
+        entry.setdefault("size", entry.get("size") or 0)
+        items.append(entry)
+
+    info = load_project_info(name)
+    legacy_files = info.get("pdf") or []
+    if isinstance(legacy_files, list):
+        for fname in legacy_files:
+            if not isinstance(fname, str) or not fname:
+                continue
+            if any(entry.get("file") == fname or entry.get("original") == fname for entry in items):
+                continue
+            doc_id = f"DOC-{secrets.token_hex(6).upper()}"
+            entry = {
+                "id": doc_id,
+                "file": fname,
+                "original": fname,
+                "uploaded_at": now_iso,
+                "uploader_id": None,
+                "uploader_name": "",
+                "comment": "",
+                "batch_id": "legacy",
+                "batch_label": "Документация",
+                "batch_at": now_iso,
+                "mime": "",
+                "size": 0,
+            }
+            items.append(entry)
+            changed = True
+
+    if changed:
+        save_project_documents(name, items)
+    return items
+
+
+def save_project_documents(name: str, items: List[dict]):
+    ensure_project_structure(name)
+    normalized = []
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        if not entry.get("file"):
+            continue
+        normalized.append(dict(entry))
+    atomic_write_json(proj_docs_meta(name), normalized)
+    info = load_project_info(name)
+    info["pdf"] = [entry.get("file") for entry in normalized if entry.get("file")]
+    info["documents_count"] = len(normalized)
+    info["documents_updated_at"] = datetime.now(timezone.utc).isoformat()
+    save_project_info(name, info)
+
+
+def register_project_document(
+    name: str,
+    *,
+    stored: str,
+    original: str,
+    uploader_id: Optional[int],
+    uploader_name: str,
+    comment: str,
+    batch_id: str,
+    batch_label: str,
+    batch_at: str,
+    mime: Optional[str] = None,
+    size: Optional[int] = None,
+) -> dict:
+    items = load_project_documents(name)
+    entry = {
+        "id": f"DOC-{secrets.token_hex(6).upper()}",
+        "file": stored,
+        "original": original,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "uploader_id": uploader_id,
+        "uploader_name": uploader_name,
+        "comment": comment or "",
+        "batch_id": batch_id,
+        "batch_label": batch_label,
+        "batch_at": batch_at,
+        "mime": mime or "",
+        "size": size or 0,
+    }
+    items.append(entry)
+    save_project_documents(name, items)
+    return entry
+
+
+def project_document_make_batch(comment: Optional[str], *, prefix: str = "update") -> Tuple[str, str, str]:
+    timestamp = datetime.now(timezone.utc)
+    batch_at = timestamp.isoformat()
+    slug_source = (comment or "").strip()
+    slug = project_storage_segment(slug_source, "update") if slug_source else ""
+    if slug:
+        slug = slug[:40]
+    core = timestamp.strftime("%Y%m%d-%H%M%S")
+    base = f"{prefix}-{core}" if prefix else core
+    batch_id = f"{base}-{slug}" if slug else base
+    if slug_source:
+        batch_label = slug_source
+    elif prefix == "initial":
+        batch_label = "Стартовая документация"
+    else:
+        batch_label = "Обновление документов"
+    return batch_id, batch_label, batch_at
+
+
+def project_document_safe_filename(directory: str, original: Optional[str]) -> str:
+    raw_name = (original or "document").strip() or "document"
+    base, ext = os.path.splitext(raw_name)
+    safe_base = project_storage_segment(base, "document") or "document"
+    safe_ext = ext if ext else ""
+    candidate = f"{safe_base}{safe_ext}"
+    counter = 1
+    while os.path.exists(os.path.join(directory, candidate)):
+        candidate = f"{safe_base}-{counter}{safe_ext}"
+        counter += 1
+    return candidate
+
+
+async def project_document_capture(
+    name: str,
+    document: types.Document,
+    *,
+    batch_id: str,
+    batch_label: str,
+    batch_at: str,
+) -> Tuple[dict, str]:
+    batch_dir = os.path.join(proj_docs_dir(name), batch_id)
+    os.makedirs(batch_dir, exist_ok=True)
+    original_name = document.file_name or f"document-{document.file_unique_id}"
+    stored_name = project_document_safe_filename(batch_dir, original_name)
+    dst = os.path.join(batch_dir, stored_name)
+    await document.download(destination_file=dst)
+    rel_path = os.path.join(batch_id, stored_name).replace(os.sep, "/")
+    entry = {
+        "stored": rel_path,
+        "original": original_name,
+        "mime": document.mime_type or "",
+        "size": document.file_size,
+        "batch_id": batch_id,
+        "batch_label": batch_label,
+        "batch_at": batch_at,
+    }
+    return entry, dst
 
 def list_projects() -> List[str]:
     ensure_dirs()
@@ -8226,6 +8454,7 @@ def kb_admin_projects() -> InlineKeyboardMarkup:
     kb.add(InlineKeyboardButton("📋 Список", callback_data="proj_list"))
     kb.add(InlineKeyboardButton("➕ Создать", callback_data="proj_create"))
     kb.add(InlineKeyboardButton("🏷 Категории", callback_data="proj_categories"))
+    kb.add(InlineKeyboardButton("📎 Файлы", callback_data="proj_files"))
     kb.add(InlineKeyboardButton("🔄 Активировать", callback_data="proj_activate"))
     kb.add(InlineKeyboardButton("✅ Завершить", callback_data="proj_finish"))
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="menu_admin"))
@@ -8409,10 +8638,26 @@ def kb_project_category_select() -> InlineKeyboardMarkup:
     return kb
 
 
-def kb_pdf_upload() -> InlineKeyboardMarkup:
+def kb_project_cancel(callback: str = "proj_create_cancel") -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("➕ Ещё файл", callback_data="pdf_more"))
-    kb.add(InlineKeyboardButton("✅ Завершить", callback_data="pdf_finish"))
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data=callback))
+    return kb
+
+
+def kb_project_files_menu(token: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("➕ Добавить файлы", callback_data=f"proj_files_add:{token}"))
+    kb.add(InlineKeyboardButton("📄 История", callback_data=f"proj_files_history:{token}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="proj_files"))
+    return kb
+
+
+def kb_pdf_upload(cancel_callback: Optional[str] = None) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("➕ Ещё файл", callback_data="docs_more"))
+    kb.add(InlineKeyboardButton("✅ Завершить", callback_data="docs_finish"))
+    if cancel_callback:
+        kb.add(InlineKeyboardButton("❌ Отменить", callback_data=cancel_callback))
     return kb
 
 
@@ -15992,25 +16237,61 @@ async def menu_docs(c: types.CallbackQuery):
         return await c.answer("❗ Нет активного проекта", show_alert=True)
     proj = active_project["name"]
     proj_label = project_display_name(proj)
-    folder = proj_pdf_dir(proj)
-    pdfs = [f for f in os.listdir(folder) if f.lower().endswith(".pdf")] if os.path.exists(folder) else []
-    if not pdfs:
+    docs = [entry for entry in load_project_documents(proj) if isinstance(entry, dict)]
+    available: List[dict] = []
+    for entry in docs:
+        rel = entry.get("file") or entry.get("stored")
+        if not rel:
+            continue
+        path = project_document_path(proj, rel)
+        if os.path.exists(path):
+            clone = dict(entry)
+            clone["file"] = rel
+            available.append(clone)
+    if not available:
         await clear_then_anchor(
             uid,
             f"📑 Документы проекта <b>{h(proj_label)}</b>\n━━━━━━━━━━━━━━━━━━\nПока нет загруженных файлов. Обратитесь к администратору, если ожидаете документацию.",
             kb=InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
         )
         return await c.answer()
+    available.sort(key=lambda x: x.get("uploaded_at") or x.get("batch_at") or "")
     await clear_then_anchor(
         uid,
-        f"📑 Документы проекта <b>{h(proj_label)}</b>\n━━━━━━━━━━━━━━━━━━\nДоступно файлов: <b>{len(pdfs)}</b>. Откройте нужный документ из списка ниже.",
+        f"📑 Документы проекта <b>{h(proj_label)}</b>\n━━━━━━━━━━━━━━━━━━\nДоступно файлов: <b>{len(available)}</b>. Последние обновления отправлены ниже.",
         kb=InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
     )
-    for f in pdfs[:10]:
-        p = os.path.join(folder, f)
-        if os.path.exists(p):
-            msg = await bot.send_document(c.message.chat.id, InputFile(p), caption=h(f))
-            flow_track(uid, msg)
+    for entry in available[-10:]:
+        rel = entry.get("file") or entry.get("stored")
+        path = project_document_path(proj, rel)
+        if not os.path.exists(path):
+            continue
+        original = entry.get("original") or os.path.basename(path)
+        timestamp = format_datetime_short(entry.get("uploaded_at")) or format_datetime_short(entry.get("batch_at")) or entry.get("uploaded_at") or entry.get("batch_at") or "—"
+        caption_lines = [f"📄 {h(original)}", "━━━━━━━━━━━━━━━━━━", f"📅 Обновлено: {h(timestamp)}"]
+        batch_label = entry.get("batch_label") or ""
+        if batch_label:
+            caption_lines.append(f"📦 Пакет: {h(batch_label)}")
+        comment = entry.get("comment") or ""
+        if comment:
+            caption_lines.append(f"💬 Комментарий: {h(comment)}")
+        uploader = entry.get("uploader_name") or ""
+        if uploader:
+            caption_lines.append(f"👤 Автор: {h(uploader)}")
+        caption = "\n".join(caption_lines)
+        doc_file = InputFile(path, filename=original)
+        msg = await bot.send_document(
+            c.message.chat.id,
+            doc_file,
+            caption=caption,
+            reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+        )
+        flow_track(uid, msg)
+    await clear_then_anchor(
+        uid,
+        f"📑 Документы проекта <b>{h(proj_label)}</b>\n━━━━━━━━━━━━━━━━━━\nОтправлены последние <b>{min(len(available), 10)}</b> файлов.",
+        kb=InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ На главную", callback_data="back_root"))
+    )
     await c.answer()
 
 
@@ -20475,6 +20756,273 @@ async def proj_create_begin(c: types.CallbackQuery):
     await c.answer()
 
 
+@dp.callback_query_handler(lambda c: c.data == "proj_files", state="*")
+async def proj_files_entry(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    await clear_step_prompt(state)
+    await state.finish()
+    await admin_render_project_file_projects(uid)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("proj_files_sel:"), state="*")
+async def proj_files_select(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split("proj_files_sel:", 1)[1]
+    project = project_from_token(token)
+    if not project:
+        return await c.answer("Проект не найден", show_alert=True)
+    await clear_step_prompt(state)
+    await state.finish()
+    await admin_render_project_files(uid, project)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("proj_files_history:"))
+async def proj_files_history(c: types.CallbackQuery):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split("proj_files_history:", 1)[1]
+    project = project_from_token(token)
+    if not project:
+        return await c.answer("Проект не найден", show_alert=True)
+    docs = load_project_documents(project)
+    if not docs:
+        return await c.answer("Файлы отсутствуют", show_alert=True)
+    docs.sort(key=lambda x: x.get("uploaded_at") or x.get("batch_at") or "")
+    info = load_project_info(project)
+    display = project_display_name(project, info)
+    lines = [f"📁 Архив документов — {h(display)}", ""]
+    for entry in docs[-10:]:
+        ts = entry.get("uploaded_at") or entry.get("batch_at") or "—"
+        ts_display = format_datetime_short(ts) or ts or "—"
+        label = entry.get("batch_label") or entry.get("comment") or ""
+        origin = entry.get("original") or entry.get("file") or "Документ"
+        parts = [f"• {h(origin)}", f"  🕒 {h(ts_display)}"]
+        if label:
+            parts.append(f"  📦 {h(label)}")
+        comment = entry.get("comment") or ""
+        if comment:
+            parts.append(f"  💬 {h(comment)}")
+        uploader = entry.get("uploader_name") or ""
+        if uploader:
+            parts.append(f"  👤 {h(uploader)}")
+        lines.append("\n".join(parts))
+    text = "\n".join(lines)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+    msg = await bot.send_message(c.message.chat.id, text, reply_markup=kb)
+    flow_track(uid, msg)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith("proj_files_add:"), state="*")
+async def proj_files_add_start(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    token = c.data.split("proj_files_add:", 1)[1]
+    project = project_from_token(token)
+    if not project:
+        return await c.answer("Проект не найден", show_alert=True)
+    await clear_step_prompt(state)
+    await ProjectFilesFSM.waiting_comment.set()
+    info = load_project_info(project)
+    display = project_display_name(project, info)
+    code = info.get("code") or "—"
+    lines = [
+        "📝 <b>Нове оновлення документів</b>",
+        "",
+        f"📂 {h(display)} (код {h(code)})",
+        "Введіть короткий коментар до файлів. Якщо без коментаря — відправте «-».",
+    ]
+    await anchor_show_text(uid, "\n".join(lines), kb_project_cancel("proj_files_cancel"))
+    prompt = await bot.send_message(
+        c.message.chat.id,
+        "✏️ Введите комментарий к обновлению (или «-» без комментария).",
+        reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Отменить", callback_data="proj_files_cancel")),
+    )
+    flow_track(uid, prompt)
+    await remember_step_prompt(state, prompt)
+    await state.update_data(project=project, project_token=token)
+    await c.answer()
+
+
+@dp.callback_query_handler(lambda c: c.data == "proj_files_cancel", state="*")
+async def proj_files_cancel(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if uid not in admins:
+        return await c.answer("⛔", show_alert=True)
+    data = await state.get_data()
+    for path in list(data.get("doc_paths") or []):
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+    project = data.get("project")
+    await clear_step_prompt(state)
+    await state.finish()
+    if project:
+        await admin_render_project_files(uid, project)
+    else:
+        await admin_render_project_file_projects(uid)
+    await c.answer("Отменено")
+
+
+@dp.message_handler(state=ProjectFilesFSM.waiting_comment, content_types=ContentType.TEXT)
+async def proj_files_comment(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    text_value = (m.text or "").strip()
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+    if not text_value:
+        warn = await bot.send_message(m.chat.id, "❗ Комментарий не может быть пустым. Напишите текст или «-».")
+        flow_track(uid, warn)
+        return
+    comment = "" if text_value == "-" else text_value
+    data = await state.get_data()
+    project = data.get("project")
+    if not project:
+        await state.finish()
+        warn = await bot.send_message(m.chat.id, "⚠️ Проект не найден. Начните заново.")
+        flow_track(uid, warn)
+        return
+    await clear_step_prompt(state)
+    batch_id, batch_label, batch_at = project_document_make_batch(comment or "Обновление документов", prefix="update")
+    await state.update_data(
+        doc_comment=comment,
+        doc_batch_id=batch_id,
+        doc_batch_label=batch_label,
+        doc_batch_at=batch_at,
+        doc_files=[],
+        doc_paths=[],
+    )
+    info = load_project_info(project)
+    display = project_display_name(project, info)
+    code = info.get("code") or "—"
+    comment_display = comment or "Без комментария"
+    lines = [
+        "📦 <b>Завантаження файлів</b>",
+        "",
+        f"📂 {h(display)} (код {h(code)})",
+        f"💬 Коментар: {h(comment_display)}",
+        "",
+        "📁 Надішліть файли. Після завершення натисніть «✅ Завершить».",
+    ]
+    await anchor_show_text(uid, "\n".join(lines), kb_pdf_upload(cancel_callback="proj_files_cancel"))
+    await ProjectFilesFSM.uploading.set()
+
+
+@dp.message_handler(content_types=ContentType.DOCUMENT, state=ProjectFilesFSM.uploading)
+async def proj_files_document(m: types.Message, state: FSMContext):
+    uid = m.from_user.id
+    if uid not in admins:
+        return
+    data = await state.get_data()
+    project = data.get("project")
+    if not project:
+        warn = await bot.send_message(m.chat.id, "⚠️ Проект не найден. Начните заново.")
+        flow_track(uid, warn)
+        try:
+            await bot.delete_message(m.chat.id, m.message_id)
+        except Exception:
+            pass
+        return
+    batch_id = data.get("doc_batch_id")
+    batch_label = data.get("doc_batch_label")
+    batch_at = data.get("doc_batch_at")
+    if not batch_id or not batch_label or not batch_at:
+        batch_id, batch_label, batch_at = project_document_make_batch("Обновление документов", prefix="update")
+        await state.update_data(doc_batch_id=batch_id, doc_batch_label=batch_label, doc_batch_at=batch_at)
+    entry, dst = await project_document_capture(
+        project,
+        m.document,
+        batch_id=batch_id,
+        batch_label=batch_label,
+        batch_at=batch_at,
+    )
+    doc_files = list(data.get("doc_files") or [])
+    doc_paths = list(data.get("doc_paths") or [])
+    doc_files.append(entry)
+    doc_paths.append(dst)
+    await state.update_data(doc_files=doc_files, doc_paths=doc_paths)
+    ok = await bot.send_message(m.chat.id, f"✅ Файл добавлен: {h(entry.get('original') or 'Документ')}")
+    flow_track(uid, ok)
+    try:
+        await bot.delete_message(m.chat.id, m.message_id)
+    except Exception:
+        pass
+
+
+@dp.callback_query_handler(
+    lambda c: c.data in ("docs_more", "docs_finish", "pdf_more", "pdf_finish"),
+    state=ProjectFilesFSM.uploading,
+)
+async def proj_files_upload_buttons(c: types.CallbackQuery, state: FSMContext):
+    uid = c.from_user.id
+    if c.data in {"docs_more", "pdf_more"}:
+        await c.answer("Жду файл")
+        return
+    data = await state.get_data()
+    project = data.get("project")
+    if not project:
+        await state.finish()
+        await c.answer("Проект не найден", show_alert=True)
+        return
+    uploaded = list(data.get("doc_files") or [])
+    if not uploaded:
+        await c.answer("Добавьте файл", show_alert=True)
+        return
+    comment = data.get("doc_comment") or ""
+    batch_id = data.get("doc_batch_id") or "update"
+    batch_label = data.get("doc_batch_label") or (comment or "Обновление документов")
+    batch_at = data.get("doc_batch_at") or datetime.now(timezone.utc).isoformat()
+    uploader_name = work_request_profile_display(uid)
+    saved_entries: List[dict] = []
+    for entry in uploaded:
+        saved = register_project_document(
+            project,
+            stored=entry.get("stored"),
+            original=entry.get("original") or "Документ",
+            uploader_id=uid,
+            uploader_name=uploader_name,
+            comment=comment,
+            batch_id=entry.get("batch_id") or batch_id,
+            batch_label=entry.get("batch_label") or batch_label,
+            batch_at=entry.get("batch_at") or batch_at,
+            mime=entry.get("mime"),
+            size=entry.get("size"),
+        )
+        saved_entries.append(saved)
+    await state.finish()
+    await admin_render_project_files(uid, project)
+    info = load_project_info(project)
+    display = project_display_name(project, info)
+    code = info.get("code") or "—"
+    summary_lines = [
+        "✅ Оновлення збережено",
+        "",
+        f"📂 {h(display)} (код {h(code)})",
+        f"📁 Файлів: {len(saved_entries)}",
+    ]
+    if comment:
+        summary_lines.append(f"💬 Коментар: {h(comment)}")
+    summary_lines.extend(f"• {h(entry.get('original') or 'Документ')}" for entry in saved_entries)
+    summary_text = "\n".join(summary_lines)
+    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("❌ Закрыть", callback_data="broadcast_close"))
+    msg = await bot.send_message(c.message.chat.id, summary_text, reply_markup=kb)
+    flow_track(uid, msg)
+    await broadcast_project_documents_update(project, saved_entries, comment, uploader_name)
+    await c.answer("Готово")
 async def admin_render_category_list(uid: int) -> None:
     cats = project_categories_all()
     usage = project_category_usage_counts()
@@ -20499,6 +21047,98 @@ async def admin_render_category_list(uid: int) -> None:
     kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_projects"))
     await clear_then_anchor(uid, "\n".join(lines), kb)
 
+
+async def admin_render_project_files(uid: int, project: str) -> None:
+    info = load_project_info(project)
+    docs = load_project_documents(project)
+    count = len(docs)
+    latest_entry: Optional[dict] = None
+    latest_ts: Optional[str] = None
+    for entry in docs:
+        ts = entry.get("uploaded_at") or entry.get("batch_at")
+        if not ts:
+            continue
+        if latest_ts is None or ts > latest_ts:
+            latest_ts = ts
+            latest_entry = entry
+    display = project_display_name(project, info)
+    code = info.get("code") or "—"
+    region = info.get("region") or "—"
+    last_display = format_datetime_short(latest_ts) or latest_ts or "—"
+    batch_label = latest_entry.get("batch_label") if latest_entry else ""
+    lines = [
+        "📦 <b>Документы проекта</b>",
+        "",
+        f"📂 {h(display)} (код {h(code)})",
+        f"🌍 Область: {h(region)}",
+        f"📎 Всего файлов: {count}",
+    ]
+    if latest_entry:
+        lines.append(f"🕒 Последнее обновление: {h(last_display)}")
+        if batch_label:
+            lines.append(f"📦 Пакет: {h(batch_label)}")
+    lines.append("")
+    lines.append("Выберите действие ниже, чтобы добавить файлы или посмотреть историю.")
+    token = project_token(project)
+    await anchor_show_text(uid, "\n".join(lines), kb_project_files_menu(token))
+
+
+async def admin_render_project_file_projects(uid: int) -> None:
+    projects = list_projects()
+    if not projects:
+        await clear_then_anchor(uid, "❗ Нет проектов.", kb_admin_projects())
+        return
+    kb = InlineKeyboardMarkup()
+    for name in projects:
+        info = load_project_info(name)
+        docs_count = len(load_project_documents(name))
+        label = project_display_name(name, info)
+        token = project_token(name)
+        kb.add(InlineKeyboardButton(f"{label} ({docs_count})", callback_data=f"proj_files_sel:{token}"))
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="adm_projects"))
+    await clear_then_anchor(uid, "Выберите проект для управления документами:", kb)
+
+
+async def broadcast_project_documents_update(
+    project: str,
+    entries: List[dict],
+    comment: str,
+    uploader_name: str,
+) -> None:
+    if not entries:
+        return
+    info = load_project_info(project)
+    display = project_display_name(project, info)
+    code = info.get("code") or "—"
+    timestamp = entries[-1].get("uploaded_at") or entries[-1].get("batch_at")
+    timestamp_display = format_datetime_short(timestamp) or timestamp or "—"
+    file_lines = [f"• {h(entry.get('original') or 'Документ')}" for entry in entries]
+    lines = [
+        "🆕 <b>Оновлення документів</b>",
+        "━━━━━━━━━━━━━━━━━━",
+        f"📂 Проект: <b>{h(display)}</b> (код {h(code)})",
+        f"📁 Нові файли: {len(entries)}",
+    ]
+    lines.extend(file_lines)
+    if comment:
+        lines.append(f"💬 Коментар: {h(comment)}")
+    lines.append(f"📅 Дата: {h(timestamp_display)}")
+    lines.append(f"👤 Додав: {h(uploader_name)}")
+    text = "\n".join(lines)
+    for f in os.listdir(USERS_PATH):
+        if not f.endswith(".json"):
+            continue
+        try:
+            udata = json.load(open(os.path.join(USERS_PATH, f), "r", encoding="utf-8"))
+        except Exception:
+            continue
+        chat_id = registration_chat_id(int(udata.get("user_id", 0)), udata)
+        if chat_id:
+            try:
+                msg = await bot.send_message(chat_id, text, reply_markup=kb_broadcast_close())
+                flow_track(int(udata.get("user_id", 0)), msg)
+            except Exception:
+                pass
 
 @dp.callback_query_handler(lambda c: c.data == "proj_categories", state="*")
 async def proj_categories_view(c: types.CallbackQuery, state: FSMContext):
@@ -20546,6 +21186,13 @@ async def proj_categories_add_input(m: types.Message, state: FSMContext):
 @dp.callback_query_handler(lambda c: c.data == "proj_create_cancel", state="*")
 async def proj_create_cancel(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
+    data = await state.get_data()
+    for path in list(data.get("doc_paths") or []):
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
     await clear_step_prompt(state)
     await state.finish()
     await flow_clear(uid)
@@ -20564,9 +21211,12 @@ async def proj_enter_loc(m: types.Message, state: FSMContext):
         flow_track(uid, warn); return
     await clear_step_prompt(state)
     await state.update_data(title=name)
-    msg = await bot.send_message(m.chat.id, "🌍 Выберите область проекта:", reply_markup=kb_region_select())
-    flow_track(uid, msg)
-    await remember_step_prompt(state, msg)
+    summary = [
+        f"📂 Проект: <b>{h(name)}</b>",
+        "",
+        "🌍 Выберите область проекта."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_region_select())
     await ProjectCreateFSM.enter_region.set()
 
 
@@ -20582,9 +21232,15 @@ async def proj_select_region(c: types.CallbackQuery, state: FSMContext):
     region = UKRAINE_REGIONS[idx]
     await clear_step_prompt(state)
     await state.update_data(region=region, category_id=None, category_name=None)
-    msg = await bot.send_message(c.message.chat.id, "🏷 Выберите <b>категорию</b> проекта:", reply_markup=kb_project_category_select())
-    flow_track(uid, msg)
-    await remember_step_prompt(state, msg)
+    data = await state.get_data()
+    title = data.get("title") or data.get("name") or "Проект"
+    summary = [
+        f"📂 Проект: <b>{h(title)}</b>",
+        f"🌍 Область: {h(region)}",
+        "",
+        "🏷 Выберите категорию проекта."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_project_category_select())
     await ProjectCreateFSM.choose_category.set()
     await c.answer(region)
 
@@ -20598,9 +21254,18 @@ async def proj_select_category(c: types.CallbackQuery, state: FSMContext):
         return await c.answer("Категория не найдена", show_alert=True)
     await clear_step_prompt(state)
     await state.update_data(category_id=entry.get("id"), category_name=entry.get("name"))
-    msg = await bot.send_message(c.message.chat.id, "📍 Укажите <b>локацию</b> (город/адрес).")
-    flow_track(uid, msg)
-    await remember_step_prompt(state, msg)
+    data = await state.get_data()
+    title = data.get("title") or data.get("name") or "Проект"
+    region = data.get("region") or "—"
+    category = entry.get("name") or entry.get("id") or "Категория"
+    summary = [
+        f"📂 Проект: <b>{h(title)}</b>",
+        f"🌍 Область: {h(region)}",
+        f"🏷 Категория: {h(category)}",
+        "",
+        "📍 Укажите локацию (город/адрес) и отправьте сообщением."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_project_cancel())
     await ProjectCreateFSM.enter_location.set()
     await c.answer(entry.get("name") or "Категория выбрана")
 
@@ -20609,7 +21274,9 @@ async def proj_select_category(c: types.CallbackQuery, state: FSMContext):
 async def proj_category_new_prompt(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
     await clear_step_prompt(state)
-    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="proj_cat_back"))
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("⬅️ Назад", callback_data="proj_cat_back"))
+    kb.add(InlineKeyboardButton("❌ Отменить", callback_data="proj_create_cancel"))
     msg = await bot.send_message(c.message.chat.id, "✏️ Введите <b>название</b> новой категории.", reply_markup=kb)
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
@@ -20643,9 +21310,17 @@ async def proj_category_create_input(m: types.Message, state: FSMContext):
     entry = project_category_create(title)
     await clear_step_prompt(state)
     await state.update_data(category_id=entry.get("id"), category_name=entry.get("name"))
-    msg = await bot.send_message(m.chat.id, "📍 Укажите <b>локацию</b> (город/адрес).")
-    flow_track(uid, msg)
-    await remember_step_prompt(state, msg)
+    data = await state.get_data()
+    title_value = data.get("title") or data.get("name") or "Проект"
+    region = data.get("region") or "—"
+    summary = [
+        f"📂 Проект: <b>{h(title_value)}</b>",
+        f"🌍 Область: {h(region)}",
+        f"🏷 Категория: {h(entry.get('name') or entry.get('id') or 'Категория')}",
+        "",
+        "📍 Укажите локацию (город/адрес) и отправьте сообщением."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_project_cancel())
     await ProjectCreateFSM.enter_location.set()
 
 
@@ -20660,7 +21335,24 @@ async def proj_enter_desc(m: types.Message, state: FSMContext):
         flow_track(uid, warn); return
     await clear_step_prompt(state)
     await state.update_data(location=loc)
-    msg = await bot.send_message(m.chat.id, "ℹ️ Краткое описание (необязательно). Если пропустить — отправьте «-».")
+    data = await state.get_data()
+    title = data.get("title") or data.get("name") or "Проект"
+    region = data.get("region") or "—"
+    category = data.get("category_name") or "—"
+    summary = [
+        f"📂 Проект: <b>{h(title)}</b>",
+        f"🌍 Область: {h(region)}",
+        f"🏷 Категория: {h(category)}",
+        f"📍 Локация: {h(loc)}",
+        "",
+        "ℹ️ Краткое описание (необязательно). Если пропустить — отправьте «-»."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_project_cancel())
+    msg = await bot.send_message(
+        m.chat.id,
+        "ℹ️ Краткое описание (необязательно). Если пропустить — отправьте «-».",
+        reply_markup=kb_project_cancel(),
+    )
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
     await ProjectCreateFSM.enter_description.set()
@@ -20674,7 +21366,29 @@ async def proj_enter_start(m: types.Message, state: FSMContext):
     except: pass
     await clear_step_prompt(state)
     await state.update_data(description=desc)
-    msg = await bot.send_message(m.chat.id, "📅 Введите <b>дату начала</b> (ДД.ММ.ГГГГ):")
+    data = await state.get_data()
+    title = data.get("title") or data.get("name") or "Проект"
+    region = data.get("region") or "—"
+    category = data.get("category_name") or "—"
+    location = data.get("location") or "—"
+    desc_display = desc if desc else "—"
+    if isinstance(desc_display, str) and len(desc_display) > 200:
+        desc_display = desc_display[:197] + "…"
+    summary = [
+        f"📂 Проект: <b>{h(title)}</b>",
+        f"🌍 Область: {h(region)}",
+        f"🏷 Категория: {h(category)}",
+        f"📍 Локация: {h(location)}",
+        f"ℹ️ Описание: {h(desc_display)}",
+        "",
+        "📅 Введите дату начала (ДД.ММ.ГГГГ)."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_project_cancel())
+    msg = await bot.send_message(
+        m.chat.id,
+        "📅 Введите <b>дату начала</b> (ДД.ММ.ГГГГ):",
+        reply_markup=kb_project_cancel(),
+    )
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
     await ProjectCreateFSM.enter_start_date.set()
@@ -20725,7 +21439,30 @@ async def proj_enter_end(m: types.Message, state: FSMContext):
         flow_track(uid, warn); return
     await clear_step_prompt(state)
     await state.update_data(start_date=sd)
-    msg = await bot.send_message(m.chat.id, "📅 Введите <b>дату окончания</b> (ДД.ММ.ГГГГ):")
+    data = await state.get_data()
+    title = data.get("title") or data.get("name") or "Проект"
+    region = data.get("region") or "—"
+    category = data.get("category_name") or "—"
+    location = data.get("location") or "—"
+    desc_value = data.get("description") or "—"
+    if isinstance(desc_value, str) and len(desc_value) > 200:
+        desc_value = desc_value[:197] + "…"
+    summary = [
+        f"📂 Проект: <b>{h(title)}</b>",
+        f"🌍 Область: {h(region)}",
+        f"🏷 Категория: {h(category)}",
+        f"📍 Локация: {h(location)}",
+        f"ℹ️ Описание: {h(desc_value)}",
+        f"📅 Старт: {h(format_project_date_display(sd))}",
+        "",
+        "📅 Введите дату окончания (ДД.ММ.ГГГГ)."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_project_cancel())
+    msg = await bot.send_message(
+        m.chat.id,
+        "📅 Введите <b>дату окончания</b> (ДД.ММ.ГГГГ):",
+        reply_markup=kb_project_cancel(),
+    )
     flow_track(uid, msg)
     await remember_step_prompt(state, msg)
     await ProjectCreateFSM.enter_end_date.set()
@@ -20756,10 +21493,26 @@ async def proj_pdf_prompt(m: types.Message, state: FSMContext):
             storage_project_dir=project_dir,
         )
     ensure_project_structure(storage_name)
-    tip = await bot.send_message(m.chat.id, "📑 Загружайте PDF-файлы проекта (можно несколько). Когда закончите — нажмите «✅ Завершить».")
-    flow_track(uid, tip)
-    await state.update_data(step_prompt=None)
-    await anchor_show_text(uid, "Загрузка PDF: пришлите документ(ы), затем «✅ Завершить».", kb_pdf_upload())
+    batch_id, batch_label, batch_at = project_document_make_batch("Стартовая документация", prefix="initial")
+    await state.update_data(
+        doc_batch_id=batch_id,
+        doc_batch_label=batch_label,
+        doc_batch_at=batch_at,
+        doc_files=[],
+        doc_paths=[],
+    )
+    start_display = format_project_date_display(data.get("start_date"))
+    end_display = format_project_date_display(ed)
+    summary = [
+        f"📂 Проект: <b>{h(title)}</b>",
+        f"🌍 Область: {h(region_name)}",
+        f"🏷 Категория: {h(category_name or '—')}",
+        f"📍 Локация: {h(data.get('location') or '—')}",
+        f"📅 Сроки: {h(start_display)} → {h(end_display)}",
+        "",
+        "📁 Пришлите файлы проекта (PDF, XLSX, DWG, ZIP и др.). После загрузки нажмите «✅ Завершить»."
+    ]
+    await anchor_show_text(uid, "\n".join(summary), kb_pdf_upload(cancel_callback="proj_create_cancel"))
     await ProjectCreateFSM.upload_pdf.set()
 
 
@@ -20768,12 +21521,6 @@ async def proj_pdf_upload(m: types.Message, state: FSMContext):
     uid = m.from_user.id
     data = await state.get_data()
     name = data.get("storage_name") or data.get("name")
-    if not (m.document and (m.document.mime_type and "pdf" in m.document.mime_type.lower() or m.document.file_name.lower().endswith(".pdf"))):
-        warn = await bot.send_message(m.chat.id, "⚠️ Допускаются только PDF.")
-        flow_track(uid, warn)
-        try: await bot.delete_message(m.chat.id, m.message_id)
-        except: pass
-        return
     if not name:
         warn = await bot.send_message(m.chat.id, "❗ Не удалось определить папку проекта. Попробуйте создать объект заново.")
         flow_track(uid, warn)
@@ -20782,24 +21529,42 @@ async def proj_pdf_upload(m: types.Message, state: FSMContext):
         except Exception:
             pass
         return
-    dst = os.path.join(proj_pdf_dir(name), m.document.file_name)
-    os.makedirs(proj_pdf_dir(name), exist_ok=True)
-    await m.document.download(destination_file=dst)
-    info = load_project_info(name)
-    arr = info.get("pdf", [])
-    if m.document.file_name not in arr:
-        arr.append(m.document.file_name); info["pdf"] = arr; save_project_info(name, info)
-    ok = await bot.send_message(m.chat.id, f"✅ PDF сохранён: {m.document.file_name}")
+    batch_id = data.get("doc_batch_id")
+    batch_label = data.get("doc_batch_label")
+    batch_at = data.get("doc_batch_at")
+    if not batch_id or not batch_label or not batch_at:
+        batch_id, batch_label, batch_at = project_document_make_batch("Стартовая документация", prefix="initial")
+        await state.update_data(doc_batch_id=batch_id, doc_batch_label=batch_label, doc_batch_at=batch_at)
+    entry, dst = await project_document_capture(
+        name,
+        m.document,
+        batch_id=batch_id,
+        batch_label=batch_label,
+        batch_at=batch_at,
+    )
+    doc_files = list(data.get("doc_files") or [])
+    doc_paths = list(data.get("doc_paths") or [])
+    doc_files.append(entry)
+    doc_paths.append(dst)
+    await state.update_data(doc_files=doc_files, doc_paths=doc_paths)
+    ok = await bot.send_message(m.chat.id, f"✅ Файл сохранён: {h(entry.get('original') or 'Документ')}")
     flow_track(uid, ok)
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
 
 
-@dp.callback_query_handler(lambda c: c.data in ("pdf_more", "pdf_finish"), state=ProjectCreateFSM.upload_pdf)
+@dp.callback_query_handler(
+    lambda c: c.data in ("docs_more", "docs_finish", "pdf_more", "pdf_finish"),
+    state=ProjectCreateFSM.upload_pdf,
+)
 async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
     uid = c.from_user.id
-    if c.data == "pdf_more":
-        await anchor_show_text(uid, "📑 Пришлите следующий PDF или «✅ Завершить».", kb_pdf_upload())
+    if c.data in {"docs_more", "pdf_more"}:
+        await anchor_show_text(
+            uid,
+            "📁 Пришлите следующий файл или нажмите «✅ Завершить».",
+            kb_pdf_upload(cancel_callback="proj_create_cancel"),
+        )
         return await c.answer("Жду файл")
     data = await state.get_data()
     name = data.get("storage_name") or data.get("name")
@@ -20807,6 +21572,14 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
         await state.finish()
         await clear_then_anchor(uid, "⚠️ Не удалось сохранить проект. Попробуйте создать его заново.", kb_admin_projects())
         return await c.answer("Ошибка")
+    uploaded_files = list(data.get("doc_files") or [])
+    if not uploaded_files:
+        await anchor_show_text(
+            uid,
+            "📁 Добавьте хотя бы один файл, чтобы завершить создание проекта.",
+            kb_pdf_upload(cancel_callback="proj_create_cancel"),
+        )
+        return await c.answer("Нужен файл", show_alert=True)
     info = load_project_info(name)
     title = data.get("title") or info.get("name") or name.split("/")[-1]
     info.update({
@@ -20825,6 +21598,25 @@ async def proj_pdf_buttons(c: types.CallbackQuery, state: FSMContext):
         "storage_region_dir": data.get("storage_region_dir") or info.get("storage_region_dir") or "",
         "storage_project_dir": data.get("storage_project_dir") or info.get("storage_project_dir") or name.split("/")[-1],
     })
+    uploader_name = work_request_profile_display(uid)
+    comment = data.get("doc_batch_label") or "Стартовая документация"
+    batch_id = data.get("doc_batch_id") or "initial"
+    batch_label = data.get("doc_batch_label") or comment
+    batch_at = data.get("doc_batch_at") or datetime.now(timezone.utc).isoformat()
+    for entry in uploaded_files:
+        register_project_document(
+            name,
+            stored=entry.get("stored"),
+            original=entry.get("original") or "document",
+            uploader_id=uid,
+            uploader_name=uploader_name,
+            comment=comment,
+            batch_id=entry.get("batch_id") or batch_id,
+            batch_label=entry.get("batch_label") or batch_label,
+            batch_at=entry.get("batch_at") or batch_at,
+            mime=entry.get("mime"),
+            size=entry.get("size"),
+        )
     save_project_info(name, info); set_active_project(name)
     await state.finish()
     await clear_then_anchor(uid, f"✅ Проект «{h(title)}» (код {h(info.get('code') or '—')}) создан и активирован.", kb_admin_projects())
